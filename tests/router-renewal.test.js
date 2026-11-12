@@ -6,6 +6,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { PLUGIN, tempDir } = require('./helpers.js')
 const renewal = require('../plugins/aether/lib/router-renewal.js')
+const { HARNESS_NAMES } = require('../plugins/aether/lib/harness-names.js')
 const quota = require('../plugins/aether/lib/router-quota.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 
@@ -16,7 +17,7 @@ const clock = () => { let t = 0; return { now: () => t, sleep: async (ms) => { t
 test('renewalArgv is the renew verb of aether-delegate, which saves the reading where the pair choice reads it', () => {
   assert.deepEqual(renewal.renewalArgv('grok'), [process.execPath, path.join(PLUGIN, 'bin', 'aether-delegate'), 'renew', '--harness', 'grok'])
   assert.deepEqual(renewal.renewalArgv('agy', { node: 'node', pluginRoot: '/p' }), ['node', '/p/bin/aether-delegate', 'renew', '--harness', 'agy'])
-  assert.deepEqual(renewal.RENEWABLE, ['agy', 'codex', 'grok', 'muse'])
+  assert.deepEqual(renewal.RENEWABLE, [...HARNESS_NAMES])
 })
 
 const config = lanes.loadConfig(lanes.CONFIG_FILE)

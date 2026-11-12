@@ -20,9 +20,10 @@ const { createAdapter } = require('./harness/index.js')
 const { WORKDIR_RULE } = require('./lane-calls.js')
 const { KILL_GRACE_SECONDS, cliSeconds } = require('./delegate-limits.js')
 const { refusalIn } = require('./quota-refusal.js')
+const { HARNESS_NAMES } = require('./harness-names.js')
 
 // The harnesses a delegate may run on (R19): cursor is not among them.
-const HARNESSES = ['agy', 'codex', 'grok', 'muse']
+const HARNESSES = [...HARNESS_NAMES]
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
 const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGHUP']
 // What a delegate may leave in its worktree without breaking its rule: the temporary files of its tools.

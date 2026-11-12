@@ -8,6 +8,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { tempDir } = require('./helpers.js')
 const { pairStep, DELEGATE_HARNESSES } = require('../plugins/aether/lib/router-pick.js')
+const { HARNESS_NAMES } = require('../plugins/aether/lib/harness-names.js')
 const lanes = require('../plugins/aether/lib/lanes.js')
 const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 const { peekReadings, staleHarnesses, MUSE_WAIT_MS } = require('../plugins/aether/lib/router-quota.js')
@@ -37,7 +38,7 @@ config.harnesses.codex.models = {
   'gpt-6-luna': config.harnesses.codex.models['gpt-6-luna'],
 }
 const CODEX = (hours, remaining = 0.9) => ({ readAt: NOW - MIN, groups: { codex: { windows: { '5h': win(1, 5), weekly: win(remaining, hours) } } } })
-const ALL_FOUR = ['agy', 'codex', 'grok', 'muse']
+const ALL_FOUR = [...HARNESS_NAMES]
 const GOOD = { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.9, 40) }), grok: GROK, muse: MUSE }
 
 const claude = (model, effort, intelligence, costPerTaskUsd) => ({ id: `claude/${model}@${effort}`, harness: 'claude', model, family: `claude-${model}-5-5`, effort, group: null, intelligence, costPerTaskUsd })
@@ -80,7 +81,7 @@ function setup({ readings = { agy: agy({ ...geminiKeys(1, 60), claude: weekly(0.
 const idOf = (step) => (step.pick ? step.pick.id : null)
 
 test('the harnesses a delegate may run on are agy, codex, grok and muse, and cursor is not', () => {
-  assert.deepEqual(DELEGATE_HARNESSES, ['agy', 'codex', 'grok', 'muse'])
+  assert.deepEqual(DELEGATE_HARNESSES, [...HARNESS_NAMES])
 })
 
 test('the quota that renews first takes the call, at its cheapest pair that reaches the points', async () => {
@@ -145,7 +146,7 @@ test('a harness that is not enabled or not installed gives nothing, and cursor i
   const onlyAgy = setup()
   const second = await pairStep(onlyAgy.d, { ...onlyAgy.merged, harnesses: ['agy', 'codex', 'cursor'] }, { reference: SONNET_HIGH })
   assert.equal(second.pick.harness, 'agy')
-  assert.ok(second.quota.every((c) => ['agy', 'codex', 'grok', 'muse'].includes(c.harness)))
+  assert.ok(second.quota.every((c) => HARNESS_NAMES.includes(c.harness)))
   assert.equal(second.quota.find((c) => c.harness === 'codex').why, 'no-reading')
   assert.equal(second.quota.find((c) => c.harness === 'grok').why, 'harness-off')
 })
