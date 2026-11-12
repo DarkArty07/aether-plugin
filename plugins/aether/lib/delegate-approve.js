@@ -17,7 +17,8 @@ const { runShell } = require('./common.js')
 const NO_WORKTREE = 'approve needs the worktree of the attempt (--worktree) or the checks of its result'
 const MERGE_MAIN = 'merge-main needs a grant'
 const UNIT_BRANCH = /^aether\/([^/]+)\/(task-\d+)$/
-// The file under the main checkout's .aether/ whose testCommand replaces npm test. Aether only reads it, never writes it.
+// The file in the main checkout's .aether directory whose testCommand replaces npm test. Aether only reads it and never
+// writes it, so it is not in the map of what Aether writes there (lib/tree-map.js).
 const SETTINGS_FILE = 'settings.json'
 
 const gitOrNull = (args, cwd) => {
@@ -46,7 +47,7 @@ function unitOf(branch) {
   return { runId: match[1], taskId: match[2] }
 }
 
-// The project's test command: testCommand of .aether/settings.json in the main checkout, otherwise npm test.
+// The project's test command: testCommand of SETTINGS_FILE in the main checkout's .aether directory, otherwise npm test.
 function testCommand(cwd) {
   try {
     const parsed = JSON.parse(fs.readFileSync(path.join(run.aetherDir(repoPaths(cwd).mainRoot), SETTINGS_FILE), 'utf8'))
