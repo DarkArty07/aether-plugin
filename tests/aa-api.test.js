@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { figuresOf, indexesOf, readPages, PAGE_URL } = require('../.claude/skills/artificial-analysis/aa-api.js')
+const { figuresOf, indexesOf, pairFiguresOf, readPages, PAGE_URL } = require('../.claude/skills/artificial-analysis/aa-api.js')
 const { block, page } = require('./aa-page-fixtures.js')
 
 const OWN = { intelligence: 51.8421, cost: 3.4646622, code: 0.565656565656566, codeCost: 5.118905, seconds: 955.9325 }
@@ -20,6 +20,16 @@ test('indexesOf takes only Terminal-Bench from the block of the page\'s own mode
   assert.deepEqual(indexesOf(html, 'claude-opus-5-5-high'), { terminalBench: 0.566 })
   assert.equal(indexesOf(html, 'claude-missing-5-5'), null)
   assert.deepEqual(indexesOf(page(block('claude-opus-5-5-high', OWN).replace('terminalbench-4-0', 'other-bench')), 'claude-opus-5-5-high'), { terminalBench: null })
+})
+
+test('pairFiguresOf reads the intelligence, the cost and the code figures of the block of the page\'s own model, rounded as the table keeps them', () => {
+  const html = page(block('claude-other-5-5', NEIGHBOUR), block('claude-opus-5-5-high', OWN), block('claude-next-5-5', NEIGHBOUR))
+  assert.deepEqual(pairFiguresOf(html, 'claude-opus-5-5-high'), { intelligence: 51.8, costPerTaskUsd: 3.465, code: 56.57, codeCostPerTaskUsd: 5.119, codeMinutesPerTask: 15.9 })
+  assert.equal(pairFiguresOf(html, 'claude-missing-5-5'), null)
+})
+
+test('#236 4: the page reader exports no cli (only the file\'s own main guard uses it)', () => {
+  assert.equal(require('../.claude/skills/artificial-analysis/aa-api.js').cli, undefined)
 })
 
 test('readPages asks one page per slug with a pause between two, sends no key, and reports a page that does not answer', async () => {
