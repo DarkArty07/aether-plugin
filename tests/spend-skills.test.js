@@ -15,7 +15,7 @@ const RULE = "Before deleting worktrees and temporary files, and before any push
 const LINE = 'Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.'
 const NONE = 'Sesión <id>: todavía no hay gasto registrado.'
 const INCOMPLETE = 'El total está incompleto.'
-const CAP = '- US$ <gasto> de US$ <tope>. La cifra cubre el swarm, sus lanes, los asientos externos y los agentes nativos que corrieron dentro de la ventana de cada lanzamiento del swarm, turnos del Lead incluidos; no cubre las tareas delegadas.'
+const CAP = '- US$ <gasto> de US$ <tope>. La cifra suma cada lanzamiento del swarm y cada intento de una tarea delegada en otro harness, con sus lanes, los asientos externos y los agentes nativos que corrieron dentro de su ventana, turnos del Lead incluidos; las ventanas que se solapan cuentan lo mismo más de una vez.'
 
 test('using-aether, which every Lead session reads, holds the closing rule word for word, before the irreversible actions', () => {
   assert.ok(USING.includes(RULE))
