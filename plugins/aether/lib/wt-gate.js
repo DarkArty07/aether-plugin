@@ -22,7 +22,7 @@ const SUMMARY_LINES = 25
 const SUMMARY_CHARS = 2000
 const summaryOf = (tail) => String(tail || '').split('\n').slice(-SUMMARY_LINES).join('\n').slice(-SUMMARY_CHARS)
 
-// The gate pass through, timed: each evaluation (pass or fail) appends one `gate` line
+// The gate, timed (spec 036 R18): each evaluation (pass or fail) appends one `gate` line
 // with its duration to the run's timings. A hard error (no task, no worktree) is not a
 // pass and writes nothing; a timing never fails the gate.
 function gateCommand(cwd, runId, taskId, opts = {}) {
