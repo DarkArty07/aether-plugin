@@ -43,6 +43,7 @@ function buildView(state, next, ladder, taskId) {
 
   if (isOpen) {
     const idx = ladder.rungs.findIndex((r) => r.step === state.step)
+    if (idx < 0) throw new Error(`ladder: unknown step ${state.step}`)
     const rung = ladder.rungs[idx]
     step = rung.step
     model = rung.model
@@ -176,4 +177,4 @@ function resetSpent(runDir, taskIds) {
   return reset
 }
 
-module.exports = { ladderCommand, resetSpent }
+module.exports = { buildView, ladderCommand, resetSpent }
