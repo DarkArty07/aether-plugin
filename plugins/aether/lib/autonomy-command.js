@@ -4,6 +4,7 @@
 // Called by bin/aether-autonomy to handle grant, revoke, check, and status verbs.
 // Family: none.
 
+// It does not stop workflows, delegates or lane calls (those stay with the Lead: TaskStop, aether-lane stop).
 // aether-autonomy grant  --class <class> --quote <text> [--session <id>] [--scope repo|session]
 // aether-autonomy revoke --class <class> --quote <text> [--session <id>] [--all]
 // aether-autonomy check  <class> [--session <id>]
@@ -17,17 +18,21 @@
 // aether-autonomy brake-off --quote <text> [--session <id>]
 // aether-autonomy brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>]
 // aether-autonomy quota-saved --from <saved.json>
+// aether-autonomy quota-brake [--session <id>] [--run <swarmRunId>]…
 // aether-autonomy quarantine grants|run <id>
 // aether-autonomy trust --author <autor> --quote <texto> [--session <id>] [--remove]
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { repoPaths } = require('./git.js')
-const { ensureExcluded, dataDir } = require('./run.js')
+const { ensureExcluded, dataDir, isRunId, assertRunId, runDir, launchEndFile } = require('./run.js')
 const autonomy = require('./autonomy.js')
 
+const WT_BIN = path.join(__dirname, '..', 'bin', 'aether-wt')
+
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | extend --hours N --usd N|unlimited --quote <text> [--session <id>] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | extend --hours N --usd N|unlimited --quote <text> [--session <id>] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quota-brake [--session <id>] [--run <swarmRunId>]… | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
 
 // The value after a flag, or null when the flag is absent.
 function value(args, flag) {
@@ -78,7 +83,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
   const remove = sub === 'trust' && argv.includes('--remove')
   const rest = argv.slice(1).filter((a) => !((sub === 'revoke' && a === '--all') || (sub === 'trust' && a === '--remove')))
 
-  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'extend', 'spend', 'status', 'end', 'brake-settings', 'brake-off', 'brake-crossing', 'quota-saved', 'quarantine', 'trust'].includes(sub)) {
+  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'extend', 'spend', 'status', 'end', 'brake-settings', 'brake-off', 'brake-crossing', 'quota-saved', 'quota-brake', 'quarantine', 'trust'].includes(sub)) {
     throw new Error(USAGE)
   }
 
@@ -254,6 +259,79 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     ensureExcluded(gitCommonDir)
     return { code: 0, out: autonomy.recordSaved(mainRoot, saved) }
   }
+
+  if (sub === 'quota-brake') {
+    const session = getSession(rest, false, env)
+    const open = autonomy.openRun(mainRoot)
+    if (!open) return { code: 0, out: { saved: [], recorded: false, pushed: [] } }
+    const named = flagValues(rest, '--run')
+    const ids = named.length ? namedRuns(named) : inFlightRuns(mainRoot, open.started)
+    ensureExcluded(gitCommonDir)
+    const settings = autonomy.brakeSettings(mainRoot, { session, dataDir: env.AETHER_DATA_DIR || dataDir(env) })
+    const mayPush = settings.push === true && Boolean(autonomy.check(mainRoot, 'push', { session }))
+    const saved = []
+    const pushed = []
+    let recorded = false
+    for (const id of ids) {
+      const child = spawnSync(process.execPath, [WT_BIN, 'save', id], { cwd, encoding: 'utf8', env })
+      if (child.status !== 0) {
+        const detail = `${child.stdout || ''}${child.stderr || ''}`.trim()
+        throw new Error(detail || `aether-wt save ${id} failed`)
+      }
+      const file = path.join(runDir(mainRoot, id), 'saved.json')
+      const body = JSON.parse(fs.readFileSync(file, 'utf8'))
+      if (autonomy.recordSaved(mainRoot, body).recorded) recorded = true
+      saved.push(id)
+      if (!mayPush) continue
+      for (const unit of body.units || []) {
+        if (!unit || unit.merged || typeof unit.branch !== 'string' || unit.branch === '' || !unit.head) continue
+        const push = spawnSync('git', ['push', 'origin', unit.branch], {
+          cwd: mainRoot,
+          encoding: 'utf8',
+          env: { ...env, GIT_TERMINAL_PROMPT: '0' },
+        })
+        if (push.status !== 0) {
+          const detail = `${push.stderr || ''}${push.stdout || ''}`.trim()
+          throw new Error(detail || `git push origin ${unit.branch} failed`)
+        }
+        pushed.push(unit.branch)
+      }
+    }
+    return { code: 0, out: { saved, recorded, pushed } }
+  }
+}
+
+// Every value of a repeatable flag. assertFlags has already required each one.
+function namedRuns(ids) {
+  for (const id of ids) assertRunId(id)
+  return ids
+}
+
+function flagValues(args, flag) {
+  const found = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === flag) found.push(args[i + 1])
+  }
+  return found
+}
+
+// Swarm runs still in flight for this autonomous run: a graph.json, no launch end,
+// and a graph written at or after the open run started. Nothing is read from the diary.
+function inFlightRuns(mainRoot, started) {
+  const root = path.join(mainRoot, '.aether', 'runs')
+  if (!fs.existsSync(root)) return []
+  const since = Date.parse(started)
+  const ids = []
+  for (const name of fs.readdirSync(root)) {
+    if (!isRunId(name)) continue
+    const graph = path.join(root, name, 'graph.json')
+    if (!fs.existsSync(graph)) continue
+    if (fs.existsSync(launchEndFile(mainRoot, name))) continue
+    if (!(fs.statSync(graph).mtimeMs >= since)) continue
+    ids.push(name)
+  }
+  ids.sort()
+  return ids
 }
 
 module.exports = {

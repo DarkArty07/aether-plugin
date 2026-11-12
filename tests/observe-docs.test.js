@@ -20,6 +20,11 @@ test('the observe guide has its front matter and says what each installation gat
   for (const event of ['PostToolUse', 'PostToolUseFailure', 'StopFailure', 'PreCompact', 'SessionEnd']) assert.ok(page.includes(event), event)
 })
 
+test('the guide names the proposals verb (task 16, #224)', () => {
+  const page = read('docs', 'guide', 'observe.md')
+  assert.ok(page.includes('aether-observe proposals'), 'the guide names the verb')
+})
+
 test('the guide names the three exemptions of R10 with their reason and the rule of the owner\'s yes', () => {
   const page = read('docs', 'guide', 'observe.md')
   for (const exempt of ['aether-voice', 'start --quote', 'delegates/briefs', '.aether/pending.jsonl']) assert.ok(page.includes(exempt), exempt)

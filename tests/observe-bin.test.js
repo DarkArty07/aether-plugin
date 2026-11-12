@@ -45,12 +45,13 @@ test('hook runs from any shell, with no plugin variable; a bad verb is a usage e
   assert.equal(bin(['hook', 'extra'], dir).status, 1)
 })
 
-test('the usage names the file-issues verb, which takes no argument (spec 020)', (t) => {
+test('the usage names the verbs, and file-issues takes no argument (spec 020)', (t) => {
   const dir = tempDir(t)
   const stray = bin(['file-issues', 'extra'], dir)
   assert.equal(stray.status, 1)
-  assert.equal(stray.json.error, 'usage: aether-observe hook | file-issues')
-  assert.equal(bin(['nope'], dir).json.error, 'usage: aether-observe hook | file-issues')
+  assert.equal(stray.json.error, 'usage: aether-observe hook | file-issues | proposals')
+  assert.equal(bin(['nope'], dir).json.error, 'usage: aether-observe hook | file-issues | proposals')
+  assert.equal(bin(['proposals', 'extra'], dir).json.error, 'usage: aether-observe hook | file-issues | proposals')
 })
 
 test('hooks.json runs the five new hooks and the manifest gains no option (R3, R9)', () => {
@@ -65,6 +66,82 @@ test('hooks.json runs the five new hooks and the manifest gains no option (R3, R
   const sessionEnd = hooks.SessionEnd.flatMap((group) => group.hooks).find((h) => h.command.includes('aether-observe'))
   assert.ok(sessionEnd.timeout >= 10, 'the SessionEnd hook asks for more than the 1500 ms Claude Code gives by default')
   assert.ok(hooks.SessionStart && hooks.PreToolUse)
+})
+
+// Task 16 (#224): the proposals verb shows the last reading, read-only.
+function writeReading(dir, items) {
+  fs.mkdirSync(path.join(dir, 'observe'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'observe', 'read.json'), JSON.stringify({ generatedAt: 1, items }))
+}
+
+function calibrationItem(i) {
+  return {
+    id: `cost-mismatch:pair-${i}`,
+    kind: 'calibration',
+    type: 'cost-mismatch',
+    title: `Cost mismatch in pair pair-${i}`,
+    evidence: [`Pair "pair-${i}": observed cost of $1 per task in 5 calls (sheet: $0.5)`],
+    numbers: { actual: 1, ficha: 0.5, calls: 5 },
+    proposal: `Proposal: the observed cost of "pair-${i}" ($1 per task) differs from its sheet ($0.5 per task). Consider calibrating costPerTaskUsd in config/pairs.json. Not applied automatically.`,
+  }
+}
+
+function frictionItems() {
+  return [
+    {
+      id: 'tool-failures:Bash',
+      kind: 'friction',
+      type: 'tool-failures',
+      title: 'Tool Bash failed 8 times',
+      evidence: ['Tool Bash: 8 failures in 2 sessions'],
+      numbers: { count: 8 },
+    },
+    {
+      id: 'compactions',
+      kind: 'friction',
+      type: 'compactions',
+      title: 'The context was compacted 3 times',
+      evidence: ['PreCompact recorded 3 times in 1 sessions'],
+      numbers: { count: 3 },
+    },
+  ]
+}
+
+// Every file of the data directory, with its bytes: the proposals verb must leave them all untouched.
+function snapshotDir(dir) {
+  const found = []
+  const walk = (current) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const file = path.join(current, entry.name)
+      if (entry.isDirectory()) walk(file)
+      else if (entry.isFile()) found.push([path.relative(dir, file), fs.readFileSync(file)])
+    }
+  }
+  if (fs.existsSync(dir)) walk(dir)
+  return found
+}
+
+test('proposals prints the calibration proposals and the frictions, and writes nothing', (t) => {
+  const dir = tempDir(t)
+  const items = [...Array.from({ length: 22 }, (_, i) => calibrationItem(i)), ...frictionItems()]
+  writeReading(dir, items)
+  const before = snapshotDir(dir)
+  const r = bin(['proposals'], dir)
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stderr, '')
+  const lines = r.stdout.trim().split('\n')
+  assert.equal(lines.filter((line) => line.startsWith('proposal ')).length, 22)
+  for (let i = 0; i < 22; i++) assert.ok(lines.some((line) => line.includes(`pair-${i}`)), `pair-${i}`)
+  assert.ok(lines.some((line) => line.includes('tool-failures:Bash')), 'the tool friction is shown')
+  assert.ok(lines.some((line) => line.includes('compactions')), 'the compaction friction is shown')
+  assert.deepEqual(snapshotDir(dir), before, 'the verb writes nothing')
+})
+
+test('proposals with no reading prints no reading yet', (t) => {
+  const dir = tempDir(t)
+  const r = bin(['proposals'], dir)
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stdout, 'no reading yet\n')
 })
 
 test('the components page counts thirteen bins and describes aether-observe (R16)', () => {

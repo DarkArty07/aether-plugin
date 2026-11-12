@@ -25,5 +25,6 @@ Fable is not used until Fable 5.5 (A43). Haiku's prices rise five times when a p
 
 - **Fixed models:** Aether's own agents keep the model and effort of their definition: pass neither when you start `aether:judge`, `aether:writer`, `aether:examiner` or `aether:reviewer`. A resumed agent keeps its model.
 - **Quota:** with superdelegation on, calls and seats spend other plans' quota, first the quota whose weekly window renews first, then the cheapest pair per task. `aether-lane quota` reads each harness's quota: read it yourself, and never ask the owner for a date or a balance.
+- **Calibration:** `aether-observe proposals` shows what the self-observation measured against the pairs table (pairs whose real cost or speed differs from it, pairs that fail often, design seats with too many rounds) and the frictions it counted. It changes nothing: read it before you propose a change of pair, model or effort.
 - **Other CLIs:** never run the CLI of agy, codex, grok, cursor, muse (cursor's is `cursor-agent`) with a prompt or an approval flag from your own shell, and never read their credentials: lanes and seats run them. A real call to validate one is a `paid-call`: under a grant, make it yourself through Aether's tools, never through the CLI; when the owner's words are too short to record, give them the exact command to run with `!`.
 
