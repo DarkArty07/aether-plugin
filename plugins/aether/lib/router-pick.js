@@ -5,8 +5,7 @@
 // Family: router.
 
 const { isObject } = require('./common.js')
-const laneMarks = require('./lane-marks.js')
-const { groupView } = require('./lane-quota.js')
+const { pickData } = require('./pick-data.js')
 const { choose } = require('./superdelegation.js')
 const { lifeMs, staleHarnesses, MUSE_WAIT_MS } = require('./router-quota.js')
 const { waitForReading } = require('./router-renewal.js')
@@ -16,24 +15,10 @@ const { HARNESS_NAMES } = require('./harness-names.js')
 const DELEGATE_HARNESSES = [...HARNESS_NAMES]
 
 // The view of the quota groups of one harness that choose reads, from the reading the router has of it (null when the
-// harness keeps none, which leaves its groups unknown and usable, as in the swarm). A mark that came from a reading is
-// lifted by a valid reading that shows the group healthy and is newer than the mark; agy's refusal mark never is, and
-// Muse's only by a reading observed after it (lane-marks.js liftable, issue 75).
+// harness keeps none, which leaves its groups unknown and usable, as in the swarm). The preparation, including which
+// mark a reading lifts, is pickData.
 function viewOf(config, name, reading, { marks, now, lift }) {
-  const settings = config.harnesses[name]
-  const life = lifeMs(config, name)
-  const groups = {}
-  for (const key of Object.keys(settings.groups ?? {})) {
-    const raw = isObject(reading?.groups?.[key]) ? reading.groups[key] : null
-    const held = marks.filter((mark) => mark.harness === name && mark.group === key && mark.until > now)
-    const lifted = raw !== null && held.length > 0 && held.every((mark) => laneMarks.liftable(mark, raw, { readAt: reading.readAt, reserve: config.reserve, lifeMs: life, now }))
-    if (lifted && typeof lift === 'function') for (const mark of held) lift(mark)
-    const mark = held.length > 0 && !lifted ? held[0] : null
-    groups[key] = groupView(settings.groups[key], raw ?? { unknown: true, windows: {} }, {
-      reserve: config.reserve, now, command: settings.command, mark, readAt: reading?.readAt ?? now, lifeMs: life,
-    })
-  }
-  return { command: settings.command, installed: true, groups }
+  return pickData(config, name, reading, { marks, now, lift, lifeMs: lifeMs(config, name), objectGroups: true })
 }
 
 // A reading that lacks a group of the lane table is not a whole reading: the swarm would read the harness again to
