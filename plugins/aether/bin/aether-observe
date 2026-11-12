@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-observe hook | file-issues
+// aether-observe hook | file-issues | proposals
 // hook: the handler of the observation hooks; reads the hook's JSON from stdin, prints nothing, always exits 0.
 // file-issues: the worker of the automatic issues of the development installation (spec 020); prints one JSON line and
 // exits 1 only when the gate or the destination fails.
+// proposals: shows the calibration proposals and the frictions of the last reading (spec 036); reads only, exits 0.
 // Any other use prints one JSON line with the usage error and exits 1.
 
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
 
-const USAGE = 'usage: aether-observe hook | file-issues'
+const USAGE = 'usage: aether-observe hook | file-issues | proposals'
 
 function hook() {
   try {
@@ -36,10 +37,25 @@ function fail(message) {
   return 1
 }
 
+// The calibration proposals and the frictions of the last reading, one per line, or `no reading yet` when there
+// is none. Reads only: it never writes, whatever the reading holds.
+function proposals() {
+  const { dataDir } = require(path.join(lib, 'run.js'))
+  const { readProposalLines } = require(path.join(lib, 'observe-read.js'))
+  const lines = readProposalLines(dataDir())
+  if (lines === null) {
+    process.stdout.write('no reading yet\n')
+  } else {
+    for (const line of lines) process.stdout.write(`${line}\n`)
+  }
+  return 0
+}
+
 function main(args) {
   const [verb, ...rest] = args
   if (verb === 'hook' && rest.length === 0) return hook()
   if (verb === 'file-issues' && rest.length === 0) return filed()
+  if (verb === 'proposals' && rest.length === 0) return proposals()
   return fail(USAGE)
 }
 

@@ -49,6 +49,9 @@ The thresholds are data in `config/observe.json`.
 |---|---|
 | `aether-observe hook` | The handler of the five hooks above. It reads the hook's JSON from its input and prints nothing |
 | `aether-observe file-issues` | The worker of the automatic issues (see below). A Lead session that ends starts it by itself when `autoissue` is on; run by hand, it files the failures of the last reading now. It prints one JSON line. In the standard installation, or with `autoissue` off, it prints an error and does nothing |
+| `aether-observe proposals` | Shows the calibration proposals and the frictions of the last reading, one per line with only identifiers, classes and counts, or `no reading yet` when there is no reading. It reads only and changes no configuration |
+
+A Lead startup says in its notes how many calibration proposals the last reading holds (`N calibration proposals: run aether-observe proposals`); with no reading, or with none, it says nothing.
 
 ## What is kept, and for how long
 

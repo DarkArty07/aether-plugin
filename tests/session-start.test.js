@@ -394,6 +394,52 @@ test('the session start bin no longer names the router notes or writes the route
   assert.doesNotMatch(source, /ROUTER_NOTES|routerNote|routerSettingsFrom/)
 })
 
+// Task 16 (#224): the start-up notes name the calibration proposals of the last reading, and no part does.
+function writeReading(dir, count) {
+  const items = []
+  for (let i = 0; i < count; i++) {
+    items.push({
+      id: `cost-mismatch:pair-${i}`,
+      kind: 'calibration',
+      type: 'cost-mismatch',
+      title: `Cost mismatch in pair pair-${i}`,
+      evidence: [`Pair "pair-${i}": observed cost of $1 per task in 5 calls (sheet: $0.5)`],
+      numbers: { actual: 1, ficha: 0.5, calls: 5 },
+      proposal: `Proposal: the observed cost of "pair-${i}" differs from its sheet. Not applied automatically.`,
+    })
+  }
+  fs.mkdirSync(path.join(dir, 'observe'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'observe', 'read.json'), JSON.stringify({ generatedAt: 1, items }))
+}
+
+test('a Lead startup notes the calibration proposals of the reading, and no part names them', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-data-')
+  writeReading(data, 22)
+  const r = start(repo.dir, data)
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.out.hookSpecificOutput.additionalContext, /22 calibration proposals/)
+  assert.match(r.out.hookSpecificOutput.additionalContext, /aether-observe proposals/)
+  assert.ok(r.stdout.length <= 9800, `a startup writes ${r.stdout.length} characters, within 9800`)
+  for (const args of [['--part', '1'], ['--part', '2'], ['--part', '3']]) {
+    const part = start(repo.dir, data, { args })
+    assert.equal(part.status, 0, part.stderr)
+    assert.doesNotMatch(part.stdout, /proposals/, args.join(' '))
+  }
+})
+
+test('a Lead startup with no reading, or with no proposals, says nothing about proposals', (t) => {
+  const bare = start(makeRepo(t).dir, tempDir(t, 'aether-data-'))
+  assert.equal(bare.status, 0, bare.stderr)
+  assert.doesNotMatch(bare.out.hookSpecificOutput.additionalContext, /proposals/)
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-data-')
+  writeReading(data, 0)
+  const r = start(repo.dir, data)
+  assert.equal(r.status, 0, r.stderr)
+  assert.doesNotMatch(r.out.hookSpecificOutput.additionalContext, /proposals/)
+})
+
 // R9 (spec 024): the welcome line is the hook's top-level systemMessage, shown to the person, on startup of a Lead session.
 const VERSION = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')).version
 const WELCOME_ES = (version) => `Aether ${version} · Lead listo · dime lo que quieres, o escribe /aether:help para ver qué puedo hacer`
