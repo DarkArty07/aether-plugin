@@ -9,6 +9,7 @@ const { loadGraph, unitBase, isWorktreeRoot, readBaseline } = require('./worktre
 const { changedFiles, checkEdits, runTests } = require('./delegate-checks.js')
 const { failureSignatures, judge } = require('./baseline.js')
 const { GATE_CUT } = require('./ladder.js')
+const { recordTiming } = require('./run-timings.js')
 
 const DEFAULT_TIMEOUT_MS = 570000
 
@@ -21,7 +22,18 @@ const SUMMARY_LINES = 25
 const SUMMARY_CHARS = 2000
 const summaryOf = (tail) => String(tail || '').split('\n').slice(-SUMMARY_LINES).join('\n').slice(-SUMMARY_CHARS)
 
+// The gate, timed (spec 036 R18): each evaluation (pass or fail) appends one `gate` line
+// with its duration to the run's timings. A hard error (no task, no worktree) is not a
+// pass and writes nothing; a timing never fails the gate.
 function gateCommand(cwd, runId, taskId, opts = {}) {
+  const { mainRoot } = repoPaths(cwd)
+  const started = Date.now()
+  const result = evaluateGate(cwd, runId, taskId, opts)
+  recordTiming(run.runDir(mainRoot, runId), 'gate', Date.now() - started)
+  return result
+}
+
+function evaluateGate(cwd, runId, taskId, opts = {}) {
   const { mainRoot } = repoPaths(cwd)
   const graph = loadGraph(mainRoot, runId)
   if (!graph.tasks || !graph.tasks[taskId]) {
