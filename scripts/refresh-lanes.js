@@ -157,9 +157,9 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
       hadError = true
       continue
     }
-    if (figures.code === null || figures.codeCostPerTaskUsd === null || figures.codeMinutesPerTask === null) {
+    const hasCode = typeof figures.code === 'number' && typeof figures.codeCostPerTaskUsd === 'number' && typeof figures.codeMinutesPerTask === 'number'
+    if (!hasCode) {
       failures.push(`${row.id}: the page of ${row.slug} has no code figure`)
-      continue
     }
 
     const updates = {}
@@ -168,13 +168,17 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
     if (typeof figures.costPerTaskUsd === 'number' && typeof row.costPerTaskUsd === 'number') {
       record(row, updates, 'costPerTaskUsd', figures.costPerTaskUsd)
     }
-    for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) {
-      record(row, updates, field, figures[field])
+    if (hasCode) {
+      for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) {
+        record(row, updates, field, figures[field])
+      }
     }
     row.checked = today
-    row.codeChecked = today
     updates.checked = today
-    updates.codeChecked = today
+    if (hasCode) {
+      row.codeChecked = today
+      updates.codeChecked = today
+    }
     rowUpdates.set(row.id, updates)
   }
 
