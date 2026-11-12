@@ -101,7 +101,8 @@ test('a unit fixed on launch 1 and blocked without a fix on launch 2 has no fixe
 test('the quality comment names fixedUnits, and neither comment says correction (#256 2, #236 5)', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'report.js'), 'utf8')
   const delegateLog = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'delegate-log.js'), 'utf8')
-  const comment = source.slice(0, source.indexOf('function qualityOf'))
+  const above = source.slice(0, source.indexOf('function qualityOf')).trimEnd().split('\n')
+  const comment = above.slice(above.findLastIndex((line) => !line.startsWith('//')) + 1).join('\n')
   assert.match(comment, /fixedUnits/)
   assert.doesNotMatch(source, /correction/i)
   assert.doesNotMatch(delegateLog, /correction/i)

@@ -28,12 +28,12 @@ const summaryOf = (tail) => String(tail || '').split('\n').slice(-SUMMARY_LINES)
 function gateCommand(cwd, runId, taskId, opts = {}) {
   const { mainRoot } = repoPaths(cwd)
   const started = Date.now()
-  const result = gateInner(cwd, runId, taskId, opts)
+  const result = evaluateGate(cwd, runId, taskId, opts)
   recordTiming(run.runDir(mainRoot, runId), 'gate', Date.now() - started)
   return result
 }
 
-function gateInner(cwd, runId, taskId, opts = {}) {
+function evaluateGate(cwd, runId, taskId, opts = {}) {
   const { mainRoot } = repoPaths(cwd)
   const graph = loadGraph(mainRoot, runId)
   if (!graph.tasks || !graph.tasks[taskId]) {
