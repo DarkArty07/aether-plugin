@@ -210,6 +210,51 @@ test('deliver with --widen rejects a path of a unit outside the last launch grap
   assert.equal(record(s).state, 'waiting')
 })
 
+test('stuckEnd on a delivered record leaves it delivered', (t) => {
+  const s = scenario(t)
+  commitIn(s.repo, s.unit.path, 'src/t1/a.js', 'one\n', 'the fix')
+  begin(s)
+  const commit = tip(s)
+  stuck.deliverFix(s.repo.dir, s.args.runId, 'task-1', { commit, reason: 'moved the test into Owns' })
+  const before = record(s)
+  const out = stuck.stuckEnd(s.repo.dir, s.args.runId, 'task-1', 'expired')
+  assert.equal(out.state, 'delivered')
+  const after = record(s)
+  assert.equal(after.state, 'delivered')
+  assert.equal(after.ended, undefined)
+  assert.equal(after.delivered.commit, before.delivered.commit)
+  assert.equal(after.delivered.at, before.delivered.at)
+})
+
+test('deliver rejects a commit that fails the adopt shape check, and a real commit still lands', (t) => {
+  const s = scenario(t)
+  commitIn(s.repo, s.unit.path, 'src/t1/a.js', 'one\n', 'the fix')
+  begin(s)
+  assert.throws(
+    () => stuck.deliverFix(s.repo.dir, s.args.runId, 'task-1', { commit: '-q', reason: 'x' }),
+    /hex id or a branch-like name/,
+  )
+  assert.equal(record(s).state, 'waiting')
+  const commit = tip(s)
+  const out = stuck.deliverFix(s.repo.dir, s.args.runId, 'task-1', { commit, reason: 'moved the test into Owns' })
+  assert.equal(out.commit, commit)
+  assert.equal(record(s).state, 'delivered')
+  const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'wt-stuck.js'), 'utf8')
+  assert.match(source, /rev-parse',\s*'--verify',\s*'--quiet',\s*'--end-of-options'/)
+})
+
+test('salvageUnit and stuckBegin read tasks through the one exported loader', (t) => {
+  assert.equal(typeof wt.loadRunGraph, 'function')
+  const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'wt-stuck.js'), 'utf8')
+  assert.equal(/\bfunction loadTasks\b/.test(source), false)
+  assert.match(source, /loadRunGraph/)
+  const s = scenario(t)
+  const salvaged = wt.salvageUnit(s.repo.dir, s.args.runId, 'task-1')
+  const begun = begin(s)
+  assert.equal(typeof salvaged.salvaged, 'boolean')
+  assert.equal(begun.state, 'waiting')
+})
+
 test('end closes the record with its outcome, once, and refuses an unknown outcome', (t) => {
   const s = scenario(t)
   begin(s)
