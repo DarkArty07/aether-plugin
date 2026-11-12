@@ -49,7 +49,7 @@ Run the `aether:run` workflow with that JSON as its args, unchanged. The run wor
 
 In a headless session (`claude -p`), Claude Code stops background work 10 minutes after the last turn, and that includes the run. Start such a session with `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, which waits for the run however long it takes.
 
-When launching the swarm, leave `${CLAUDE_PLUGIN_ROOT}/bin/aether-wt watch <runId>` in the background (`run_in_background`), from the integration worktree, with the absolute path of the plugin's bin; it ends when a unit gets stuck, when the run finishes (saying whether anything got stuck) or with `sin señal de la corrida` (relaunch the watch if the run is still alive).
+When launching the swarm, leave ${CLAUDE_PLUGIN_ROOT}/bin/aether-wt watch <runId> in the background (`run_in_background`), from the integration worktree, with the absolute path of the plugin's bin; it ends when a unit gets stuck, when the run finishes (saying whether anything got stuck) or with `sin señal de la corrida` (relaunch the watch if the run is still alive).
 
 While it runs:
 - do not edit the integration worktree;
@@ -107,11 +107,15 @@ Report from it:
 
 - **Stuck unit (the watch ended with one):** read the reason and the files outside `Owns` it reports; fix it in the unit's worktree (`worktree` of the output) and commit the fix on its branch; deliver it with:
 
-      aether-wt deliver <runId> <task> --commit <sha> --reason "<what you fixed>"
+```bash
+aether-wt deliver <runId> <task> --commit <sha> --reason "<what you fixed>"
+```
 
   (the commit must be the tip of the unit's branch; the workflow merges it with the standard rules: `Owns`, merge tests and baseline); if you cannot fix it (for example, a plan error outside `Owns`), decline it with:
 
-      aether-wt decline <runId> <task> --reason "<why>"
+```bash
+aether-wt decline <runId> <task> --reason "<why>"
+```
 
   so as not to leave the workflow waiting, and treat it as a blocked unit; relaunch the watch after each deliver or decline. Without a timely delivery (`stuckWaitSeconds` of `config/swarm.json`, 1800 by default, and the launch arguments may set another; 0 turns the wait off), the unit ends blocked and is treated as today.
 - **Blocked with a question:** answer it from the owner's intent, the spec and the plan when they cover it. Otherwise it goes to the owner: outside a run, ask them; in an autonomous run, it waits in the diary's "Espera tu sí" or "Decisiones", and the other units go on. Then have the Writer fix the plan task, have `/aether:design` review the fix in short mode on `tasks.md` (see "Later changes" in the `aether:designing` skill), and relaunch the unit.
