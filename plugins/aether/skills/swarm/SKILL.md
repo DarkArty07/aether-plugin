@@ -16,7 +16,7 @@ In an autonomous run (see the `aether:autonomous-runs` skill), what this skill s
 
 ## 1. Prepare
 
-- **The plan.** It is approved, by you as the owner's delegate or by the owner; every task has Aether fields; and `aether-plan check <plan.md>` passes, where `<plan.md>`, here and below, is the feature's `tasks.md`.
+- **The plan.** It is approved, by you as the owner's delegate or by the owner; every task has Aether fields; and `aether-plan check <plan.md>` passes, where `<plan.md>`, here and below, is the feature's `tasks.md`. Before compiling and launching, each `aether-plan check` warning that a task changes a file but not the tests that exercise it is blocking: put those tests in that task's Owns (the Lead may edit `tasks.md`, or have the Writer do it) or write in the diary why the test does not pin the change, then compile.
 - **The integration worktree.**
   - Create it with `git worktree add <path> -b <feature branch>`, on a feature branch. Never run the swarm on `main`. `aether-plan compile` has an `--allow-main` flag for when the owner explicitly asks to compile on `main`.
   - Keep it separate from the main checkout. The unit worktrees live under the main checkout's `.aether/worktrees/`, and a test command that searches the whole tree would run their unfinished tests at merge time. `aether-plan compile` warns when the two are the same.
