@@ -114,8 +114,9 @@ function attachedBranch(repo, dir) {
 // One editing delegate on the delegate path, through the real `aether-lane delegate` command: the
 // wrapper command plays the implementer on its unit worktree, then the command judges, tests and
 // reviews the unit branch.
-function delegateAttempt(t, { mode, files, sibling = null, owns = 'src/t1/**' }) {
+function delegateAttempt(t, { mode, files, sibling = null, owns = 'src/t1/**', prepare = null }) {
   const repo = makeRepo(t)
+  if (prepare) prepare(repo)
   const witness = path.join(tempDir(t, 'aether-witness-'), 'witness.jsonl')
   const env = { ...fx.laneEnv(t, { command: detachCommand(t, { mode, files, sibling, witness }) }), AETHER_LANE_HARNESSES: 'agy' }
   const brief = path.join(repo.dir, 'brief.md')
@@ -130,6 +131,40 @@ function delegateAttempt(t, { mode, files, sibling = null, owns = 'src/t1/**' })
 
 function packageOf(repo, runId, taskId = 'task-1') {
   return path.join(repo.dir, '.aether', 'runs', runId, 'packages', `${taskId}.diff`)
+}
+
+// removeUnit deletes the unit branch after it saves the patch, so a later `git rev-parse <branch>`
+// cannot show where the branch pointed. This hook records each committed ref update while the ref exists.
+function recordRefUpdates(repo, file) {
+  const hooks = path.join(repo.dir, '.git', 'hooks')
+  fs.mkdirSync(hooks, { recursive: true })
+  const hook = path.join(hooks, 'reference-transaction')
+  fs.writeFileSync(
+    hook,
+    [
+      `#!${process.execPath}`,
+      "'use strict'",
+      "const fs = require('node:fs')",
+      "if (process.argv[2] !== 'committed') process.exit(0)",
+      `fs.appendFileSync(${JSON.stringify(file)}, fs.readFileSync(0, 'utf8'))`,
+      '',
+    ].join('\n'),
+  )
+  fs.chmodSync(hook, 0o755)
+  repo.git('config', 'core.hooksPath', hooks)
+}
+
+// New oids of `ref` that are neither the branch's starting commit nor its deletion.
+function movedRefs(log, ref, start) {
+  const zero = '0'.repeat(40)
+  const shas = []
+  for (const line of log.split('\n')) {
+    const parts = line.trim().split(/\s+/)
+    if (parts.length < 3 || parts[2] !== ref) continue
+    if (parts[1] === start || parts[1] === zero) continue
+    shas.push(parts[1])
+  }
+  return shas
 }
 
 test('a detached commit ahead of the unit branch moves the branch, and the result, review and merge see it (swarm path)', (t) => {
@@ -184,7 +219,7 @@ test('a detached commit off the other line rejects the attempt with a reason nam
   assert.deepEqual(started.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'flash' }, started.stdout + started.stderr)
   const done = fx.waitDone(args, IMPLEMENT, env)
   const branch = run.unitBranch(args.runId, 'task-1')
-  assert.equal(done.status, 'rejected', JSON.stringify(done))
+  assert.equal(done.status, 'failed', JSON.stringify(done))
   const branchTip = branchOf(repo, branch)
   assert.equal(branchTip, before, 'the unit branch did not move')
   const detached = witnessHead(witness)
@@ -211,10 +246,12 @@ test('a detached commit off the other line rejects the attempt with a reason nam
   const json = r.json
   assert.equal(json.status, 'no-candidate', JSON.stringify(json))
   assert.ok(json.tried.length > 0, 'every pair met the same detached work')
-  for (const entry of json.tried) assert.equal(entry.cause, 'rejected', JSON.stringify(entry))
+  for (const entry of json.tried) assert.equal(entry.cause, 'failed', JSON.stringify(entry))
   const branch = `aether/${json.id}/task-1`
   const detached = witnessHead(witness)
-  for (const fragment of ['detached', detached.slice(0, 7), branch]) {
+  // The unit branch is created from the integration tip and is not moved. removeUnit then deletes
+  // it, so the branch's short sha is that tip, named in the reason, rather than a rev-parse after the fact.
+  for (const fragment of ['detached', detached.slice(0, 7), integrationBefore.slice(0, 7), branch]) {
     assert.ok(json.reason.includes(fragment), `the reason names ${fragment}: ${json.reason}`)
   }
   assert.equal(fs.existsSync(packageOf(repo, json.id)), false, 'the reviewer package is not built')
@@ -262,12 +299,24 @@ test('a detached commit touching a path outside Owns ends as a violation, with t
 })
 
 test('a detached commit touching a path outside Owns ends as a violation, with the branch moved first (delegate path)', (t) => {
-  const { repo, json, integrationBefore } = delegateAttempt(t, { mode: 'ahead', files: { committed: [['other/outside.js', 'x\n']], uncommitted: [] } })
+  const moves = path.join(tempDir(t, 'aether-moves-'), 'refs.log')
+  const { repo, json, integrationBefore, witness } = delegateAttempt(t, {
+    mode: 'ahead',
+    files: { committed: [['other/outside.js', 'x\n']], uncommitted: [] },
+    prepare: (target) => recordRefUpdates(target, moves),
+  })
   assert.equal(json.status, 'no-candidate', JSON.stringify(json))
   assert.ok(json.tried.length > 0)
   for (const entry of json.tried) assert.equal(entry.cause, 'violation', JSON.stringify(entry))
   const saved = fs.readFileSync(json.tried[0].patch, 'utf8')
   assert.ok(saved.includes('other/outside.js'), 'the salvaged patch holds the work the moved branch saw')
+  // removeUnit deletes the unit branch after salvage, so `git rev-parse <branch>` cannot be asserted
+  // afterwards. The patch is a worktree diff and would list the file even if the branch had stayed put.
+  // The hook saw the ref while it existed: reattachDetached points it at the detached commit before checkOwns.
+  const detachedHeads = fs.readFileSync(witness, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line).head)
+  const ref = `refs/heads/aether/${json.id}/task-1`
+  const log = fs.readFileSync(moves, 'utf8')
+  assert.deepEqual(movedRefs(log, ref, integrationBefore), detachedHeads, `the branch moved to each detached commit before the Owns check:\n${log}`)
   assert.equal(fs.existsSync(packageOf(repo, json.id)), false, 'the reviewer package is not built')
   assert.equal(repo.git('rev-parse', 'HEAD'), integrationBefore, 'the merge is not run')
 })

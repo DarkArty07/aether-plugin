@@ -505,10 +505,9 @@ async function delegateWithEnv(cwd, flags, deps) {
     const implementer = written.result
     const worktree = run.unitWorktree(paths.mainRoot, id, TASK_ID)
     const unitBranch = run.unitBranch(id, TASK_ID)
-    const reattached = work.reattachDetached(worktree, unitBranch)
-    if (reattached.rejected) {
-      return { status: 'no-candidate', id, run: id, cause: 'rejected', reason: reattached.reason, tried: written.tried }
-    }
+    // The implementer call already ran reattachDetached before its Owns check. This loop returns a
+    // result only when that call's status is ok, so a detached HEAD off the branch never arrives here:
+    // it is a failed attempt, and its reason is already `written.reason`.
     const tests = charge.tests === null ? null : runTests(worktree, charge.tests)
     const reviewed = await runLoop(ctx, {
       role: 'reviewer',

@@ -469,12 +469,13 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
   }
   // Changes outside Owns are a violation whatever the answer says, so they are checked first.
   // A commit the implementer left on a detached HEAD is moved onto the unit's branch first, so
-  // checkOwns and the review package see it; a detached HEAD off the branch rejects the attempt.
+  // checkOwns and the review package see it. A detached HEAD off the branch fails the attempt
+  // with that reason: `failed` is a status the workflow logs and the delegate loop carries.
   if (role === 'implementer') {
     const { mainRoot } = repoPaths(cwd)
     const branch = run.unitBranch(runId, task)
     const reattached = work.reattachDetached(run.unitWorktree(mainRoot, runId, task), branch)
-    if (reattached.rejected) return { status: 'rejected', detail: reattached.reason }
+    if (reattached.rejected) return { status: 'failed', detail: reattached.reason }
     const owns = work.checkOwns(cwd, runId, task)
     if (!owns.ok) return { status: 'violation', files: owns.files, detail: 'changes outside Owns' }
   }
