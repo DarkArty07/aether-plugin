@@ -44,9 +44,15 @@ test('every list the skill tells to touch exists in the tree, and every fixed li
   assert.deepEqual(have.filter((entry) => !found.includes(entry)), [], 'a list of the skill the code does not have')
 })
 
-test('the five lists of the delegates and the router are among the ones the skill names, ALLOWED_HARNESSES included (R23)', () => {
-  const have = listedBlock().map(({ name }) => name)
-  for (const name of ['HARNESSES', 'DELEGATE_HARNESSES', 'EXTERNAL', 'RENEWABLE', 'ALLOWED_HARNESSES']) assert.ok(have.includes(name), name)
+test('the one list of the delegates and the router is named in the skill, and its five copies read it (R23; spec 036 R23)', () => {
+  const have = listedBlock().map(({ file, name }) => `${file} ${name}`)
+  assert.ok(have.includes('plugins/aether/lib/harness-names.js HARNESS_NAMES'))
+  const copies = { 'delegate-calls.js': 'HARNESSES', 'router-pick.js': 'DELEGATE_HARNESSES', 'router-quota.js': 'EXTERNAL', 'router-renewal.js': 'RENEWABLE', 'lane-delegate.js': 'ALLOWED_HARNESSES' }
+  for (const [file, name] of Object.entries(copies)) {
+    const text = read(`plugins/aether/lib/${file}`)
+    assert.ok(text.includes("require('./harness-names.js')"), `${file} reads harness-names.js`)
+    assert.ok(SKILL.includes(`${name} (${file})`), `the skill names ${name} as a copy`)
+  }
 })
 
 test('the skill new-harness holds the rule of the top tier and the trap of the scales in their own sections (R24)', () => {

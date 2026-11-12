@@ -29,11 +29,7 @@ The owner's rule (2026-10-29, spec 022): «así como escogiste todas estas opcio
 
 <!-- lists:start -->
 plugins/aether/lib/harness/index.js HARNESS_NAMES
-plugins/aether/lib/delegate-calls.js HARNESSES
-plugins/aether/lib/router-pick.js DELEGATE_HARNESSES
-plugins/aether/lib/router-quota.js EXTERNAL
-plugins/aether/lib/router-renewal.js RENEWABLE
-plugins/aether/lib/lane-delegate.js ALLOWED_HARNESSES
+plugins/aether/lib/harness-names.js HARNESS_NAMES — the one list of the delegates and the router: HARNESSES (delegate-calls.js), DELEGATE_HARNESSES (router-pick.js), EXTERNAL (router-quota.js), RENEWABLE (router-renewal.js) and ALLOWED_HARNESSES (lane-delegate.js) copy it
 plugins/aether/lib/lane-pick.js REFRESHABLE — Codex stays out: its reading is free and the adapter takes it, so it has no refresher
 plugins/aether/hooks/panel-view.mjs HARNESS_NAMES
 scripts/build-models-index.js HARNESSES

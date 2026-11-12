@@ -9,9 +9,10 @@ const path = require('node:path')
 const { isObject } = require('./common.js')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 const { cacheFile, DEFAULT_LIFE_MINUTES, hasReset } = require('./lane-readings.js')
+const { HARNESS_NAMES } = require('./harness-names.js')
 
 // The harnesses whose quota reading the router keeps and renews.
-const EXTERNAL = ['agy', 'codex', 'grok', 'muse']
+const EXTERNAL = [...HARNESS_NAMES]
 const MINUTE_MS = 60000
 // How long a decision waits when muse is among the harnesses it waits for: muse's renewal is one minimal call of
 // 5 to 12 seconds, past the quota limit of 3 seconds, so the wait is at least this.

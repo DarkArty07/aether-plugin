@@ -6,7 +6,7 @@ const path = require('node:path')
 const NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']
 
 // An assignment of an array literal, or of a Set built from one. The body stops at the first `]`.
-const ASSIGN = /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:new\s+Set\s*\(\s*)?\[([\s\S]*?)\]/g
+const ASSIGN = /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:Object\.freeze\s*\(\s*)?(?:new\s+Set\s*\(\s*)?\[([\s\S]*?)\]/g
 const QUOTED = /'([^'\\]*)'|"([^"\\]*)"/g
 
 function quoted(body) {
