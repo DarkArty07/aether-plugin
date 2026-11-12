@@ -7,7 +7,7 @@
 ## Intención del dueño
 
 - Pregunta del brief de la corrida `auto-20261112-015910-9484`: «#238: ¿una entrega del Lead puede ampliar `Owns`? Hoy no puede: si el arreglo toca un archivo fuera de `Owns`, el Lead declina y lo integra a mano con `aether-wt adopt`.»
-- Respuesta del dueño: «si a todo esto y ademas borra lo que ya no se usa».
+- Respuesta del dueño: «si a todo esto y ademas borra lo que ya no se usa». El «sí» respondió a esta pregunta. «Borra lo que ya no se usa» pedía limpiar los worktrees, las ramas y los stashes que ya no se usaban; esa limpieza se hizo el 2026-11-12 y no es parte de este diseño.
 - El dueño leyó la explicación (una tarea se traba porque una prueba que no es suya revisa un texto que cambió; hoy el Lead la suelta, el enjambre termina sin ella ni sus dependientes, y después se integra a mano y se relanza) y dijo: «hazlo».
 
 ## Criterios
@@ -18,8 +18,8 @@
 - **C4.** Las pruebas de fusión, la línea base, el turno de fusión de una a la vez y la revisión final no cambian.
 - **C5.** El informe muestra los archivos ampliados junto al commit y el motivo del arreglo.
 - **C6.** La skill `swarm` dice cuándo ampliar y cuándo declinar. El arranque (`skills/using-aether`) no crece.
-- **C8.** «Borra lo que ya no se usa» se lee así: el texto que esta función deja viejo. Hoy la skill `swarm` (§5, línea «if you cannot fix it (for example, a plan error outside `Owns`)») y `docs/guide/troubleshooting.md` presentan declinar e integrar a mano como el único camino cuando el arreglo toca un archivo fuera de `Owns`. Ese texto se reescribe para que declinar quede solo para los casos que `--widen` no cubre. No queda código sin uso: `aether-wt adopt` y `declineUnit` siguen siendo el camino de los casos que `--widen` no cubre (otra unidad sin fusionar posee el archivo, o el error del plan es mayor), y `deliverFix` sin `--widen` sigue igual. Una búsqueda en las pruebas de documentación comprueba que el texto viejo no queda. Si el dueño quería otra cosa, ver Preguntas abiertas.
-- **C7.** Todo se prueba sin tokens: pruebas de las libs y un escenario del arnés de workflows con agentes simulados.
+- **C7.** El texto que esta función deja viejo se reescribe. Hoy la skill `swarm` (§5, «if you cannot fix it (for example, a plan error outside `Owns`)») y la frase de `docs/guide/troubleshooting.md` que empieza «The Lead then delivers a fix with `aether-wt deliver …`» presentan declinar e integrar a mano como el único camino cuando el arreglo toca un archivo fuera de `Owns`. Después, declinar queda solo para los casos que `--widen` no cubre: otra unidad sin fusionar posee el archivo, o el error del plan es mayor. `aether-wt adopt`, `declineUnit` y `deliverFix` sin `--widen` siguen como hoy.
+- **C8.** Todo se prueba sin tokens: pruebas de las libs y un escenario del arnés de workflows con agentes simulados.
 
 ## Diseño
 
@@ -42,7 +42,7 @@
 - La prueba de la fusión: una unidad entregada con `widen` se fusiona con el archivo ampliado; la misma unidad con otro archivo fuera de `Owns` que no está en `widen` se sigue rechazando con `ownership`; un registro en estado `ended` con `delivered.widen` presente da `ownership` (la ampliación muere con la espera); una entrega sin `widen` no quita nada y da `ownership` como hoy.
 - `tests/workflow-stuck.test.js`: un escenario en que la unidad trabada recibe una entrega con `widen`, se fusiona, sus dependientes corren en el mismo lanzamiento, hay una sola revisión final y `fixedByLead.widened` lleva la lista.
 - La prueba del informe: `fixedUnits` muestra `widened`, y la línea de nota `was fixed in flight by the Lead at <commit>: <reason> (widened: …)` lleva los archivos; sin `widened`, la nota es la de hoy.
-- `tests/swarm-stuck-docs.test.js`: la skill nombra `--widen` y cuándo declinar; la skill y `docs/guide/troubleshooting.md` ya no presentan declinar como único camino para un arreglo fuera de `Owns` (C8); las pruebas de tamaño del arranque siguen pasando.
+- `tests/swarm-stuck-docs.test.js`: la skill nombra `--widen` y cuándo declinar; la skill y `docs/guide/troubleshooting.md` ya no presentan declinar como único camino para un arreglo fuera de `Owns` (C7): la frase exacta «for example, a plan error outside `Owns`» ya no está en la skill, y la frase de `troubleshooting.md` nombra `--widen`; las aserciones que ya existen sobre `aether-wt decline` (`swarm-stuck-docs.test.js:19` y `:39`) se mantienen; las pruebas de tamaño del arranque siguen pasando.
 
 ## Fuera de alcance
 
@@ -57,12 +57,7 @@
 - **Rechazar una ruta que ya está en `Owns`** en vez de ignorarla: un error claro es mejor que una lista que no dice lo que hace. Reversible.
 - **La regla de C3 mira solo las unidades sin fusionar.** Una unidad ya fusionada no choca: las fusiones van de una a la vez y git detecta el conflicto como hoy. Una unidad bloqueada u omitida cuenta como sin fusionar, porque su trabajo puede volver en un relanzamiento. Reversible.
 
-- **Lectura de «borra lo que ya no se usa».** El dueño no dijo qué. Se toma como el texto de la skill y de la guía que esta función deja viejo (C8), porque ningún código de #238 queda sin uso. Reversible: si pensaba en otra cosa, se agrega o se saca en la revisión.
 - **Sin cruce con `outside` de la unidad trabada.** Esa lista sale del rescate y puede estar vieja cuando el Lead arregla; basta la comprobación contra `changedFiles` de la rama. Reversible.
-
-## Preguntas abiertas
-
-- ¿«Borra lo que ya no se usa» es el texto viejo de la skill y la guía (C8), o código o documentos de otra parte de #238 o la spec 034 que yo no vi?
 
 ## Acciones irreversibles
 
