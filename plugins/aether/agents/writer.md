@@ -61,7 +61,7 @@ Put this block right after each task heading:
 
 The swarm starts every task on the cheapest model and raises it by itself: do not name a model or an effort for the implementer. Every task is one module and one concern; when tests cannot pin it down, split it.
 
-- **Review** is optional: `high`, `xhigh` or `max`, then " — " and the reason. It sets the supervisor's effort for every attempt at the task, which is `high` without it. `xhigh` costs about 2.5 times more than `high` on Sonnet; a task with `xhigh` or `max` also raises the run's final review to Opus `xhigh`, about 1.7 times the cost of Opus `high`; and, with `superdelegation` on, the supervisor of Sonnet's work can run on Opus. Name **Review** `xhigh` or `max` only where a mistake would reach user data, security or concurrency, and say which.
+- **Review** is optional: `high`, `xhigh` or `max`, then " — " and the reason. It sets the supervisor's effort for every attempt at the task, which is `high` without it. `xhigh` costs about 2.5 times more than `high` on Sonnet (source: the per-task cost figures in `docs/guide/models-by-role.md`); a task with `xhigh` or `max` also raises the run's final review to Opus `xhigh`, about 1.7 times the cost of Opus `high`; and, with `superdelegation` on, the supervisor of Sonnet's work can run on Opus. Name **Review** `xhigh` or `max` only where a mistake would reach user data, security or concurrency, and say which.
 - **Area** is a lowercase slug. The supervisors of one area share its latest rulings.
 - **Owns** lists the files or globs (`*`, `**`, `?`) the task may change, and every existing test that pins what the task changes (search `tests/` for old text, `readdirSync` for added or removed files or folders, and global rules). Tasks in the same wave must not own overlapping paths; if such a test belongs to another task of the same wave, move the change or add a dependency.
 - **Depends on** is `none` for an independent task, or one line per dependency in the form `Task N — reason`. The line is required, and every dependency needs a reason.
@@ -84,8 +84,9 @@ The swarm starts every task on the cheapest model and raises it by itself: do no
 
 When the message asks for the structured output, give only the fields of the shape of the work it asked for.
 
+The workflow reads your documents from their fixed paths and runs `aether-plan check` itself: report only what it cannot see there.
+
 **After the spec:**
-- `spec`: the path of `spec.md`.
 - `commit`: the commit that holds `spec.md`.
 - `clarify`: each `[NEEDS CLARIFICATION: <question>]` mark that remains in `spec.md`, written as it is in the file. An empty list when none remains. A missing detail that you can settle with a reversible default goes under `assumptions` instead.
 - `assumptions`: each reversible default you chose where the intent is silent.
@@ -94,17 +95,13 @@ When the message asks for the structured output, give only the fields of the sha
 - `disagreements`: each Judge finding you did not apply, with why.
 
 **After the plan and the tasks:**
-- `plan`: the path of `plan.md`.
-- `tasks`: the path of `tasks.md`.
 - `commit`: the commit that holds `plan.md` and `tasks.md`.
-- `check`: what `aether-plan check` printed.
 - `complexity`: the text of each row of the plan's `## Complexity` table, each naming the requirement it serves.
 - `assumptions`: each reversible default you recorded under `## Assumptions` in `plan.md`.
 - `questions`: each open question for the Lead.
 - `disagreements`: each Judge finding you did not apply, with why.
 
 **After a revision:**
-- `document`: the path of the corrected document; `tasks.md` when the document is a plan.
 - `commit`: the commit that holds it.
 - `assumptions`: each reversible default you chose while correcting it.
 - `questions`: each open question for the Lead.

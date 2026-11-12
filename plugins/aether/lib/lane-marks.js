@@ -19,6 +19,10 @@
 // it ends by itself. Muse's subscription refusal is the exception (issue 75): its reading is the allowance of the
 // same windows the 429 refuses for, so a healthy reading lifts its mark, but only one observed after the refusal: Muse
 // keeps the last allowance with no expiry, and a stale one is what the refused call had already seen.
+//
+// Marks of spent pairs live in one store: this directory, which the swarm reads and the router reads and writes.
+// Marks the router once kept apart, under `<dataDir>/router/lanes/marks/`, are moved here on the first read
+// (`migrateRouterMarks`).
 // Family: lane.
 
 const fs = require('node:fs')
@@ -37,6 +41,12 @@ const LOCK_WAIT_MS = 2 * 1000
 
 function marksDir(dataDir) {
   return path.join(dataDir, 'lanes', 'marks')
+}
+
+// The store the router used to keep apart, `<dataDir>/router/lanes/marks/`. A literal on purpose: router-marks.js
+// cannot be required from this file (the dependency goes the other way).
+function legacyRouterMarksDir(dataDir) {
+  return path.join(dataDir, 'router', 'lanes', 'marks')
 }
 
 function markFile(dataDir, harness, group) {
@@ -77,7 +87,98 @@ function parseMark(raw, now) {
   return data
 }
 
+// A mark as stored, read without judging whether it is live: the migration compares the raw `until` numbers, so an
+// expired mark is moved or merged the same way and stays expired. Null when the file cannot be read as a mark
+// (missing, not JSON, not an object, or with no finite numeric `until`).
+function readStoredMark(file) {
+  let data
+  try {
+    data = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    return null
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  if (typeof data.until !== 'number' || !Number.isFinite(data.until)) return null
+  return data
+}
+
+// Moves one file of the old router store into the single store: the same name, by rename, or copy and delete.
+// When the store already holds the same name, the mark whose `until` is later is kept (a tie keeps the one already
+// in the store), so a mark never shortens; the other mark's `reason` and `source` are kept in the kept mark's
+// `alsoReasons` array. Returns 'moved', 'skipped' (left where it is: not a mark), or null (left for the next read).
+function migrateOneMark(dataDir, entry) {
+  const oldFile = path.join(legacyRouterMarksDir(dataDir), entry)
+  let oldMark
+  try {
+    oldMark = readStoredMark(oldFile)
+  } catch {
+    return null
+  }
+  if (oldMark === null) return 'skipped'
+  const storeFile = path.join(marksDir(dataDir), entry)
+  try {
+    return withLock(storeFile, () => {
+      const current = readStoredMark(storeFile)
+      if (current === null) {
+        if (fs.existsSync(storeFile)) {
+          // The store's file is no mark: the readable old mark replaces it, and nothing readable is lost.
+          writeAtomic(storeFile, `${JSON.stringify(oldMark, null, 2)}\n`)
+        } else {
+          try {
+            fs.renameSync(oldFile, storeFile)
+          } catch {
+            fs.copyFileSync(oldFile, storeFile)
+            fs.unlinkSync(oldFile)
+          }
+          return 'moved'
+        }
+      } else {
+        const oldWins = oldMark.until > current.until
+        const winner = oldWins ? oldMark : current
+        const loser = oldWins ? current : oldMark
+        const entryOf = { source: loser.source ?? null, reason: loser.reason ?? null, until: loser.until }
+        const alsoReasons = Array.isArray(winner.alsoReasons) ? [...winner.alsoReasons] : []
+        if (!alsoReasons.some((had) => had && had.source === entryOf.source && had.reason === entryOf.reason && had.until === entryOf.until)) {
+          alsoReasons.push(entryOf)
+        }
+        writeAtomic(storeFile, `${JSON.stringify({ ...winner, alsoReasons }, null, 2)}\n`)
+      }
+      try {
+        fs.unlinkSync(oldFile)
+      } catch {}
+      return 'moved'
+    }, { waitMs: LOCK_WAIT_MS, staleMs: LOCK_STALE_MS })
+  } catch {
+    return null
+  }
+}
+
+// Moves every `<harness>__<group>.json` of the old router store into the single store and removes the old files.
+// Runs on the first read of `liveMark`, `liveMarks` and of `readAllMarks`, and again at no cost when the old folder
+// is empty or missing. A file that cannot be read as a mark is left where it is and named in `skipped`, never
+// deleted. Never throws: a read that triggers the migration still reads.
+function migrateRouterMarks(dataDir) {
+  const result = { moved: [], skipped: [] }
+  let entries
+  try {
+    entries = fs.readdirSync(legacyRouterMarksDir(dataDir))
+  } catch {
+    return result
+  }
+  for (const entry of entries.sort()) {
+    if (entry.startsWith('.') || !entry.endsWith('.json')) continue
+    if (!path.basename(entry, '.json').includes('__')) continue
+    const outcome = migrateOneMark(dataDir, entry)
+    if (outcome === 'moved') result.moved.push(entry)
+    else if (outcome === 'skipped') result.skipped.push(entry)
+  }
+  return result
+}
+
 function liveMark(dataDir, harness, group, now = Date.now()) {
+  try {
+    migrateRouterMarks(dataDir)
+  } catch {}
   let raw
   try {
     raw = fs.readFileSync(markFile(dataDir, harness, group), 'utf8')
@@ -90,6 +191,9 @@ function liveMark(dataDir, harness, group, now = Date.now()) {
 // The live marks, sorted. known(harness, group), when given, keeps only the marks of a group the lane table has: a file
 // of a group the table dropped (agy's old `gemini` key, since the table split it into `argon` and `flash`) is no mark for anyone.
 function liveMarks(dataDir, now = Date.now(), known = null) {
+  try {
+    migrateRouterMarks(dataDir)
+  } catch {}
   const dir = marksDir(dataDir)
   let entries
   try {
@@ -254,9 +358,11 @@ module.exports = {
   DEFAULT_MARK_MINUTES,
   REFUSAL_REASON,
   marksDir,
+  legacyRouterMarksDir,
   MAX_MARK_MS,
   markFile,
   markDry,
+  migrateRouterMarks,
   liveMark,
   liveMarks,
   healthyReading,

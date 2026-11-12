@@ -45,6 +45,10 @@ const TREE_PREFIX = 'AETHER-TREE:'
 const PLAIN_AGENTS = ['general-purpose', 'Explore']
 // A refused launch still has to run something, and does nothing: the cheapest call, which only says why.
 const REFUSED_ARGS = { model: 'haiku', effort: 'low' }
+// Spec 036 R7: the brief of an editing external pair never asks for `checkout --detach` (it carries no
+// startSection), so when the Lead's own prompt asks for it, the result tells the Lead and leaves the prompt
+// and the brief as written. A prompt without the text, or a delegate on Claude, gets no note.
+const DETACHED_NOTE = 'note: the prompt you wrote asks the delegate to run "checkout --detach"; the system does not ask for it and the brief is left as you wrote it. A commit on a detached HEAD is followed by the branch (spec 036 R4), but ask for the branch instead.'
 const VERDICTS = ['approve', 'fix', 'infeasible']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const TASK_KINDS = ['launch', 'result', 'verdict', 'answer']
@@ -718,7 +722,8 @@ async function begin(input, deps = {}) {
       notes.push(notice)
     }
     notes.push(stepNote(id, step, attempt, launchKind, args, pick))
-    return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: external === null ? { task: id, attempt } : null })
+    const detached = edits && pick !== null && prompt.includes('checkout --detach')
+    return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: external === null ? { task: id, attempt } : null, ...(detached ? { note: DETACHED_NOTE } : {}) })
   } catch (err) {
     return emptyPlan({ id: isId(id) ? id : null, error: messageOf(err) })
   }
