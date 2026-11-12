@@ -13,7 +13,7 @@ const put = (file, text = 'x') => {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, text)
 }
-const human = (text, time) => JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, timestamp: time, message: { role: 'user', content: text } })
+const human = (text, time, entrypoint) => JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, ...(entrypoint ? { entrypoint } : {}), timestamp: time, message: { role: 'user', content: text } })
 
 function world(t) {
   const repo = makeRepo(t)
@@ -35,7 +35,7 @@ function world(t) {
   const bash = (command, env = enforce) => decideBash({ hook_event_name: 'PreToolUse', cwd: repo.dir, session_id: 's1', tool_name: 'Bash', tool_input: { command } }, env)
   const trust = (...authors) => put(path.join(data, 'skills', 'trusted.json'), JSON.stringify({ authors }))
   const allow = (quote) => {
-    put(path.join(configDir, 'projects', '-p', 's1.jsonl'), human(quote, '2026-11-07T10:00:00.000Z') + '\n')
+    put(path.join(configDir, 'projects', '-p', 's1.jsonl'), human(quote, '2026-11-07T10:00:00.000Z', 'cli') + '\n')
     return autonomy.grant(repo.dir, { class: 'skill-install', quote, session: 's1', scope: 'session' }, { configDir })
   }
   return { repo, home, data, configDir, enforce, file, bash, trust, allow }
