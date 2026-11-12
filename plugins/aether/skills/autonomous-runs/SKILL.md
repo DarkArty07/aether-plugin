@@ -72,7 +72,7 @@ A new figure for a `seat/<id>` label already recorded replaces the old one. The 
     ## Propuestas
     ## Tiempo y costo
     - Trabajó solo <h> h de <tope> h, y te consultó <n> veces.
-    - US$ <gasto> de US$ <tope>. La cifra cubre el swarm, las lanes y los asientos externos; no cubre los turnos del Lead, ni los de los asientos nativos, ni los de las tareas delegadas.
+    - US$ <gasto> de US$ <tope>. La cifra cubre el swarm, sus lanes, los asientos externos y los agentes nativos que corrieron dentro de la ventana de cada lanzamiento del swarm, turnos del Lead incluidos; no cubre las tareas delegadas.
     - Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.
 
 The session line of Tiempo y costo comes from `aether-report --spend --session <id de esta sesión>`, in the format of using-aether; its clause «y no es la cifra del tope» tells it from the ceiling line above it. It goes in every closing brief, whatever the Resultado.

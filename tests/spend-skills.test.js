@@ -15,7 +15,7 @@ const RULE = "Before deleting worktrees and temporary files, and before any push
 const LINE = 'Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.'
 const NONE = 'Sesión <id>: todavía no hay gasto registrado.'
 const INCOMPLETE = 'El total está incompleto.'
-const CAP = '- US$ <gasto> de US$ <tope>. La cifra cubre el swarm, las lanes y los asientos externos; no cubre los turnos del Lead, ni los de los asientos nativos, ni los de las tareas delegadas.'
+const CAP = '- US$ <gasto> de US$ <tope>. La cifra cubre el swarm, sus lanes, los asientos externos y los agentes nativos que corrieron dentro de la ventana de cada lanzamiento del swarm, turnos del Lead incluidos; no cubre las tareas delegadas.'
 
 test('using-aether, which every Lead session reads, holds the closing rule word for word, before the irreversible actions', () => {
   assert.ok(USING.includes(RULE))
@@ -27,7 +27,7 @@ test('using-aether, which every Lead session reads, holds the closing rule word 
 })
 
 test('the autonomous-runs report keeps the ceiling line and adds the session line under it', () => {
-  assert.ok(RUNS.includes(CAP), 'the ceiling line is as before')
+  assert.ok(RUNS.includes(CAP), 'the ceiling line says what the figure counts (#227)')
   assert.ok(RUNS.includes(`- ${LINE}`))
   assert.ok(RUNS.indexOf(CAP) < RUNS.indexOf(LINE))
   for (const text of ['using-aether', 'y no es la cifra del tope', 'aether-report --spend --session']) assert.ok(RUNS.includes(text), text)
