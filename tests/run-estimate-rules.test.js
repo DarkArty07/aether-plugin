@@ -21,16 +21,17 @@ test('autonomous-runs requires per-part estimates with sources and a ceiling cov
   )
 })
 
-test('autonomous-runs Cost section describes what the figure really counts and warns on review per launch (#227)', () => {
+test('autonomous-runs Cost section describes what the figure really counts and warns on review per launch (#227, #252)', () => {
   assert.match(
     AUTONOMOUS,
-    /The figure covers the swarm, its lanes, the external seats you record, and every native agent of the session inside a swarm launch's window, the Lead's turns included; not delegate tasks, and not native agents outside those windows/
+    /The figure adds up every run of `aether-wt` that starts while the run is open: each swarm launch and each attempt of a delegate task on another harness, each with its lanes, the external seats you record, and every native agent of the session inside its window, the Lead's turns included\. Runs that overlap count the same requests once per run, so the figure can exceed what the session spent \(issue 252\)\. A delegate task on Claude counts only inside those windows: the hours ceiling is the real guard\./
   )
   assert.match(
     AUTONOMOUS,
     /Each swarm launch that ends with everything merged pays its own final review, so launching in batches pays one per batch/
   )
   assert.doesNotMatch(AUTONOMOUS, /not your own turns, nor the native Judge's, Writer's and Examiner's/)
+  assert.doesNotMatch(AUTONOMOUS, /not delegate tasks/)
 })
 
 test('using-aether estimates by part from runs.jsonl and aether-report --seats, within size limit (#227)', () => {
