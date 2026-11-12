@@ -287,6 +287,39 @@ function compareFindings(a, b) {
     || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }
 
+// The reading as lines of identifiers, classes and counts only, for `aether-observe proposals`: one line per
+// calibration proposal and one per friction, in the order the reading holds them. A failure is never shown here:
+// the failures already have their drafts under observe/issues/ and (in development, with autoissue) their issues.
+// Never throws: the verb reads only.
+function proposalLinesOf(reading) {
+  const items = reading && typeof reading === 'object' && Array.isArray(reading.items) ? reading.items : []
+  const lines = []
+  for (const item of items) {
+    if (!item || typeof item !== 'object' || typeof item.id !== 'string') continue
+    if (item.kind === 'calibration') {
+      const proposal = typeof item.proposal === 'string' && item.proposal ? item.proposal : item.title
+      if (typeof proposal !== 'string' || !proposal) continue
+      lines.push(`proposal ${item.id}: ${proposal.replace(/\s*\n\s*/g, ' ')}`)
+    } else if (item.kind === 'friction') {
+      if (typeof item.title !== 'string' || !item.title) continue
+      lines.push(`friction ${item.id}: ${item.title.replace(/\s*\n\s*/g, ' ')}`)
+    }
+  }
+  return lines
+}
+
+// The lines of the last reading, or null when there is no reading to show. Reads only: never writes.
+function readProposalLines(dataDir) {
+  let reading
+  try {
+    reading = JSON.parse(fs.readFileSync(path.join(observeDir(dataDir), 'read.json'), 'utf8'))
+  } catch {
+    return null
+  }
+  if (!reading || typeof reading !== 'object') return null
+  return proposalLinesOf(reading)
+}
+
 function readObservations({ dataDir, repoRoot = null, now = Date.now(), pairs = loadPairs().pairs, cfg = loadObserveConfig(), prices } = {}) {
   digestAll(dataDir, prices === undefined ? {} : { prices })
   const sessions = readSummary(dataDir).sessions
@@ -328,4 +361,4 @@ function readObservations({ dataDir, repoRoot = null, now = Date.now(), pairs = 
   return result
 }
 
-module.exports = { readObservations }
+module.exports = { readObservations, proposalLinesOf, readProposalLines }

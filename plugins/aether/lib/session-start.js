@@ -497,6 +497,13 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     cleanNote,
     sweepNote(cwd, env),
   ].filter(Boolean).join('\n\n')
+  // The calibration proposals of the last reading (spec 036 R21): one line of the notes command, never of a part.
+  // A note must never stop startup.
+  let calibrationNote = ''
+  try {
+    const { dataDir } = require('./run.js')
+    calibrationNote = require('./observe-notice.js').proposalsNote(dataDir(env))
+  } catch { /* A note must never stop startup. */ }
   // The open run's note stays the last thing of the context (tests/session-start-autonomy.test.js): the continuity notice
   // goes before it.
   const runNote = autonomyNote(cwd)
@@ -509,7 +516,7 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
   // The continuity notice that goes to the Lead's context (none for a project's first session), and the whole context.
   const contextOf = (lines) => {
     const contextNotice = firstSession ? '' : lines.join('\n')
-    const additionalContext = [baseContext, contextNotice, tidyLines.join('\n'), idleLines.join('\n'), runNote]
+    const additionalContext = [baseContext, contextNotice, tidyLines.join('\n'), idleLines.join('\n'), calibrationNote, runNote]
       .filter(Boolean)
       .join('\n\n')
     return { contextNotice, additionalContext }
