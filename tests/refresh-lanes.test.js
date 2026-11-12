@@ -103,17 +103,89 @@ test('without --write nothing is written, and with it every row with a page is p
   assert.equal(after.filter((line) => line.includes('"harness": "claude"')).length, 2)
 })
 
-test('a page with no code figure and a page that does not answer leave their rows alone, the second with exit code 1', async (t) => {
+test('a page with no code figure still writes intelligence, cost and checked but no code fields, and a page that does not answer leaves its row alone, the second with exit code 1', async (t) => {
   const files = setup(t)
   const noCode = async (url) => ({ ok: true, status: 200, text: async () => page(block(url.split('/').pop(), GOOD['claude-a-xhigh']).replace('terminalbench-4-0', 'other-bench')) })
   const absent = await run(files, async (url) => (url.endsWith('claude-a-high') ? serve(GOOD)(url) : noCode(url)), ['--write'])
   assert.equal(absent.exitCode, 0)
   assert.match(absent.stdout, /claude\/a@xhigh: the page of claude-a-xhigh has no code figure/)
-  assert.equal(rowsOf(files)[1].code, undefined)
+  const [, xhighNoCode, otherNoCode] = rowsOf(files)
+  // The no-code row gets its intelligence, cost and checked from the pass, but no code fields or codeChecked are invented.
+  assert.deepEqual([xhighNoCode.intelligence, xhighNoCode.costPerTaskUsd, xhighNoCode.checked], [31, 0.21, '2026-11-12'])
+  assert.equal(xhighNoCode.code, undefined)
+  assert.equal(Object.hasOwn(xhighNoCode, 'code'), false)
+  assert.equal(Object.hasOwn(xhighNoCode, 'codeCostPerTaskUsd'), false)
+  assert.equal(Object.hasOwn(xhighNoCode, 'codeMinutesPerTask'), false)
+  assert.equal(Object.hasOwn(xhighNoCode, 'codeChecked'), false)
+  // A null cost stays null on a no-code page too, while its intelligence and checked still land.
+  assert.deepEqual([otherNoCode.intelligence, otherNoCode.costPerTaskUsd, otherNoCode.checked], [31, null, '2026-11-12'])
+  assert.equal(Object.hasOwn(otherNoCode, 'code'), false)
+  assert.equal(Object.hasOwn(otherNoCode, 'codeChecked'), false)
+  const beforeAbsent = rowsOf(files)[1]
   const out = await run(files, serve({ 'claude-a-high': GOOD['claude-a-high'] }), ['--write'])
   assert.equal(out.exitCode, 1)
   assert.match(out.stdout, /claude\/a@xhigh: the page answered 404/)
-  assert.equal(rowsOf(files)[1].code, undefined)
+  assert.deepEqual(rowsOf(files)[1], beforeAbsent)
+  // A page with no block for the slug at all also leaves the row untouched.
+  const beforeNoBlock = rowsOf(files)[1]
+  const noBlock = await run(files, async () => ({ ok: true, status: 200, text: async () => page(block('some-other-model', GOOD['claude-a-xhigh'])) }), ['--write'])
+  assert.match(noBlock.stdout, /claude\/a@xhigh: the page of claude-a-xhigh has no figure/)
+  assert.deepEqual(rowsOf(files)[1], beforeNoBlock)
+})
+
+test('a non-Claude page with no Terminal-Bench still writes its intelligence and checked with the single date of the pass, and invents no code fields', async (t) => {
+  const dir = tempDir(t, 'aether-refresh-nocode-nonclaude-')
+  const files = { pairs: path.join(dir, 'pairs.json'), ladder: path.join(dir, 'ladder.json') }
+  const claude = row('claude/haiku@high', { slug: 'claude-haiku-5-5-high', intelligence: 29.6, costPerTaskUsd: 0.159, code: 21.72, codeCostPerTaskUsd: 0.331, codeMinutesPerTask: 12.1, codeChecked: '2026-11-10' })
+  const agy = row('agy/gemini-4-argon@high', { slug: 'gemini-4-argon', intelligence: 50, costPerTaskUsd: 7 })
+  const lines = [claude, agy].map((r) => `    ${spaced(r)}`)
+  fs.writeFileSync(files.pairs, `{\n  "fetchedAt": "2026-10-19",\n  "pairs": [\n${lines.join(',\n')}\n  ]\n}\n`)
+  fs.writeFileSync(files.ladder, `${JSON.stringify(LADDER, null, 2)}\n`)
+  const fetch = async (url) => {
+    const slug = url.split('/').pop()
+    if (slug === 'gemini-4-argon') return { ok: true, status: 200, text: async () => page(block(slug, fig(50.5, 7.1, 0.3, 1.2, 600)).replace('terminalbench-4-0', 'other-bench')) }
+    return serve({ 'claude-haiku-5-5-high': fig(29.6, 0.159, 0.22, 0.34, 730) })(url)
+  }
+  const out = await run(files, fetch, ['--write'])
+  assert.equal(out.exitCode, 0)
+  assert.match(out.stdout, /agy\/gemini-4-argon@high: the page of gemini-4-argon has no code figure/)
+  const rows = rowsOf(files)
+  // The single-date assertion covers checked of every row whose page answered, including the no-code one.
+  assert.deepEqual(new Set(rows.map((r) => r.checked)), new Set(['2026-11-12']))
+  const written = rows.find((r) => r.id === 'agy/gemini-4-argon@high')
+  assert.deepEqual([written.intelligence, written.costPerTaskUsd, written.checked], [50.5, 7.1, '2026-11-12'])
+  assert.equal(Object.hasOwn(written, 'code'), false)
+  assert.equal(Object.hasOwn(written, 'codeCostPerTaskUsd'), false)
+  assert.equal(Object.hasOwn(written, 'codeMinutesPerTask'), false)
+  assert.equal(Object.hasOwn(written, 'codeChecked'), false)
+  const claudeWritten = rows.find((r) => r.id === 'claude/haiku@high')
+  assert.equal(claudeWritten.codeChecked, '2026-11-12')
+})
+
+test('a Claude page with no code figure still refreshes its intelligence so its Spark estimate follows it, leaves its code fields as they are, and never writes the ladder', async (t) => {
+  const dir = tempDir(t, 'aether-refresh-nocode-claude-')
+  const files = { pairs: path.join(dir, 'pairs.json'), ladder: path.join(dir, 'ladder.json') }
+  const haikuHigh = row('claude/haiku@high', { slug: 'claude-haiku-5-5-high', intelligence: 29.6, costPerTaskUsd: 0.159, code: 21.72, codeCostPerTaskUsd: 0.331, codeMinutesPerTask: 12.1, checked: '2026-11-10', codeChecked: '2026-11-10' })
+  const sparkHigh = { id: 'muse/muse-spark-1.3@high', slug: 'muse-spark-1-3-high', harness: 'muse', model: 'muse-spark-1.3', family: 'muse-spark-1.3', effort: 'high', group: 'muse', intelligence: 28.7, costPerTaskUsd: 0.824, outputTokensPerSecond: null, timeToFirstTokenS: null, estimateOf: 'claude/haiku@high', estimateDistance: -0.9, ownerDecision: 'Estimate = the figure of the Haiku row of the same effort plus a stored distance (spec 036 R10).' }
+  const lines = [haikuHigh, sparkHigh].map((r) => `    ${spaced(r)}`)
+  fs.writeFileSync(files.pairs, `{\n  "fetchedAt": "2026-10-19",\n  "pairs": [\n${lines.join(',\n')}\n  ]\n}\n`)
+  fs.writeFileSync(files.ladder, `${JSON.stringify(LADDER, null, 2)}\n`)
+  const ladderBefore = fs.readFileSync(files.ladder, 'utf8')
+  const fetch = async (url) => {
+    const slug = url.split('/').pop()
+    return { ok: true, status: 200, text: async () => page(block(slug, fig(29.9, 0.159, 0.22, 0.34, 730)).replace('terminalbench-4-0', 'other-bench')) }
+  }
+  const out = await run(files, fetch, ['--write'])
+  assert.equal(out.exitCode, 0)
+  assert.match(out.stdout, /claude\/haiku@high: the page of claude-haiku-5-5-high has no code figure/)
+  const rows = rowsOf(files)
+  const haiku = rows.find((r) => r.id === 'claude/haiku@high')
+  assert.deepEqual([haiku.intelligence, haiku.checked], [29.9, '2026-11-12'])
+  // Existing code fields and their date are left as they are when the page gives no code figure.
+  assert.deepEqual([haiku.code, haiku.codeCostPerTaskUsd, haiku.codeMinutesPerTask, haiku.codeChecked], [21.72, 0.331, 12.1, '2026-11-10'])
+  const spark = rows.find((r) => r.id === 'muse/muse-spark-1.3@high')
+  assert.equal(spark.intelligence, 29, 'the estimate is the refreshed reference plus the stored distance')
+  assert.equal(fs.readFileSync(files.ladder, 'utf8'), ladderBefore)
 })
 
 test('a 403 or a 429 from a page stops the refresh: the page is named, no later page is asked, nothing is written, and the exit code is 1', async (t) => {
