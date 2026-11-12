@@ -207,6 +207,27 @@ test('a quiet run whose unit worktree is being written is not silent', async (t)
   assert.equal(out.watch, 'ended')
 })
 
+test('a worktree of an attended unit does not keep a quiet run alive', async (t) => {
+  for (const state of ['declined', 'delivered', 'ended']) {
+    const s = scenario(t)
+    const unit = wt.ensure(s.repo.dir, s.args.runId, 'task-1')
+    fs.writeFileSync(path.join(unit.path, 'left.js'), 'done\n')
+    put(s, 'task-1', { state })
+    age(s.args.runDir, 2)
+    let slept = false
+    const out = await watchCommand(s.repo.dir, s.args.runId, {
+      interval: 0.001,
+      silence: 600,
+      sleep: async () => {
+        slept = true
+        throw new Error(`the watch waited on a ${state} unit`)
+      },
+    })
+    assert.equal(slept, false, state)
+    assert.equal(out.watch, 'silent', state)
+  }
+})
+
 test('newestWriteMs and modifiedSince share one lstat walk that does not follow links', () => {
   const watchSrc = fs.readFileSync(require.resolve('../plugins/aether/lib/wt-watch.js'), 'utf8')
   const wtSrc = fs.readFileSync(require.resolve('../plugins/aether/lib/worktrees.js'), 'utf8')

@@ -65,10 +65,33 @@ function newestWriteMs(dir) {
   return newest
 }
 
-// The run directory and its unit worktrees. A quiet run directory is still alive while a unit
-// worktree is being written.
+// A unit the run has already attended is not working. Its worktree is what it left behind, and
+// only a unit that is still going (no stuck record, or one still waiting) counts as a sign of life.
+const ATTENDED = new Set(['declined', 'delivered', 'ended'])
+
+// The run directory and the worktrees of units that are still going. A quiet run directory is
+// still alive while such a unit worktree is being written. An attended unit's tree does not count:
+// once the run directory itself is quiet, the watch ends instead of waiting out the silence cap
+// on files that unit already left.
 function newestActivityMs(mainRoot, runId) {
-  return Math.max(newestWriteMs(run.runDir(mainRoot, runId)), newestWriteMs(run.worktreesDir(mainRoot, runId)))
+  let newest = newestWriteMs(run.runDir(mainRoot, runId))
+  const attended = new Set()
+  for (const record of readStuckRecords(mainRoot, runId)) {
+    if (ATTENDED.has(record.state)) attended.add(record.task)
+  }
+  const root = run.worktreesDir(mainRoot, runId)
+  let names
+  try {
+    names = fs.readdirSync(root)
+  } catch {
+    return newest // no unit worktrees
+  }
+  for (const name of names) {
+    if (attended.has(name)) continue
+    const found = newestWriteMs(path.join(root, name))
+    if (found > newest) newest = found
+  }
+  return newest
 }
 
 const TASK_FILE = /^task-\d+\.json$/
