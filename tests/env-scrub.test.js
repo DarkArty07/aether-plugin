@@ -12,6 +12,7 @@ const { spawnSync } = require('node:child_process')
 const { PLUGIN, AETHER_VARIABLES } = require('./helpers.js')
 
 const HELPERS = path.join(__dirname, 'helpers.js')
+const SCRUB = path.join(__dirname, 'env-proxy.js')
 const ROOT = path.join(__dirname, '..')
 // The code the variables are read from. Tests are not code of the plugin, so they are not scanned.
 const CODE_DIRS = ['lib', 'bin', 'hooks', 'workflows', 'launcher'].map((dir) => path.join(PLUGIN, dir))
@@ -48,6 +49,33 @@ test('the helper scrubs the AETHER_* variables of the libs from the environment 
   })
   assert.equal(r.status, 0, r.stderr)
   assert.deepEqual(JSON.parse(r.stdout), [])
+})
+
+test('Node\u2019s env-proxy switch does not reach a child process started by the tests (issue #254)', () => {
+  // A sandbox that sets the switch: the variable, the flag inside NODE_OPTIONS, and the proxy variables that
+  // together make every node process print the UNDICI-EHPA warning on stderr. The child loads the scrub the
+  // way tests/helpers.js does, then starts a grandchild node process the way the tests' children are started.
+  const sandbox = {
+    ...process.env,
+    NODE_USE_ENV_PROXY: '1',
+    NODE_OPTIONS: [process.env.NODE_OPTIONS, '--use-env-proxy'].filter(Boolean).join(' '),
+    HTTP_PROXY: 'http://127.0.0.1:9',
+    HTTPS_PROXY: 'http://127.0.0.1:9',
+  }
+  const script = [
+    `require(${JSON.stringify(SCRUB)})`,
+    'const { spawnSync } = require(\'node:child_process\')',
+    'const child = spawnSync(process.execPath, ["-e", "1"], { encoding: "utf8" })',
+    'process.stdout.write(JSON.stringify({',
+    '  status: child.status,',
+    '  stderr: child.stderr,',
+    '  leakedVariable: "NODE_USE_ENV_PROXY" in process.env,',
+    '  leakedFlag: (process.env.NODE_OPTIONS || "").includes("--use-env-proxy"),',
+    '}))',
+  ].join('\n')
+  const r = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', env: sandbox })
+  assert.equal(r.status, 0, r.stderr)
+  assert.deepEqual(JSON.parse(r.stdout), { status: 0, stderr: '', leakedVariable: false, leakedFlag: false })
 })
 
 test('every AETHER_* name the code reads is one the helper scrubs', () => {
