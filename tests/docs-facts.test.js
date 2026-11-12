@@ -652,8 +652,10 @@ test('R15: the decisions A50 to A121 are recorded in docs/decisions.md with the 
   for (const n of [18, 36, 87]) assert.ok(/Update \(A93\)/.test(line(n)), `A${n} has its update note`)
   const a50 = decisions.split('\n').find((line) => line.startsWith('| A50 |'))
   assert.ok(a50.includes('specs/005-aether-design/spec.md') && a50.includes('Workflow tool'))
-  const allVersions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(allVersions[0].startsWith('Version 0.39.1: ') && allVersions[0].includes('issue 240'), allVersions[0])
+  const changelogVersions = read('docs/changelog.md').split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
+  assert.ok(changelogVersions[0].startsWith('Version 0.39.2: ') && changelogVersions[0].includes('issues 237, 239, 227, 208, 188 and 229'), changelogVersions[0])
+  assert.ok(changelogVersions[1].startsWith('Version 0.39.1: ') && changelogVersions[1].includes('issue 240'), changelogVersions[1])
+  const allVersions = changelogVersions.slice(1)
   assert.ok(allVersions[1].startsWith('Version 0.39.0: ') && allVersions[1].includes('issues 185, 189, 198 and 233') && allVersions[1].includes('A123'), allVersions[1])
   assert.ok(allVersions[2].startsWith('Version 0.38.0: ') && allVersions[2].includes('issues 184, 187, 188') && allVersions[2].includes('A122'), allVersions[2])
   assert.ok(allVersions[3].startsWith('Version 0.37.0: ') && allVersions[3].includes('issues 194 and 233') && allVersions[3].includes('A121') && allVersions[3].includes('Pareto'), allVersions[3])
@@ -694,7 +696,7 @@ test('R15: the decisions A50 to A121 are recorded in docs/decisions.md with the 
 test('the changelog says that /aether:onboard was retired and why, and keeps the history of the release before (R10, C4)', () => {
   const changelog = read('docs/changelog.md')
   const first = changelog.split('\n').filter((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(first[5].startsWith('Version 0.35.0: ') && first[6].startsWith('Version 0.34.0: '))
+  assert.ok(first[6].startsWith('Version 0.35.0: ') && first[7].startsWith('Version 0.34.0: '))
   const entry = changelog.slice(changelog.indexOf('Version 0.35.0: '), changelog.indexOf('Version 0.34.0: '))
   assert.ok(entry.includes('`/aether:onboard`') && /retired/.test(entry) && /the automatic note/.test(entry) && /ask the Lead/.test(entry))
   for (const word of ['skill-install', 'aether-continuity', 'aether:tidy', '.aether/README.md']) assert.ok(entry.includes(word), word)
@@ -833,7 +835,7 @@ test('decisions A117 to A120 are recorded with the owner quotes, the index names
     assert.ok(rowOf(id).includes(quote), `${id} quotes the owner: ${quote}`)
   }
   assert.match(decisions, /about five tool calls/)
-  assert.match(read('docs/index.md'), /A1–A123/)
+  assert.match(read('docs/index.md'), /A1–A124/)
 })
 
 test('the canonical countable rule is identical across the six places of R6, AGENTS.md says three parts, and the components page measures PostToolUse on reads (R6, R8, R12)', () => {
