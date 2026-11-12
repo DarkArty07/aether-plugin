@@ -7,19 +7,19 @@ const path = require('node:path')
 const ROOT = path.join(__dirname, '..')
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
 
-test('the manifest, the launcher pin, the README and the changelog all say 0.40.0 (R25 of spec 022, fourteen releases later)', () => {
-  assert.equal(JSON.parse(read('plugins/aether/.claude-plugin/plugin.json')).version, '0.40.0')
-  assert.ok(read('tests/launcher.test.js').includes("'0.40.0'"))
+test('the manifest, the launcher pin, the README and the changelog all say 0.41.0 (R25 of spec 022, fifteen releases later)', () => {
+  assert.equal(JSON.parse(read('plugins/aether/.claude-plugin/plugin.json')).version, '0.41.0')
+  assert.ok(read('tests/launcher.test.js').includes("'0.41.0'"))
   const readme = read('README.md')
   assert.equal(readme.split('\n').filter((line) => /^Version \d/.test(line)).length, 1)
-  assert.ok(readme.includes('Version 0.40.0 ('))
+  assert.ok(readme.includes('Version 0.41.0 ('))
   const lines = read('docs/changelog.md').split('\n')
   const first = lines.findIndex((line) => /^Version \d+\.\d+\.\d+: /.test(line))
   const firstVersion = lines[first]
-  assert.ok(firstVersion.startsWith('Version 0.40.0: ') && /issues 238, 241, 243, 253 and 254/.test(firstVersion), firstVersion)
-  const previous = lines.findIndex((line) => line.startsWith('Version 0.39.3: '))
+  assert.ok(firstVersion.startsWith('Version 0.41.0: ') && /issue 258/.test(firstVersion), firstVersion)
+  const previous = lines.findIndex((line) => line.startsWith('Version 0.40.0: '))
   const following = lines.findIndex((line, i) => i > previous && /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(/<worktree>/.test(lines.slice(previous, following).join('\n')), 'the entry of 0.39.3 says how baselines match across worktrees')
+  assert.ok(/stuckWaitSeconds/.test(lines.slice(previous, following).join('\n')), 'the entry of 0.40.0 says how long a stuck unit waits')
 })
 
 test('the decisions record A100 with the owner\'s words and what was decided about Codex (R25)', () => {
@@ -29,6 +29,6 @@ test('the decisions record A100 with the owner\'s words and what was decided abo
 })
 
 test('the guides say that Codex is a work harness, and the roadmap says what is now (R25)', () => {
-  assert.ok(read('docs/roadmap.md').split('\n').find((line) => line.startsWith('**Now:**')).includes('version 0.40.0'))
+  assert.ok(read('docs/roadmap.md').split('\n').find((line) => line.startsWith('**Now:**')).includes('version 0.41.0'))
   assert.ok(/codex/i.test(read('docs/reference/components.md')))
 })
