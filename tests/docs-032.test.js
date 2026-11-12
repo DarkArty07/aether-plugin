@@ -20,7 +20,7 @@ test('decision A121 is recorded with the owner\'s words, and the index names the
   assert.match(decisions, /^\| A121 \|/m)
   assert.match(decisions, /como lo trasladamos como ley o puntaje o regla o benchmark/)
   assert.match(decisions, /Decided 2026-11-10; spec 032/)
-  assert.match(read('docs/index.md'), /A1–A122/)
+  assert.match(read('docs/index.md'), /A1–A123/)
 })
 
 test('the changelog has the Pareto ladder entry for version 0.37.0 (R16)', () => {
