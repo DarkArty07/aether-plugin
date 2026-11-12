@@ -41,6 +41,15 @@ test('a unit fixed in flight counts as integrated, with its commit and reason', 
   assert.ok(r.notes.includes('task-3 was fixed in flight by the Lead at abcdef0123: moved the test into Owns'), r.notes.join('\n'))
 })
 
+test('a fixed unit with widened files names them in its entry and its note (issue #258)', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  fixed(args, { fixedByLead: { commit: 'abcdef0123456789', reason: 'the test lives outside Owns', widened: ['docs/a.md', 'tests/b.test.js'] } })
+  const r = report(repo.dir, args.runId, { tests: false })
+  assert.deepEqual(r.quality.fixedUnits, [{ id: 'task-3', commit: 'abcdef0123456789', reason: 'the test lives outside Owns', widened: ['docs/a.md', 'tests/b.test.js'] }])
+  assert.ok(r.notes.includes('task-3 was fixed in flight by the Lead at abcdef0123: the test lives outside Owns (widened: docs/a.md, tests/b.test.js)'), r.notes.join('\n'))
+})
+
 test('a run with no unit fixed in flight has no fixedUnits key', (t) => {
   useDataDir(t)
   const { repo, args } = finishedRun(t)

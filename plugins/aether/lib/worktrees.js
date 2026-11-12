@@ -805,6 +805,21 @@ function settleMerge(mainRoot, graph, runId, taskId, integration, before, { time
   return result
 }
 
+// The widen list the Lead's delivered fix names for this unit (issue #258), or no paths.
+// An unreadable or missing record widens nothing: without a delivery in state `delivered`,
+// the merge refuses outside files as before.
+function deliveredWiden(mainRoot, runId, taskId) {
+  try {
+    const record = JSON.parse(fs.readFileSync(run.stuckFile(mainRoot, runId, taskId), 'utf8'))
+    if (record && record.state === 'delivered' && Array.isArray(record.delivered && record.delivered.widen)) {
+      return record.delivered.widen.filter((p) => typeof p === 'string')
+    }
+  } catch {
+    // No record, or one that cannot be read: nothing is widened.
+  }
+  return []
+}
+
 function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 } = {}) {
   const task = graph.tasks[taskId]
   if (!task) throw new Error(`${taskId} is not in run ${runId}`)
@@ -876,7 +891,10 @@ function mergeUnit(mainRoot, graph, runId, taskId, { timeoutMs = 15 * 60 * 1000 
     if (uncommitted.length > 0) result.uncommitted = uncommitted
     return result
   }
-  const outside = files.filter((f) => !matchesAny(f, task.owns))
+  // Paths the Lead's delivered fix widens outside the unit's Owns (issue #258): the merge
+  // takes exactly those, nothing else. Only a record still waiting for its merge counts: once
+  // the wait ends, or without a delivery, the widening dies with it and nothing is removed.
+  const outside = files.filter((f) => !matchesAny(f, task.owns) && !deliveredWiden(mainRoot, runId, taskId).includes(f))
   if (outside.length) return { merged: false, reason: 'ownership', files: outside }
 
   const before = head(integration)

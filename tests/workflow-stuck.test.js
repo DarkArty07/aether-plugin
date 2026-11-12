@@ -121,6 +121,35 @@ test('R6: a unit that waits does not hold the later waves: task-5 merges before 
   assert.equal(run.result.agents.total, run.calls.length)
 })
 
+test('a stuck unit delivered with widen merges with the widened files, its dependents run, and fixedByLead carries widened (issue #258)', async (t) => {
+  const order = []
+  const run = await runWorkflow(four(t), {
+    stuckWait: 3600,
+    implementer: stuckUnits('task-1'),
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge') order.push(`merge ${call.unit}`)
+      return wt(call)
+    },
+    deadline: clock((unit, n, seconds) => {
+      if (unit !== 'task-1' || !order.includes('merge task-2') || !order.includes('merge task-4')) return reply(seconds)
+      order.push('fix delivered')
+      return reply(seconds, { state: 'delivered', commit: 'fix1234', reason: 'the test lives outside Owns', widen: ['tests/other.test.js'] })
+    }),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(statuses(run), ['task-1 merged', 'task-2 merged', 'task-3 merged', 'task-4 merged'])
+  const fix = order.indexOf('fix delivered')
+  assert.ok(fix > order.indexOf('merge task-2') && fix > order.indexOf('merge task-4'), order.join(', '))
+  assert.ok(fix < order.indexOf('merge task-1') && order.indexOf('merge task-1') < order.indexOf('merge task-3'), order.join(', '))
+  assert.deepEqual(byId(run)['task-1'].fixedByLead, { commit: 'fix1234', reason: 'the test lives outside Owns', widened: ['tests/other.test.js'] })
+  for (const id of ['task-2', 'task-3', 'task-4']) assert.equal(byId(run)[id].fixedByLead, undefined, id)
+  assert.deepEqual(endOf(run, 'task-1').command.rest.at(-1), 'merged')
+  assert.equal(run.logs.filter((line) => /^final review on /.test(line)).length, 1)
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:diff').length, 1)
+  assert.ok(run.events.indexOf('end ops:merge task-1') < run.events.indexOf('start ops:diff'))
+  assert.equal(run.result.finalReview.status, 'done')
+})
+
 test('without a fix the wait ends by its time: the unit is blocked as today, its dependent is skipped, the others merged', async (t) => {
   const run = await runWorkflow(four(t), { stuckWait: 240, implementer: stuckUnits('task-1'), deadline: clock((unit, n, seconds) => reply(seconds)) })
   assert.equal(run.error, null, run.error && run.error.stack)

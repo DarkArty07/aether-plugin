@@ -108,10 +108,10 @@ Report from it:
 - **Stuck unit (the watch ended with one):** read the reason and the files outside `Owns` it reports; fix it in the unit's worktree (`worktree` of the output) and commit the fix on its branch; deliver it with:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/aether-wt deliver <runId> <task> --commit <sha> --reason "<what you fixed>"
+${CLAUDE_PLUGIN_ROOT}/bin/aether-wt deliver <runId> <task> --commit <sha> --reason "<what you fixed>" [--widen <paths>]
 ```
 
-  (the commit must be the tip of the unit's branch; the workflow merges it with the standard rules: `Owns`, merge tests and baseline); if you cannot fix it (for example, a plan error outside `Owns`), decline it with:
+  (the commit must be the tip of the unit's branch; the workflow merges it with the standard rules: `Owns`, merge tests and baseline; when the fix needs files outside `Owns` that no unmerged unit owns, name them with `--widen <paths>` — one flag with a comma-separated list, no globs — and say in `--reason` why the fix needs them); decline it only when another unit that has not merged owns those files, or the plan error is larger, with:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/bin/aether-wt decline <runId> <task> --reason "<why>"
