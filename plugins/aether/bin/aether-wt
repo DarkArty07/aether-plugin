@@ -10,6 +10,12 @@
 // aether-wt save <run>
 // aether-wt adopt <run> <task> --commit <sha> --reason <text>
 // aether-wt remove <run> <task> [--keep-patch]
+// aether-wt stuck <run> <task> --payload <ruta> --digest <huella>
+// aether-wt stuck-tick <run> <task> --seconds <1 a 120>
+// aether-wt stuck-end <run> <task> --outcome <expired|ceiling|declined|merged|rejected>
+// aether-wt deliver <run> <task> --commit <sha> --reason <texto>
+// aether-wt decline <run> <task> --reason <texto>
+// aether-wt watch <run> [--interval <s>] [--silence <s>]
 // aether-wt sweep --run <id> [--finish] | --stale [--hours N]
 // aether-wt ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>]
 // aether-wt gate <run> <task>
@@ -18,11 +24,13 @@ const path = require('node:path')
 const wt = require(path.join(__dirname, '..', 'lib', 'worktrees.js'))
 const wtLadder = require(path.join(__dirname, '..', 'lib', 'wt-ladder.js'))
 const wtGate = require(path.join(__dirname, '..', 'lib', 'wt-gate.js'))
+const wtStuck = require(path.join(__dirname, '..', 'lib', 'wt-stuck.js'))
+const wtWatch = require(path.join(__dirname, '..', 'lib', 'wt-watch.js'))
 
-const USAGE = 'usage: aether-wt ensure|diff|merge|settle|status|salvage|remove <run> <task> | aether-wt save <run> | aether-wt adopt <run> <task> --commit <sha> --reason <text> [--keep-patch] | aether-wt diff <run> --final | aether-wt sweep --run <id> [--finish] | --stale [--hours N] | aether-wt ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>] | aether-wt gate <run> <task>'
+const USAGE = 'usage: aether-wt ensure|diff|merge|settle|status|salvage|remove <run> <task> | aether-wt save <run> | aether-wt adopt <run> <task> --commit <sha> --reason <text> [--keep-patch] | aether-wt stuck <run> <task> --payload <ruta> --digest <huella> | aether-wt stuck-tick <run> <task> --seconds <1 a 120> | aether-wt stuck-end <run> <task> --outcome <expired|ceiling|declined|merged|rejected> | aether-wt deliver <run> <task> --commit <sha> --reason <texto> | aether-wt decline <run> <task> --reason <texto> | aether-wt watch <run> [--interval <s>] [--silence <s>] | aether-wt diff <run> --final | aether-wt sweep --run <id> [--finish] | --stale [--hours N] | aether-wt ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>] | aether-wt gate <run> <task>'
 
 function sweep(rest) {
-  if (rest[0] === '--run') return wt.sweepRun(process.cwd(), rest[1], { finish: rest.includes('--finish') })
+  if (rest[0] === '--run') return wt.sweepRun(process.cwd(), rest[1], { finish: rest.includes('--finish'), endMark: !rest.includes('--finish') })
   if (rest[0] === '--stale') {
     const hours = rest[1] === '--hours' ? Number(rest[2]) : 24
     if (!Number.isFinite(hours) || hours <= 0) throw new Error('--hours needs a positive number')
@@ -38,8 +46,8 @@ function flag(args, name) {
   return value === undefined || value.startsWith('--') ? undefined : value
 }
 
-const [command, ...rest] = process.argv.slice(2)
-try {
+async function main() {
+  const [command, ...rest] = process.argv.slice(2)
   let result
   if (command === 'ensure') result = wt.ensure(process.cwd(), rest[0], rest[1])
   else if (command === 'diff' && rest[1] === '--final') result = wt.finalPackage(process.cwd(), rest[0])
@@ -51,6 +59,12 @@ try {
   else if (command === 'save') result = wt.saveRun(process.cwd(), rest[0])
   else if (command === 'adopt') result = wt.adoptUnit(process.cwd(), rest[0], rest[1], { commit: flag(rest, '--commit'), reason: flag(rest, '--reason') })
   else if (command === 'remove') result = wt.removeUnit(process.cwd(), rest[0], rest[1], { keepPatch: rest.includes('--keep-patch') })
+  else if (command === 'stuck') result = wtStuck.stuckBegin(process.cwd(), rest[0], rest[1], { payload: flag(rest, '--payload'), digest: flag(rest, '--digest') })
+  else if (command === 'stuck-tick') result = await wtStuck.stuckTick(process.cwd(), rest[0], rest[1], flag(rest, '--seconds'))
+  else if (command === 'stuck-end') result = wtStuck.stuckEnd(process.cwd(), rest[0], rest[1], flag(rest, '--outcome'))
+  else if (command === 'deliver') result = wtStuck.deliverFix(process.cwd(), rest[0], rest[1], { commit: flag(rest, '--commit'), reason: flag(rest, '--reason') })
+  else if (command === 'decline') result = wtStuck.declineUnit(process.cwd(), rest[0], rest[1], { reason: flag(rest, '--reason') })
+  else if (command === 'watch') result = await wtWatch.watchCommand(process.cwd(), rest[0], { interval: flag(rest, '--interval'), silence: flag(rest, '--silence') })
   else if (command === 'ladder') {
     const opts = {}
     if (rest.includes('--verdict')) opts.verdict = flag(rest, '--verdict') ?? ''
@@ -62,7 +76,9 @@ try {
   else if (command === 'sweep') result = sweep(rest)
   else throw new Error(USAGE)
   process.stdout.write(JSON.stringify(result) + '\n')
-} catch (err) {
+}
+
+main().catch((err) => {
   process.stdout.write(JSON.stringify({ error: err.message }) + '\n')
   process.exit(1)
-}
+})
