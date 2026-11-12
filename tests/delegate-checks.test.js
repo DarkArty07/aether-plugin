@@ -33,6 +33,23 @@ test('a file outside Owns fails the check, with the files named (E9)', () => {
   assert.match(result.reasons.join(' '), /docs\/x\.md/)
 })
 
+test('Python bytecode in the changed-file list does not count outside Owns (issue 237)', () => {
+  const good = checks.checkEdits({
+    files: ['src/a.js', '__pycache__/x.cpython-314.pyc', 'foo.pyc', 'tests/__pycache__/t.pyc', 'bar.pyo'],
+    owns: ['src/**'],
+    tests: { passed: true },
+  })
+  assert.deepEqual([good.ok, good.empty, good.outside], [true, false, []])
+
+  const bad = checks.checkEdits({
+    files: ['src/a.js', 'docs/x.md', '__pycache__/x.cpython-314.pyc', 'foo.pyc'],
+    owns: ['src/**'],
+    tests: { passed: true },
+  })
+  assert.deepEqual([bad.ok, bad.empty, bad.outside], [false, false, ['docs/x.md']])
+  assert.match(bad.reasons.join(' '), /docs\/x\.md/)
+})
+
 test('an empty task fails the check (E9)', () => {
   const result = checks.checkEdits({ files: [], owns: ['src/**'], tests: null })
   assert.deepEqual([result.ok, result.empty], [false, true])
@@ -63,6 +80,13 @@ test('runTests runs the command in the worktree and reports the exit code', (t) 
   assert.deepEqual([fail.passed, fail.exitCode], [false, 3])
   assert.match(fail.outputTail, /boom/)
   assert.equal(checks.runTests(repo.dir, 'node -e "setTimeout(() => {}, 5000)"', { timeoutMs: 200 }).timedOut, true)
+})
+
+test('runTests passes PYTHONDONTWRITEBYTECODE=1 to the command (issue 237)', (t) => {
+  const repo = makeRepo(t)
+  const result = checks.runTests(repo.dir, 'node -e "process.stdout.write(process.env.PYTHONDONTWRITEBYTECODE || \'\')\"')
+  assert.equal(result.passed, true)
+  assert.equal(result.outputTail, '1')
 })
 
 test('changedFiles respects .gitignore and ignores ignored files', (t) => {
