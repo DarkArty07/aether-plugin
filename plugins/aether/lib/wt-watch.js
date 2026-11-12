@@ -91,7 +91,10 @@ function endedMessage(records) {
   return `hubo ${records.length} unidades trabadas`
 }
 
-// Polls the run until a waiting unit, the end mark or the silence cap ends the watch.
+// Polls the run until the end mark, a waiting unit or the silence cap ends the watch. Each poll
+// probes in this order: the end mark first (once it exists the watch ends as ended, and a unit still
+// waiting is listed there, since R4 says the end attended it), then the stuck units while the run is
+// alive, then the silence cap.
 // interval counts the seconds between polls (a number or a numeric text above 0, default 5);
 // silence counts the seconds without a sign of life that end the watch as silent (a whole number
 // or a whole-number text from 1, default loadSwarmConfig().watchSilenceSeconds). sleep(ms) and
@@ -106,6 +109,18 @@ async function watchCommand(cwd, runId, { interval, silence, sleep, now } = {}) 
   if (!fs.existsSync(dir)) throw new Error(`run ${runId} not found`)
   const endFile = run.launchEndFile(mainRoot, runId)
   for (;;) {
+    // The end mark is probed before the stuck units: a unit still waiting after the end is already
+    // attended (R4), so it is listed in the ended result and never reported as stuck.
+    if (fs.existsSync(endFile)) {
+      const records = readStuckRecords(mainRoot, runId)
+      const stuck = records.map((record) => {
+        const outcome = record.ended && typeof record.ended.outcome === 'string' && record.ended.outcome !== ''
+          ? record.ended.outcome
+          : record.state
+        return { task: record.task, outcome }
+      })
+      return { watch: 'ended', run: runId, stuck, message: endedMessage(records) }
+    }
     const silentSeconds = (clock() - newestWriteMs(dir)) / 1000
     const silent = silentSeconds > silenceCap
     if (!silent) {
@@ -124,16 +139,6 @@ async function watchCommand(cwd, runId, { interval, silence, sleep, now } = {}) 
           left: found.left,
         }
       }
-    }
-    if (fs.existsSync(endFile)) {
-      const records = readStuckRecords(mainRoot, runId)
-      const stuck = records.map((record) => {
-        const outcome = record.ended && typeof record.ended.outcome === 'string' && record.ended.outcome !== ''
-          ? record.ended.outcome
-          : record.state
-        return { task: record.task, outcome }
-      })
-      return { watch: 'ended', run: runId, stuck, message: endedMessage(records) }
     }
     // A unit left waiting by a run that died is a dead flow nobody will attend: each pause of the
     // stuck wait writes the heartbeat, so a silent run reports silence, not a stuck unit.

@@ -79,6 +79,15 @@ test('at the end of the run the watch ends by itself and says whether anything g
   assert.equal(out.message, 'hubo 1 unidad trabada')
 })
 
+test('a unit still waiting when the run has left its end mark ends the watch as ended, listed with waiting, and never as stuck', async (t) => {
+  const s = scenario(t)
+  put(s, 'task-1')
+  fs.writeFileSync(run.launchEndFile(s.repo.dir, s.args.runId), '{}\n')
+  const out = await watchCommand(s.repo.dir, s.args.runId, quick)
+  assert.deepEqual(out, { watch: 'ended', run: s.args.runId, stuck: [{ task: 'task-1', outcome: 'waiting' }], message: 'hubo 1 unidad trabada' })
+  assert.deepEqual(await watchCommand(s.repo.dir, s.args.runId, quick), out)
+})
+
 test('a run with no sign of life ends the watch as silent, from the last write and not from the launch of the watch', async (t) => {
   const s = scenario(t)
   age(s.args.runDir, 2)
