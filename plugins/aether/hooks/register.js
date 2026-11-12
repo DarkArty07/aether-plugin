@@ -88,8 +88,8 @@ const sessions = new Map()
 const delegates = createDelegates()
 
 const PAYLOAD_MARKER = /^=== aether-lane payload: (.+) ===$/m
-// A ladder verdict payload path: ladder/ only holds state and verdict files, so spawn.json is omitted.
-const LADDER_PAYLOAD_FILE = /\/\.aether\/runs\/[^/]+\/ladder\/task-\d+-verdict\.json$/
+// A ladder verdict or stuck payload path: ladder/ only holds state, verdict and stuck files, so spawn.json is omitted.
+const LADDER_PAYLOAD_FILE = /\/\.aether\/runs\/[^/]+\/ladder\/task-\d+-(?:verdict|stuck)\.json$/
 
 const tokens = (value) => (Number.isFinite(value) ? value : 0)
 const effortOf = (value) => (typeof value === 'string' && value !== '' ? value : null)

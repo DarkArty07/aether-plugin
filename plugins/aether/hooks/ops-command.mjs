@@ -18,7 +18,7 @@ const MARKER = /^=== aether-lane payload: (.+) ===$/
 
 // The payload a prompt may carry, saved by register.js: a lane call's prompt.md under a run's lanes/, or a seat
 // round's message.md under <repo>/.aether/tmp/seats/<session>/ (or .aether-tmp/seats/<session>/). Both names are closed, the session's too.
-export const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(?:task-\d+-\d+-(?:implement|supervise)|final-review(?:-slice-\d+)?)\/prompt\.md$|\/(?:\.aether\/tmp|\.aether-tmp)\/seats\/[A-Za-z0-9-]+\/message\.md$|\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/ladder\/task-\d+-verdict\.json$/
+export const PAYLOAD_PATH = /\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/lanes\/(?:task-\d+-\d+-(?:implement|supervise)|final-review(?:-slice-\d+)?)\/prompt\.md$|\/(?:\.aether\/tmp|\.aether-tmp)\/seats\/[A-Za-z0-9-]+\/message\.md$|\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/ladder\/task-\d+-(?:verdict|stuck)\.json$/
 
 // `cd '<absolute path>' && <bin> <tokens>`: the path has no quote and no control character. A run that
 // names its compiling version's bins prepends them to PATH in this one exact form (issue 008); the mod
@@ -35,6 +35,8 @@ const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/
 const DIGEST = /^[0-9a-f]{8}:\d+$/
 const LADDER_PAYLOAD = /^\/[A-Za-z0-9._\/-]*\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/ladder\/task-\d+-verdict\.json$/
 const VERDICTS = ['approve', 'fix', 'infeasible']
+const STUCK_PAYLOAD = /^\/[A-Za-z0-9._\/-]*\/\.aether\/runs\/\d{8}-\d{6}-[0-9a-f]{4}\/ladder\/task-\d+-stuck\.json$/
+const STUCK_OUTCOMES = ['expired', 'ceiling', 'declined', 'merged', 'rejected']
 // A design round's seat: its session, its author, its feature directory, the superdelegation switch with the harnesses
 // and its seat id.
 const SESSION = /^[A-Za-z0-9-]+$/
@@ -99,6 +101,16 @@ const COMMANDS = {
       },
     },
     { checks: [word('gate'), is(RUN), is(TASK)] },
+    {
+      payload: true,
+      checks: [word('stuck'), is(RUN), is(TASK), word('--payload'), is(STUCK_PAYLOAD), word('--digest'), is(DIGEST)],
+      verify: (args, cwd, marker) => {
+        const [, run, task, , payload] = args
+        return payload === `${cwd}/.aether/runs/${run}/ladder/${task}-stuck.json` && (marker === undefined || marker === payload)
+      },
+    },
+    { checks: [word('stuck-tick'), is(RUN), is(TASK), word('--seconds'), is(SECONDS)] },
+    { checks: [word('stuck-end'), is(RUN), is(TASK), word('--outcome'), oneOf(STUCK_OUTCOMES)] },
   ],
   'aether-lane': [
     { checks: [word('status'), is(RUN)] },
