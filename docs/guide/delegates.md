@@ -79,7 +79,7 @@ A read-only delegate can be charged with a file that another writer of the same 
 
 ## aether-delegate
 
-`aether-delegate` is the bin that holds the ladder. Each verb prints one JSON line and none of them merges or pushes. The Lead uses `verdict` and `authorize`; the mod uses the rest.
+`aether-delegate` is the bin that holds the ladder. Each verb prints one JSON line. Only `approve` merges, into the checkout's current branch, and none of them pushes. The Lead uses `verdict`, `authorize` and `approve`; the mod uses the rest.
 
 - `begin --session <id> --input <file>`: takes the `Agent` call the mod caught and says how the attempt runs: the step's model and effort, the brief with the findings and the earlier work a rise carries, the isolation of an editing task, and the external pair when there is one. It writes the `launch` entry.
 - `verdict --task <id> --verdict <approve, fix or infeasible> [--reason <text>] [--finding <file[:line]: what is missing>]... [--from-scratch] [--worktree <path>] [--ignore <glob>]...`: judges the last attempt, runs the checks before an `approve`, and says what the next launch is. `--ignore` leaves out of a read-only check the files another writer of the checkout changed.
@@ -87,6 +87,7 @@ A read-only delegate can be charged with a file that another writer of the same 
 - `start --id <id>`, `run --id <id>` and `wait --id <id> --seconds <n>`: launch an attempt that runs on another harness in a process of its own and return at once, do it, and poll for its result for up to `n` seconds (540 at most).
 - `answer --session <id> --task <id> --attempt <n> --text <text>`: records the end of an attempt that ran on Claude: an `answer` line with the final answer of a read-only delegate, so that the verdict can check it, or an `ended` line, with no text, for one that edits.
 - `renew --harness <agy, codex, grok or muse>`: takes a fresh quota reading and saves it where the choice of the pair reads it.
+- `approve --task <id> [--worktree <path>] [--ignore <glob>]`: gives the `approve` verdict for an edit, merges that edit into the checkout's current branch and runs the project's tests (`npm test`, or the `testCommand` in the checkout's `.aether` settings). An external pair, whose result names the branch `aether/<runId>/<taskId>`, is merged with `aether-wt merge`. A delegate on Claude needs `--worktree` and is merged with `git merge --no-ff` of that worktree's HEAD; a conflict is aborted. On `main` or `master` it checks `merge-main` first and, without the grant, merges nothing and records no verdict. A task that did not edit is refused.
 
 ## How a delegate runs
 
