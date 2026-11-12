@@ -19,6 +19,21 @@ const PATTERNS = [
 // A TAP failure with no name, such as "not ok 5": nothing tells it apart from a failure that is known.
 const UNNAMED_TAP = /^\s*not ok \d+\s*(#.*)?$/
 
+// Replaces the worktree path with a fixed marker so an absolute path in a failure line matches
+// between the integration baseline and a unit worktree (issue #248).
+const WORKTREE_MARKER = '<worktree>'
+
+function maskWorktree(name, worktree) {
+  if (typeof worktree !== 'string' || worktree === '') return name
+  const target = worktree.length > 1 ? worktree.replace(/[/\\]+$/, '') : worktree
+  if (target === '' || target === '/' || target === '\\') return name
+  let masked = name.replaceAll(target, WORKTREE_MARKER)
+  if (target.includes('\\')) {
+    masked = masked.replaceAll(target.replaceAll('\\', '/'), WORKTREE_MARKER)
+  }
+  return masked
+}
+
 // Strips what changes between runs without the test changing: node:test's timing, a duration in
 // parentheses or brackets, and spacing.
 function normalize(name) {
@@ -39,13 +54,14 @@ function plainLines(output) {
 }
 
 // The sorted, unique names of the failing tests that the output names.
-function failureSignatures(output) {
+function failureSignatures(output, worktree) {
   const names = new Set()
   for (const line of plainLines(output)) {
     for (const pattern of PATTERNS) {
       const match = pattern.exec(line)
       if (!match) continue
-      const name = normalize(match[1])
+      const raw = maskWorktree(match[1], worktree)
+      const name = normalize(raw)
       if (name !== '') names.add(name)
       break
     }
@@ -55,12 +71,13 @@ function failureSignatures(output) {
 
 // Judges a test run against the baseline. A passing command passes. A failing one passes only when
 // every failure it names is in the baseline; otherwise it says why it cannot pass.
-function judge(baseline, { exitCode, output }) {
+function judge(baseline, { exitCode, output, worktree: worktreeProp } = {}, worktree) {
   if (exitCode === 0) return { pass: true }
   if (!baseline) return { pass: false, reason: 'no baseline' }
   // A failure with no name could be any of them, so the known ones cannot excuse the run.
   if (plainLines(output).some((line) => UNNAMED_TAP.test(line))) return { pass: false, reason: 'unparsed' }
-  const signatures = failureSignatures(output)
+  const wt = worktree ?? worktreeProp
+  const signatures = failureSignatures(output, wt)
   // Without a name there is no way to tell an old failure from a new one.
   if (signatures.length === 0) return { pass: false, reason: 'unparsed' }
   const known = new Set(Array.isArray(baseline.signatures) ? baseline.signatures : [])
