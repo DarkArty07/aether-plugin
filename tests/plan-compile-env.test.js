@@ -1,5 +1,8 @@
 'use strict'
 
+// Spec 036 task 9 (#256 1, #232 6, #232 7, #209): compile reads its session and config only from its env
+// argument, fails a broken swarm config before any write, and records the baseline duration once.
+
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -18,8 +21,6 @@ function skill(root, name) {
 }
 
 const withSkills = (n, names) => task(n).replace(/- Depends on: none\n/, `- Depends on: none\n- Skills: ${names}\n`)
-
-test.describe('compile env', { concurrency: false }, () => {
 
 function runCompile(repo, markdown, env) {
   let out = ''
@@ -132,5 +133,4 @@ test('baseline.test.js keeps no compile-refusal test; aether-plan.test.js has th
   assert.equal(titles.some((title) => title.includes('compile refus')), false)
   const planTests = fs.readFileSync(path.join(__dirname, 'aether-plan.test.js'), 'utf8')
   assert.match(planTests, /test\('aether-plan compile refuses in a Lead session/)
-})
 })
