@@ -33,12 +33,15 @@ function loadLadder(file = LADDER_FILE) {
   data.rungs.forEach(checkRung)
   const steps = data.rungs.map((rung) => rung.step)
   if (new Set(steps).size !== steps.length) throw new Error('ladder: two rungs have the same step')
-  const repeatBlocked = data.repeatBlocked ?? 2
+  if (data.repeatBlocked === undefined) throw new Error('ladder: missing repeatBlocked')
+  const repeatBlocked = data.repeatBlocked
   if (!Number.isInteger(repeatBlocked) || repeatBlocked < 1) throw new Error('ladder: repeatBlocked is not an integer >= 1')
-  const supervisorFloor = data.supervisorFloor ?? 1
+  if (data.supervisorFloor === undefined) throw new Error('ladder: missing supervisorFloor')
+  const supervisorFloor = data.supervisorFloor
   if (!Number.isInteger(supervisorFloor) || supervisorFloor < 1) throw new Error('ladder: supervisorFloor is not an integer >= 1')
+  if (data.law === undefined) throw new Error('ladder: missing law')
   return {
-    law: data.law ?? {},
+    law: data.law,
     repeatBlocked,
     rungs: data.rungs,
     supervisorFloor,
