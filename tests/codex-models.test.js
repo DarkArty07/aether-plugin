@@ -1,4 +1,8 @@
 'use strict'
+
+// No helper here, so the env-proxy scrub is required directly: the script below runs in a node child that
+// must not inherit the switch (issue #254).
+require('./env-proxy.js')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')

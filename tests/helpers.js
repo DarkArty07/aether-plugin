@@ -1,5 +1,8 @@
 'use strict'
 
+// Scrubbed first, before anything else: no child a test starts may inherit Node's env-proxy switch (issue #254).
+require('./env-proxy.js')
+
 // Shared test fixtures: throwaway git repositories and CLI runners.
 // Every temporary directory is removed when its test ends.
 

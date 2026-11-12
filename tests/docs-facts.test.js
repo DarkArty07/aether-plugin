@@ -58,6 +58,10 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 
+// No helper here, so the env-proxy scrub is required directly: a check below runs a bin in a node child that
+// must not inherit the switch (issue #254).
+require('./env-proxy.js')
+
 const ROOT = path.join(__dirname, '..')
 const PLUGIN = path.join(ROOT, 'plugins', 'aether')
 const README = 'README.md'

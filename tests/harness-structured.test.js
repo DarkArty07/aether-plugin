@@ -1,5 +1,9 @@
 'use strict'
 
+// No helper here, so the env-proxy scrub is required directly: defaultExec below starts node children that
+// must not inherit the switch (issue #254).
+require('./env-proxy.js')
+
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
