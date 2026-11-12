@@ -8,6 +8,13 @@ order: 31
 
 ## Status
 
+Version 0.39.1: an editing delegate reaches its pair on another harness again, a failed external attempt keeps its cause, and the Lead is told when a task falls back to Claude (issue 240). What changed since 0.39.0:
+- **Editing delegates reach their pair (issue 240).** Since 0.37.0 the external attempt of an editing delegate passed its ladder step (`haiku-high`) where `aether-lane delegate` takes a Claude model (`haiku`), so every such attempt was refused in under a second and the task ran on Claude. The attempt now passes the model of the step's rung in `config/ladder.json`, and a test runs every rung through the real command.
+- **A failed attempt keeps its cause.** The `result` line of the delegate log, the result file and the run log carry a one-line `reason`; `aether-delegate wait` returns it, and `aether-report --delegates` shows it in `fallback`.
+- **The Lead is told where a task ran.** When an external attempt does not deliver and the task runs on Claude, the agent's final answer ends with one line naming the pair that did not deliver, why, and the Claude model and effort it ran on. The plan of `aether-delegate begin` names the pair for that line (`external.pair`).
+- **Not verified:** a real editing delegate on another harness with this version; the tests run the real command with superdelegation off, and the mod with a stubbed engine.
+- **Compatibility.** Nothing breaks. The log's `result` line gains `reason`, and the plan of `begin` gains `external.pair`.
+
 Version 0.39.0: a read-only delegate on another harness reads the Lead's uncommitted work, Codex runs a task's tests in its sandbox, and the models index takes Terminal-Bench from Artificial Analysis' model pages (issues 185, 189, 198 and 233, spec 033, decision A123). What changed since 0.38.0:
 - **A read-only delegate reads what the Lead could read (issues 198 and 185, spec 033).** Its copy is taken at launch with the uncommitted work of the tree, on top of the repository's history, so a checkout with uncommitted changes is delegated like any other. The copy never holds what git ignores, Aether's own directories, a new `.env` file or the uncommitted edits of a tracked one. A brief can name another worktree with `AETHER-TREE: <path>`, and a brief about a path the copy cannot hold stays on Claude, with the reason in the delegate log.
 - **Codex runs the tests of a task that edits code (issue 189).** The calls that edit code get the sandbox's network open, by the owner's decision, because with it closed the sandbox refuses a child process with pipes. The calls that only read keep it closed. `scripts/lane-smoke.js <harness> --edits` makes the real call that checks it.
