@@ -49,15 +49,18 @@ Run the `aether:run` workflow with that JSON as its args, unchanged. The run wor
 
 In a headless session (`claude -p`), Claude Code stops background work 10 minutes after the last turn, and that includes the run. Start such a session with `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, which waits for the run however long it takes.
 
+When launching the swarm, leave ${CLAUDE_PLUGIN_ROOT}/bin/aether-wt watch <runId> in the background (`run_in_background`), from the integration worktree, with the absolute path of the plugin's bin; it ends when a unit gets stuck, when the run finishes (saying whether anything got stuck) or with `sin señal de la corrida` (relaunch the watch if the run is still alive).
+
 While it runs:
 - do not edit the integration worktree;
-- do not run `aether-wt` commands for this run.
+- do not run `aether-wt` commands for this run, except `watch`, `deliver` and `decline` (below).
 
 ## 4. Read the result
 
 The workflow returns:
 - **`units`:** one entry per task, with:
   - `status`: `merged`, `blocked`, `skipped` or `not-run`;
+  - `fixedByLead`: `{ commit, reason }`, when the unit was fixed on the fly by the Lead;
   - `ladder`: the unit's ladder block (`units[].ladder`), `{ steps, firstTry, rises: { failed, infeasible }, gateRejections, filled }`. `steps` lists the ladder rungs traversed; `firstTry` is merged with no earlier attempt, no rise and no gate rejection; `rises` counts rises by cause (`failed` rejected attempts or `infeasible` ruling); `gateRejections` counts attempts the no-model gate returned to the implementer; and `filled` counts synthetic findings the workflow added;
   - `tiers`: the rungs it ran on, each a model and an effort, such as `["haiku high", "haiku xhigh", "sonnet high"]`. A higher effort on the same model is a climb; another model is an escalation;
   - `rounds`: each attempt, with its rung (`tier`), the implementer's report, the supervisor's verdict, findings, ruling and effort (`reviewEffort`), and the merge outcome;
@@ -102,6 +105,19 @@ Report from it:
 
 ## 5. Act on it
 
+- **Stuck unit (the watch ended with one):** read the reason and the files outside `Owns` it reports; fix it in the unit's worktree (`worktree` of the output) and commit the fix on its branch; deliver it with:
+
+```bash
+aether-wt deliver <runId> <task> --commit <sha> --reason "<what you fixed>"
+```
+
+  (the commit must be the tip of the unit's branch; the workflow merges it with the standard rules: `Owns`, merge tests and baseline); if you cannot fix it (for example, a plan error outside `Owns`), decline it with:
+
+```bash
+aether-wt decline <runId> <task> --reason "<why>"
+```
+
+  so as not to leave the workflow waiting, and treat it as a blocked unit; relaunch the watch after each deliver or decline. Without a timely delivery (`stuckWaitSeconds` of `config/swarm.json`, 1800 by default, and the launch arguments may set another; 0 turns the wait off), the unit ends blocked and is treated as today.
 - **Blocked with a question:** answer it from the owner's intent, the spec and the plan when they cover it. Otherwise it goes to the owner: outside a run, ask them; in an autonomous run, it waits in the diary's "Espera tu sí" or "Decisiones", and the other units go on. Then have the Writer fix the plan task, have `/aether:design` review the fix in short mode on `tasks.md` (see "Later changes" in the `aether:designing` skill), and relaunch the unit.
 - **Blocked by a merge failure:** the unit passed review but git merge or the merge tests failed after its retry. Read the rounds and check the conflict or failure. A merge command stopped at 600 seconds, after its merge commit and before the tests finish, leaves that commit unverified, and a later merge is refused as `unverified-buried`, `unverified-moved` or `unverified-other`. The Lead's exit is `aether-wt settle <run> <task>`, from the integration worktree: it runs the plan's tests at the current tip, never changes the branch, and clears the marker only when they pass. It refuses while the integration worktree has uncommitted changes, is on another branch or has a merge in progress (`MERGE_HEAD`): fix that state first. A unit that ends blocked after a refused merge (a file outside Owns, or tests that went red after its merge) carries `blockedFiles`, the files that refusal named, and its `reason` ends with the one step that integrates it by hand from its `patch`. Fix the work yourself when it fits the direct path; otherwise send it to a delegate task, whose model the ladder picks, or have the Writer fix the plan task, have `/aether:design` review the fix in short mode on `tasks.md`, and relaunch it. These have a fallback, so they never go to the owner.
 - **Blocked by a spent ladder or repeated failure:** read the rounds and the unit's `failures`. The causes of a block include:

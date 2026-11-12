@@ -46,7 +46,7 @@ test('A97 is in the decisions, with the owner\'s words, the issue and the date',
 
 test('the components page and the ops guide name the two verbs, and the changelog tells the change', () => {
   const components = read('docs', 'reference', 'components.md')
-  assert.match(components, /\| wt \| `wt-` \| `wt-gate\.js`, `wt-ladder\.js` \|/)
+  assert.match(components, /\| wt \| `wt-` \|.*`wt-gate\.js`.*`wt-ladder\.js`.*\|/)
   assert.ok(components.includes('aether-wt ladder') && components.includes('aether-wt gate'))
   const ops = read('docs', 'guide', 'ops.md')
   assert.ok(ops.includes('aether-wt ladder') && ops.includes('aether-wt gate'))
