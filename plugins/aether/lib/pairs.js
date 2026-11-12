@@ -48,6 +48,8 @@ function validatePair(pair, index) {
   if (!isNumberOrNull(pair.outputTokensPerSecond)) fail('outputTokensPerSecond', 'must be a number of at least 0, or null')
   if (!isNumberOrNull(pair.timeToFirstTokenS)) fail('timeToFirstTokenS', 'must be a number of at least 0, or null')
   if (Object.hasOwn(pair, 'ownerDecision') && !isText(pair.ownerDecision)) fail('ownerDecision', 'must be a non-empty string when present')
+  if (Object.hasOwn(pair, 'estimateOf') && !isText(pair.estimateOf)) fail('estimateOf', 'must be a non-empty string when present')
+  if (Object.hasOwn(pair, 'estimateDistance') && !isNumber(pair.estimateDistance)) fail('estimateDistance', 'must be a number when present')
   if (Object.hasOwn(pair, 'codeChecked') && !isText(pair.codeChecked)) fail('codeChecked', 'must be a non-empty string when present')
   if (Object.hasOwn(pair, 'checked') && !isText(pair.checked)) fail('checked', 'must be a non-empty string when present')
   if (Object.hasOwn(pair, 'costEstimate') && !isText(pair.costEstimate)) fail('costEstimate', 'must be a non-empty string when present')

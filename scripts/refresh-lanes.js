@@ -3,9 +3,11 @@
 
 // Usage: node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]
 //
-// Refreshes the code figures of Claude rows in the pairs table from their Artificial Analysis model pages.
-// Intelligence and cost per task are not touched. The stored ladder is recalculated and compared, but never
-// written automatically.
+// Refreshes the figures of the pairs table from their Artificial Analysis model pages: the intelligence,
+// the cost per task and the code figures of every row that has a page, in one run, with one date on all
+// of them. Rows without a page (the Muse Spark estimates) move with their reference row instead (their
+// intelligence is the reference's plus the stored distance). The stored ladder is recalculated and
+// compared, but never written automatically.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -73,11 +75,11 @@ function parseArgs(argv) {
 function patchRowLine(line, values) {
   let updated = line
   const missing = []
-  const fields = ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask', 'codeChecked']
+  const fields = ['intelligence', 'costPerTaskUsd', 'code', 'codeCostPerTaskUsd', 'codeMinutesPerTask', 'checked', 'codeChecked']
   for (const field of fields) {
     if (!(field in values)) continue
     const valStr = JSON.stringify(values[field])
-    const regex = new RegExp(`("${field}":\\s*)(?:"[^"]*"|[^,}]+)`)
+    const regex = new RegExp(`("${field}":\\s*)(?:"[^"]*"|[^,}\\s]+)`)
     if (regex.test(updated)) {
       updated = updated.replace(regex, `"${field}": ${valStr}`)
     } else {
@@ -95,7 +97,6 @@ function patchPairsText(text, rowUpdates) {
   const lines = text.split('\n')
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
-    if (!line.includes('"harness": "claude"')) continue
     const match = /"id":\s*"([^"]+)"/.exec(line)
     if (!match) continue
     const id = match[1]
@@ -111,17 +112,20 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
   if (!args) return { exitCode: 2, stdout: `${USAGE}\n` }
 
   const { ladderFrom, diffLadder } = require(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'pareto.js'))
-  const { readPages } = require(path.join(__dirname, '..', '.claude', 'skills', 'artificial-analysis', 'aa-api.js'))
+  const { pairFiguresOf, readPages } = require(path.join(__dirname, '..', '.claude', 'skills', 'artificial-analysis', 'aa-api.js'))
 
   const ladder = JSON.parse(fs.readFileSync(args.ladderPath, 'utf8'))
   const pairsText = fs.readFileSync(args.pairsPath, 'utf8')
   const pairsTable = JSON.parse(pairsText)
 
-  const claudeRows = pairsTable.pairs.filter((row) => row.harness === 'claude')
-  const slugs = [...new Set(claudeRows.map((row) => row.slug))]
+  // Every row without an estimate has a page; the estimate rows (Muse Spark low to xhigh) name no
+  // page and move with their reference row instead.
+  const pagedRows = pairsTable.pairs.filter((row) => !Object.hasOwn(row, 'estimateOf'))
+  const estimateRows = pairsTable.pairs.filter((row) => Object.hasOwn(row, 'estimateOf'))
+  const slugs = [...new Set(pagedRows.map((row) => row.slug))]
   let pages
   try {
-    pages = await readPages(slugs, { fetch, pause })
+    pages = await readPages(slugs, { fetch, pause, parse: pairFiguresOf })
   } catch (err) {
     // A 403 or 429 stops the pass at the page it names: nothing is written, and the exit code is 1.
     return { exitCode: 1, stdout: `${err.message}\nNothing was written.\n` }
@@ -133,10 +137,19 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
   let hadError = false
   const today = new Date(now()).toISOString().slice(0, 10)
 
-  for (const row of claudeRows) {
+  const record = (row, updates, field, after) => {
+    const before = row[field] ?? 'none'
+    if (row[field] !== after) {
+      changes.push(`${row.id}: ${field} ${before} → ${after}`)
+    }
+    row[field] = after
+    updates[field] = after
+  }
+
+  for (const row of pagedRows) {
     const figures = pages.get(row.slug)
     if (!figures) {
-      failures.push(`${row.id}: the page of ${row.slug} has no code figure`)
+      failures.push(`${row.id}: the page of ${row.slug} has no figure`)
       continue
     }
     if (figures.error) {
@@ -144,22 +157,43 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
       hadError = true
       continue
     }
-
-    for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) {
-      const before = row[field] ?? 'none'
-      const after = figures[field]
-      if (row[field] !== after) {
-        changes.push(`${row.id}: ${field} ${before} → ${after}`)
-      }
-      row[field] = after
+    if (figures.code === null || figures.codeCostPerTaskUsd === null || figures.codeMinutesPerTask === null) {
+      failures.push(`${row.id}: the page of ${row.slug} has no code figure`)
+      continue
     }
+
+    const updates = {}
+    if (typeof figures.intelligence === 'number') record(row, updates, 'intelligence', figures.intelligence)
+    // A cost of null stays null: it is the owner's decision (Muse), or the page has no cost.
+    if (typeof figures.costPerTaskUsd === 'number' && typeof row.costPerTaskUsd === 'number') {
+      record(row, updates, 'costPerTaskUsd', figures.costPerTaskUsd)
+    }
+    for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) {
+      record(row, updates, field, figures[field])
+    }
+    row.checked = today
     row.codeChecked = today
-    rowUpdates.set(row.id, {
-      code: figures.code,
-      codeCostPerTaskUsd: figures.codeCostPerTaskUsd,
-      codeMinutesPerTask: figures.codeMinutesPerTask,
-      codeChecked: today,
-    })
+    updates.checked = today
+    updates.codeChecked = today
+    rowUpdates.set(row.id, updates)
+  }
+
+  // The estimates follow their reference row: a move of the Claude scale moves them by the same
+  // amount, so no refresh changes which pair serves a rung.
+  for (const row of estimateRows) {
+    const ref = pairsTable.pairs.find((other) => other.id === row.estimateOf)
+    if (!ref || typeof ref.intelligence !== 'number' || typeof row.estimateDistance !== 'number') {
+      failures.push(`${row.id}: no reference intelligence for ${row.estimateOf}`)
+      hadError = true
+      continue
+    }
+    const after = Math.round((ref.intelligence + row.estimateDistance) * 10) / 10
+    const before = row.intelligence ?? 'none'
+    if (row.intelligence !== after) {
+      changes.push(`${row.id}: intelligence ${before} → ${after} (estimate from ${row.estimateOf} plus ${row.estimateDistance})`)
+    }
+    row.intelligence = after
+    rowUpdates.set(row.id, { intelligence: after })
   }
 
   let stdout = ''
@@ -172,13 +206,13 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
     stdout += `${line}\n`
   }
 
-  if (args.write) {
+  if (args.write && rowUpdates.size > 0) {
     const updatedText = patchPairsText(pairsText, rowUpdates)
-    fs.writeFileSync(args.pairsPath, updatedText)
-    stdout += `written to ${args.pairsPath}\n`
+    if (updatedText !== pairsText) {
+      fs.writeFileSync(args.pairsPath, updatedText)
+      stdout += `written to ${args.pairsPath}\n`
+    }
   }
-
-  stdout += 'The intelligence and the cost per task of the table were not refreshed: they are refreshed together in part 2.\n'
 
   const recalculated = ladderFrom(pairsTable.pairs, ladder.law)
   const ladderStr = recalculated.length === 0 ? 'none' : recalculated.map((r) => `${r.model} ${r.effort}`).join(' > ')

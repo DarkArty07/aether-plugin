@@ -75,6 +75,21 @@ test('C16: the Muse pair has the figure of Opus high, no cost and the owner word
   }
 })
 
+test('the Spark estimates carry their reference and distance, and their points are the reference plus the distance', () => {
+  const { pairs } = loadPairs()
+  const byId = (id) => pairs.find((p) => p.id === id)
+  const expected = { low: -0.8, medium: -2.1, high: -0.9, xhigh: -0.4 }
+  for (const [effort, distance] of Object.entries(expected)) {
+    const row = byId(`muse/muse-spark-1.3@${effort}`)
+    assert.equal(row.estimateOf, `claude/haiku@${effort}`, effort)
+    assert.equal(typeof row.estimateDistance, 'number', effort)
+    assert.equal(row.estimateDistance, distance, effort)
+    const ref = byId(row.estimateOf)
+    assert.ok(ref && ref.harness === 'claude', `${effort}: the reference is a Claude row`)
+    assert.equal(row.intelligence, Math.round((ref.intelligence + row.estimateDistance) * 10) / 10, effort)
+  }
+})
+
 test('referenceOf gives the native pair of a model and effort, and throws for any other', () => {
   const { pairs } = loadPairs()
   assert.equal(referenceOf(pairs, { model: 'sonnet', effort: 'xhigh' }).intelligence, 49.6)
