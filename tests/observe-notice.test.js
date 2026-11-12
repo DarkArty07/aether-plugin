@@ -60,6 +60,47 @@ test('a notice holds only its number, its issue URL and a general reason; a file
   assert.deepEqual(fs.readdirSync(noticesDir(dir)), [], 'the invalid files are removed and the valid one is claimed')
 })
 
+// Task 16 (#224): the start-up notes name the count of calibration proposals of the last reading.
+function writeReading(dir, items) {
+  fs.mkdirSync(path.join(dir, 'observe'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'observe', 'read.json'), JSON.stringify({ generatedAt: 1, items }))
+}
+
+const calibrationOf = (i) => ({
+  id: `cost-mismatch:pair-${i}`,
+  kind: 'calibration',
+  type: 'cost-mismatch',
+  title: `Cost mismatch in pair pair-${i}`,
+  evidence: [`Pair "pair-${i}": observed cost of $1 per task in 5 calls (sheet: $0.5)`],
+  numbers: { actual: 1, ficha: 0.5, calls: 5 },
+  proposal: `Proposal: the observed cost of "pair-${i}" differs from its sheet. Not applied automatically.`,
+})
+
+const frictionOf = (id) => ({
+  id,
+  kind: 'friction',
+  type: 'tool-failures',
+  title: `Tool ${id} failed 8 times`,
+  evidence: [`Tool ${id}: 8 failures in 2 sessions`],
+  numbers: { count: 8 },
+})
+
+test('proposalsNote names the count of calibration proposals, and nothing without a reading or with none', (t) => {
+  assert.equal(store.proposalsNote(tempDir(t)), '', 'no reading yet')
+  const empty = tempDir(t)
+  writeReading(empty, [])
+  assert.equal(store.proposalsNote(empty), '', 'an empty reading')
+  const frictions = tempDir(t)
+  writeReading(frictions, [frictionOf('Bash')])
+  assert.equal(store.proposalsNote(frictions), '', 'frictions alone give no line')
+  const dir = tempDir(t)
+  writeReading(dir, [...Array.from({ length: 22 }, (_, i) => calibrationOf(i)), frictionOf('Bash')])
+  assert.equal(store.proposalsNote(dir), '22 calibration proposals: run aether-observe proposals')
+  const single = tempDir(t)
+  writeReading(single, [calibrationOf(0)])
+  assert.equal(store.proposalsNote(single), '1 calibration proposals: run aether-observe proposals')
+})
+
 test('a notice that does not fit stays pending without holding back a smaller later one', (t) => {
   const dir = tempDir(t)
   for (let n = 1; n <= 3; n++) assert.equal(store.saveNotice(dir, { number: n, url: url(n), id: 'fault:x' }), true)

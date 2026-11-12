@@ -23,6 +23,9 @@
 const path = require('node:path')
 const lib = (name) => require(path.join(__dirname, '..', 'lib', name))
 const run = lib('run.js')
+const { HARNESS_NAMES } = lib('harness-names.js')
+const RENEW_NAMES = `${HARNESS_NAMES.slice(0, -1).join(', ')} or ${HARNESS_NAMES.at(-1)}`
+const RENEW_USAGE = `renew --harness <${HARNESS_NAMES.join('|')}>`
 
 const VERBS = {
   begin: { usage: 'begin --session <id> --input <file>', flags: ['session', 'input'], required: ['session', 'input'] },
@@ -38,7 +41,7 @@ const VERBS = {
   run: { usage: 'run --id <id> [--session <id>]', flags: ['id', 'session'], required: ['id'] },
   wait: { usage: 'wait --id <id> --seconds <n> [--session <id>]', flags: ['id', 'seconds', 'session'], required: ['id', 'seconds'] },
   answer: { usage: 'answer --session <id> --task <id> --attempt <n> --text <text>', flags: ['session', 'task', 'attempt', 'text'], required: ['task', 'attempt'] },
-  renew: { usage: 'renew --harness <agy|codex|grok|muse>', flags: ['harness'], required: ['harness'] },
+  renew: { usage: RENEW_USAGE, flags: ['harness'], required: ['harness'] },
 }
 const USAGE = `usage: aether-delegate ${Object.values(VERBS).map((verb) => verb.usage).join(' | ')}`
 
@@ -128,7 +131,7 @@ async function answerCommand(flags, dataDir) {
 async function renewCommand(flags, dataDir) {
   const renewal = lib('router-renewal.js')
   const harness = flags.harness
-  if (!renewal.RENEWABLE.includes(harness)) throw new Error('--harness needs agy, codex, grok or muse')
+  if (!renewal.RENEWABLE.includes(harness)) throw new Error(`--harness needs ${RENEW_NAMES}`)
   const lanes = lib('lanes.js')
   const file = lanes.configPath()
   const config = lanes.loadConfig(file)
