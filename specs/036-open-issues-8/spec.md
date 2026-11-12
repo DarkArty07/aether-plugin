@@ -88,7 +88,22 @@ Para todo:
 - #201: el comando de aprobar una edición nunca fusiona en `main` o `master` sin el permiso de `aether-autonomy check merge-main` (supuesto del Lead). Reversible.
 - #232, #236 y #256: los hallazgos que hoy ya no aplican se descartan en esta spec; los que son una duda decidida por el dueño o por el Lead no se reabren. Reversible: cualquiera de los descartes puede volver a ser un arreglo.
 - #209: las duraciones se guardan en el registro de la corrida que ya existe y el informe las suma por clase; el formato es del plan. Reversible.
-- Descartes de C4: se llena en la ronda del plan, un hallazgo por línea con su motivo (R13); el Judge del plan la revisa contra esta spec.
+- Descartes de C4 (R13; 15 hallazgos, uno por línea; los demás hallazgos `applies` de `evidence/triage-256.md` y `triage-232-236.md` se arreglan en las tareas 4 a 14 del plan; el #236 6 lo reescribe la documentación de R9, tarea 4):
+  - #256 8: ya resuelto en 0.40 o 0.41 (commit 290a3c2; `docs/guide/troubleshooting.md:174`).
+  - #232 1: ya resuelto (`guard.js` expande `~`/`$HOME`, consume `git -C` y trata globs desnudos; `continuity-posttool.js` recoge redirecciones y el último argumento de `cp`/`mv`).
+  - #232 3: duda decidida de #236 («`haiku` fijo en `REFUSED_ARGS` no decide un escalón»): un lanzamiento rechazado no hace trabajo, así que no se reabre.
+  - #232 4: ya resuelto (los lanzamientos rechazados devuelven una nota de no hacer trabajo, `delegate-task.js` `autonomyRefusedPlan`).
+  - #232 5: ya resuelto (`tests/baseline.test.js:201` cubre los topes de tiempo, costo y cuota con el id de la corrida).
+  - #232 9: ya resuelto (`examine()` documenta que un fallo no deshace la aprobación).
+  - #232 11: ya resuelto (los modos corto y de correcciones y los rechazos están cubiertos en `tests/workflow-design.test.js`).
+  - #232 15: ya resuelto (`autonomy.js` devuelve `{found, records}` con `linesOf` inyectable).
+  - #232 18: solo vale en una sesión real (Stop `additionalContext`): fuera de alcance.
+  - #232 19: solo vale en una sesión real (`ExitPlanMode` sin dueño): fuera de alcance.
+  - #232 20: solo vale en una sesión real (`prompt_id` de PostToolUse en la versión instalada): fuera de alcance.
+  - #232 21: solo vale en una sesión real (tres partes de reglas y el aviso de la décima lectura): fuera de alcance.
+  - #232 22: ya resuelto (la regla perdida se restauró en la revisión final; no queda nada accionable).
+  - #232 23: ya no aplica (esa región de `specs/031-lead-behavior/tasks.md` ya no tiene la frase citada).
+  - #236 C: ya resuelto (la frase del changelog sobre `AETHER_PAIRS_CONFIG` está en `docs/changelog.md:75` y la fija `tests/docs-032.test.js:30`).
 - #201 (R28): el comando del freno no detiene flujos ni delegados porque un bin no puede; lo hace el Lead con `TaskStop`. Reversible: que el comando también corra `aether-lane stop <run>`.
 
 ## Irreversible actions
