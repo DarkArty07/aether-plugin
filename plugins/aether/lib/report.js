@@ -294,7 +294,9 @@ function qualityOf(results, adopted = {}) {
   for (const result of results) {
     for (const unit of result.units || []) {
       if (unit && unit.fixedByLead && typeof unit.fixedByLead === 'object') {
-        fixedUnits.set(unit.id, { id: unit.id, commit: unit.fixedByLead.commit, reason: unit.fixedByLead.reason })
+        const entry = { id: unit.id, commit: unit.fixedByLead.commit, reason: unit.fixedByLead.reason }
+        if (unit.fixedByLead.widened !== undefined) entry.widened = unit.fixedByLead.widened
+        fixedUnits.set(unit.id, entry)
       }
       const before = units.get(unit.id)
       const tiers = unit.tiers || []
@@ -714,7 +716,8 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     notes.push(`${unit.id} was integrated by hand at ${String(unit.commit).slice(0, 10)}: ${unit.reason}`)
   }
   for (const unit of quality.fixedUnits || []) {
-    notes.push(`${unit.id} was fixed in flight by the Lead at ${String(unit.commit).slice(0, 10)}: ${unit.reason}`)
+    const widened = Array.isArray(unit.widened) && unit.widened.length > 0 ? ` (widened: ${unit.widened.join(', ')})` : ''
+    notes.push(`${unit.id} was fixed in flight by the Lead at ${String(unit.commit).slice(0, 10)}: ${unit.reason}${widened}`)
   }
   // A retry that ran as one sub-attempt per owned file (issue 14). The quality counts are unchanged:
   // the pass is still one attempt of the unit.

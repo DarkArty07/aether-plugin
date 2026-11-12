@@ -13,7 +13,7 @@
 // aether-wt stuck <run> <task> --payload <ruta> --digest <huella>
 // aether-wt stuck-tick <run> <task> --seconds <1 a 120>
 // aether-wt stuck-end <run> <task> --outcome <expired|ceiling|declined|merged|rejected>
-// aether-wt deliver <run> <task> --commit <sha> --reason <texto>
+// aether-wt deliver <run> <task> --commit <sha> --reason <texto> [--widen <ruta>[,<ruta>…]]
 // aether-wt decline <run> <task> --reason <texto>
 // aether-wt watch <run> [--interval <s>] [--silence <s>]
 // aether-wt sweep --run <id> [--finish] | --stale [--hours N]
@@ -27,7 +27,7 @@ const wtGate = require(path.join(__dirname, '..', 'lib', 'wt-gate.js'))
 const wtStuck = require(path.join(__dirname, '..', 'lib', 'wt-stuck.js'))
 const wtWatch = require(path.join(__dirname, '..', 'lib', 'wt-watch.js'))
 
-const USAGE = 'usage: aether-wt ensure|diff|merge|settle|status|salvage|remove <run> <task> | aether-wt save <run> | aether-wt adopt <run> <task> --commit <sha> --reason <text> [--keep-patch] | aether-wt stuck <run> <task> --payload <ruta> --digest <huella> | aether-wt stuck-tick <run> <task> --seconds <1 a 120> | aether-wt stuck-end <run> <task> --outcome <expired|ceiling|declined|merged|rejected> | aether-wt deliver <run> <task> --commit <sha> --reason <texto> | aether-wt decline <run> <task> --reason <texto> | aether-wt watch <run> [--interval <s>] [--silence <s>] | aether-wt diff <run> --final | aether-wt sweep --run <id> [--finish] | --stale [--hours N] | aether-wt ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>] | aether-wt gate <run> <task>'
+const USAGE = 'usage: aether-wt ensure|diff|merge|settle|status|salvage|remove <run> <task> | aether-wt save <run> | aether-wt adopt <run> <task> --commit <sha> --reason <text> [--keep-patch] | aether-wt stuck <run> <task> --payload <ruta> --digest <huella> | aether-wt stuck-tick <run> <task> --seconds <1 a 120> | aether-wt stuck-end <run> <task> --outcome <expired|ceiling|declined|merged|rejected> | aether-wt deliver <run> <task> --commit <sha> --reason <texto> [--widen <ruta>[,<ruta>…]] | aether-wt decline <run> <task> --reason <texto> | aether-wt watch <run> [--interval <s>] [--silence <s>] | aether-wt diff <run> --final | aether-wt sweep --run <id> [--finish] | --stale [--hours N] | aether-wt ladder <run> <task> [--verdict <v> --payload <ruta> --digest <huella>] | aether-wt gate <run> <task>'
 
 function sweep(rest) {
   if (rest[0] === '--run') return wt.sweepRun(process.cwd(), rest[1], { finish: rest.includes('--finish'), endMark: !rest.includes('--finish') })
@@ -62,7 +62,7 @@ async function main() {
   else if (command === 'stuck') result = wtStuck.stuckBegin(process.cwd(), rest[0], rest[1], { payload: flag(rest, '--payload'), digest: flag(rest, '--digest') })
   else if (command === 'stuck-tick') result = await wtStuck.stuckTick(process.cwd(), rest[0], rest[1], flag(rest, '--seconds'))
   else if (command === 'stuck-end') result = wtStuck.stuckEnd(process.cwd(), rest[0], rest[1], flag(rest, '--outcome'))
-  else if (command === 'deliver') result = wtStuck.deliverFix(process.cwd(), rest[0], rest[1], { commit: flag(rest, '--commit'), reason: flag(rest, '--reason') })
+  else if (command === 'deliver') result = wtStuck.deliverFix(process.cwd(), rest[0], rest[1], { commit: flag(rest, '--commit'), reason: flag(rest, '--reason'), widen: flag(rest, '--widen') })
   else if (command === 'decline') result = wtStuck.declineUnit(process.cwd(), rest[0], rest[1], { reason: flag(rest, '--reason') })
   else if (command === 'watch') result = await wtWatch.watchCommand(process.cwd(), rest[0], { interval: flag(rest, '--interval'), silence: flag(rest, '--silence') })
   else if (command === 'ladder') {

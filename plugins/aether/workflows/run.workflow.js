@@ -1744,7 +1744,7 @@ async function rescue(unit) {
       } else if (tick.stop) {
         fate = { kind: 'ceiling' }
       } else if (tick.state === 'delivered') {
-        fate = { kind: 'delivered', commit: tick.commit, reason: tick.reason }
+        fate = { kind: 'delivered', commit: tick.commit, reason: tick.reason, widen: tick.widen }
       } else if (tick.state === 'declined') {
         fate = { kind: 'declined', reason: tick.reason }
       }
@@ -1755,6 +1755,7 @@ async function rescue(unit) {
       if (held2.done === 'merged') {
         finish(unit, 'merged')
         unit.fixedByLead = { commit: fate.commit, reason: fate.reason }
+        if (Array.isArray(fate.widen) && fate.widen.length > 0) unit.fixedByLead.widened = [...fate.widen]
         await end('merged')
         return
       }

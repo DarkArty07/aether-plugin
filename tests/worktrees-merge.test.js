@@ -53,6 +53,56 @@ test("merge refuses files outside the unit's Owns", (t) => {
   assert.equal(repo.git('rev-parse', 'HEAD'), before)
 })
 
+function deliverWidened(t, repo, args, unit, widen) {
+  const stuck = require('../plugins/aether/lib/wt-stuck.js')
+  const { digest } = require('../plugins/aether/lib/lanes.js')
+  const payload = run.stuckPayloadFile(repo.dir, args.runId, 'task-1')
+  const text = JSON.stringify({ reason: 'the ladder is spent (exhausted)' })
+  fs.mkdirSync(path.dirname(payload), { recursive: true })
+  fs.writeFileSync(payload, text)
+  stuck.stuckBegin(repo.dir, args.runId, 'task-1', { payload, digest: digest(text) })
+  stuck.deliverFix(repo.dir, args.runId, 'task-1', { commit: repo.git('-C', unit.path, 'rev-parse', 'HEAD'), reason: 'the test lives outside Owns', ...(widen === undefined ? {} : { widen }) })
+}
+
+test('merge takes the widened file of a delivered fix (issue #258)', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
+  commitIn(repo, unit.path, 'docs/extra.md', 'extra\n', 'the fix outside Owns')
+  deliverWidened(t, repo, args, unit, 'docs/extra.md')
+  const r = merge(repo.dir, args.runId, 'task-1')
+  assert.equal(r.merged, true)
+  assert.equal(fs.readFileSync(path.join(repo.dir, 'docs', 'extra.md'), 'utf8'), 'extra\n')
+})
+
+test('merge still refuses another outside file the widen list does not name (issue #258)', (t) => {
+  const { repo, args, unit } = setup(t)
+  commitIn(repo, unit.path, 'docs/extra.md', 'extra\n', 'the widened fix')
+  commitIn(repo, unit.path, 'README.md', 'changed\n', 'another file outside Owns')
+  deliverWidened(t, repo, args, unit, 'docs/extra.md')
+  const before = repo.git('rev-parse', 'HEAD')
+  assert.deepEqual(merge(repo.dir, args.runId, 'task-1'), { merged: false, reason: 'ownership', files: ['README.md'] })
+  assert.equal(repo.git('rev-parse', 'HEAD'), before)
+})
+
+test('merge refuses the widened file once the wait ended, and without a widen list (issue #258)', (t) => {
+  const stuck = require('../plugins/aether/lib/wt-stuck.js')
+  for (const close of ['ended', 'plain']) {
+    const { repo, args, unit } = setup(t)
+    commitIn(repo, unit.path, 'docs/extra.md', 'extra\n', 'the fix outside Owns')
+    deliverWidened(t, repo, args, unit, 'docs/extra.md')
+    if (close === 'ended') stuck.stuckEnd(repo.dir, args.runId, 'task-1', 'merged')
+    else {
+      const file = run.stuckFile(repo.dir, args.runId, 'task-1')
+      const record = JSON.parse(fs.readFileSync(file, 'utf8'))
+      delete record.delivered.widen
+      fs.writeFileSync(file, JSON.stringify(record))
+    }
+    const before = repo.git('rev-parse', 'HEAD')
+    assert.deepEqual(merge(repo.dir, args.runId, 'task-1'), { merged: false, reason: 'ownership', files: ['docs/extra.md'] }, close)
+    assert.equal(repo.git('rev-parse', 'HEAD'), before)
+  }
+})
+
 test('merge refuses a unit that committed nothing', (t) => {
   const { repo, args, unit } = setup(t)
   assert.deepEqual(merge(repo.dir, args.runId, 'task-1'), {

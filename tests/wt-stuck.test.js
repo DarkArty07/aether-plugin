@@ -110,6 +110,106 @@ test('decline records the Lead reason, the tick reports it, and a delivery is re
   assert.throws(() => stuck.declineUnit(s.repo.dir, s.args.runId, 'task-2', { reason: 'x' }), /task-2 is not waiting for a fix/)
 })
 
+function widenScenario(t, files) {
+  const s = scenario(t)
+  for (const [file, content] of files) commitIn(s.repo, s.unit.path, file, content ?? 'changed\n', `change ${file}`)
+  begin(s)
+  return s
+}
+
+function widenError(t, files, widen) {
+  const s = widenScenario(t, files)
+  let message = null
+  try {
+    stuck.deliverFix(s.repo.dir, s.args.runId, 'task-1', { commit: tip(s), reason: 'fix', widen })
+  } catch (err) {
+    message = err.message
+  }
+  assert.ok(message, `expected deliver with widen ${widen} to fail`)
+  assert.equal(record(s).state, 'waiting', 'a refused widen delivery changes nothing')
+  return message
+}
+
+test('deliver with --widen stores the sorted widened paths, and the tick reports them', async (t) => {
+  const s = widenScenario(t, [['docs/extra.md'], ['docs/another.md']])
+  const out = stuck.deliverFix(s.repo.dir, s.args.runId, 'task-1', { commit: tip(s), reason: 'the test lives outside Owns', widen: 'docs/extra.md,docs/another.md,docs/extra.md' })
+  assert.deepEqual(out.widen, ['docs/another.md', 'docs/extra.md'])
+  assert.deepEqual(record(s).delivered.widen, ['docs/another.md', 'docs/extra.md'])
+  assert.deepEqual(await stuck.stuckTick(s.repo.dir, s.args.runId, 'task-1', 1, quick), {
+    paused: 1,
+    state: 'delivered',
+    stop: false,
+    commit: tip(s),
+    reason: 'the test lives outside Owns',
+    widen: ['docs/another.md', 'docs/extra.md'],
+  })
+})
+
+test('deliver without --widen stores no widen list', (t) => {
+  const s = widenScenario(t, [['src/t1/a.js', 'one\n']])
+  stuck.deliverFix(s.repo.dir, s.args.runId, 'task-1', { commit: tip(s), reason: 'fixed' })
+  assert.equal('widen' in record(s).delivered, false)
+  assert.equal('widen' in record(s), false)
+})
+
+test('deliver with --widen rejects a malformed path and names it', (t) => {
+  for (const bad of ['docs/*.md', 'docs/a?.md', 'docs/[ab].md', 'docs/../README.md', '/etc/passwd', 'C:docs/a.md', './docs/a.md', 'docs\\a.md', 'docs/', '']) {
+    const message = widenError(t, [['docs/a.md']], bad === '' ? '' : `docs/a.md,${bad}`)
+    assert.ok(message.includes('widen'), bad || '(empty)')
+    if (bad !== '') assert.ok(message.includes(bad), `${bad} is named: ${message}`)
+  }
+})
+
+test('deliver with --widen rejects a path already in the unit Owns', (t) => {
+  const message = widenError(t, [['src/t1/a.js', 'one\n']], 'src/t1/a.js')
+  assert.ok(message.includes('src/t1/a.js'))
+  assert.match(message, /Owns/)
+})
+
+test('deliver with --widen rejects a path the branch does not change', (t) => {
+  const message = widenError(t, [['docs/a.md']], 'docs/missing.md')
+  assert.ok(message.includes('docs/missing.md'))
+})
+
+test('deliver with --widen rejects a path another unmerged unit owns, and names that unit', (t) => {
+  const message = widenError(t, [['src/t2/b.js']], 'src/t2/b.js')
+  assert.ok(message.includes('src/t2/b.js'))
+  assert.ok(message.includes('task-2'), message)
+})
+
+test('deliver with --widen accepts the path once the owning unit merged and its branch is gone', (t) => {
+  const s = scenario(t)
+  const other = wt.ensure(s.repo.dir, s.args.runId, 'task-2')
+  commitIn(s.repo, other.path, 'src/t2/a.js', 'two\n', 'task two')
+  assert.equal(wt.merge(s.repo.dir, s.args.runId, 'task-2').merged, true)
+  wt.removeUnit(s.repo.dir, s.args.runId, 'task-2')
+  assert.equal(wt.unitStatus(s.repo.dir, s.args.runId, 'task-2').merged, false, 'a merged unit without its branch reads as not merged from its status')
+  commitIn(s.repo, s.unit.path, 'src/t2/b.js', 'fix\n', 'the fix')
+  begin(s)
+  const out = stuck.deliverFix(s.repo.dir, s.args.runId, 'task-1', { commit: tip(s), reason: 'the test lives outside Owns', widen: 'src/t2/b.js' })
+  assert.deepEqual(out.widen, ['src/t2/b.js'])
+  assert.equal(record(s).state, 'delivered')
+})
+
+test('deliver with --widen rejects a path of a unit outside the last launch graph while it is unmerged', (t) => {
+  const s = widenScenario(t, [['src/t2/b.js']])
+  const graphFile = path.join(s.args.runDir, 'graph.json')
+  const graph = JSON.parse(fs.readFileSync(graphFile, 'utf8'))
+  assert.ok(graph.tasks['task-2'], 'the fixture compiles both units')
+  delete graph.tasks['task-2']
+  fs.writeFileSync(graphFile, JSON.stringify(graph))
+  let message = null
+  try {
+    stuck.deliverFix(s.repo.dir, s.args.runId, 'task-1', { commit: tip(s), reason: 'fix', widen: 'src/t2/b.js' })
+  } catch (err) {
+    message = err.message
+  }
+  assert.ok(message, 'expected the delivery to fail')
+  assert.ok(message.includes('src/t2/b.js'), message)
+  assert.ok(message.includes('task-2'), message)
+  assert.equal(record(s).state, 'waiting')
+})
+
 test('end closes the record with its outcome, once, and refuses an unknown outcome', (t) => {
   const s = scenario(t)
   begin(s)

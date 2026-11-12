@@ -103,7 +103,9 @@ async function stuckTick(cwd, runId, taskId, seconds, { sleep, stopped } = {}) {
   if (!record) throw new Error(`${taskId} has no stuck record`)
   const stop = Boolean(await (stopped || (() => defaultStopped(mainRoot)))())
   if (record.state === 'delivered') {
-    return { paused, state: record.state, stop, commit: record.delivered.commit, reason: record.delivered.reason }
+    const out = { paused, state: record.state, stop, commit: record.delivered.commit, reason: record.delivered.reason }
+    if (Array.isArray(record.delivered.widen) && record.delivered.widen.length > 0) out.widen = [...record.delivered.widen]
+    return out
   }
   if (record.state === 'declined') {
     return { paused, state: record.state, stop, reason: record.declined.reason }
@@ -133,7 +135,57 @@ function readWaiting(mainRoot, runId, taskId) {
   return record
 }
 
-function deliverFix(cwd, runId, taskId, { commit, reason } = {}) {
+// One widen path, compared exactly as changedFiles returns it, without normalizing.
+// Null when the path may be widened; the reason it may not, naming the path, otherwise.
+function widenPathError(p) {
+  if (typeof p !== 'string' || p === '') return 'invalid widen path "": it must be a non-empty relative file path'
+  if (p.startsWith('/') || /^[A-Za-z]:/.test(p)) return `invalid widen path ${p}: it must be relative to the repository`
+  if (p.startsWith('./')) return `invalid widen path ${p}: it must not start with ./`
+  if (p.includes('\\')) return `invalid widen path ${p}: it must not hold a backslash`
+  if (p.endsWith('/')) return `invalid widen path ${p}: it names a file, not a directory`
+  if (p.split('/').includes('..')) return `invalid widen path ${p}: it must not hold a .. segment`
+  if (/[*?\[]/.test(p)) return `invalid widen path ${p}: globs are not widened`
+  return null
+}
+
+// The sorted widen list of one --widen flag, or null when no flag was given. Every failing
+// path rejects the whole delivery, and the record stays waiting: the throw happens before
+// the record is written. Owns comes from loadTasks (the graph plus readUnits, so a unit the
+// last launch dropped still owns its files), and the merged state from mergedUnits, not
+// unitStatus: a merged unit whose branch was removed reads as not merged from its status.
+function widenList(mainRoot, cwd, runId, taskId, widen) {
+  if (widen === undefined) return null
+  if (typeof widen !== 'string') throw new Error('invalid widen flag: it takes a comma-separated list of paths')
+  const graph = loadTasks(mainRoot, runId)
+  const tasks = graph.tasks
+  const task = tasks[taskId]
+  if (!task) throw new Error(`${taskId} is not in run ${runId}`)
+  const parts = widen.split(',')
+  for (const p of parts) {
+    const shape = widenPathError(p)
+    if (shape) throw new Error(shape)
+  }
+  const owns = Array.isArray(task.owns) ? task.owns : []
+  for (const p of parts) {
+    if (matchesAny(p, owns)) throw new Error(`${p} is already in the Owns of ${taskId}: there is nothing to widen`)
+  }
+  const branch = run.unitBranch(runId, taskId)
+  const changed = worktrees.changedFiles(mainRoot, worktrees.unitBase(mainRoot, graph, branch), branch)
+  for (const p of parts) {
+    if (!changed.includes(p)) throw new Error(`${p} is not changed by ${branch}: widen names a file the delivery touches`)
+  }
+  const merged = new Set(worktrees.mergedUnits(cwd, runId))
+  for (const p of parts) {
+    for (const otherId of Object.keys(tasks).sort()) {
+      if (otherId === taskId) continue
+      const owns = Array.isArray(tasks[otherId].owns) ? tasks[otherId].owns : []
+      if (matchesAny(p, owns) && !merged.has(otherId)) throw new Error(`${p} is in the Owns of ${otherId}, which is not merged: that unit owns it`)
+    }
+  }
+  return [...new Set(parts)].sort()
+}
+
+function deliverFix(cwd, runId, taskId, { commit, reason, widen } = {}) {
   run.assertRunId(runId)
   run.assertTaskId(taskId)
   if (typeof commit !== 'string' || commit.trim() === '') throw new Error('deliver needs --commit <sha>')
@@ -148,10 +200,11 @@ function deliverFix(cwd, runId, taskId, { commit, reason } = {}) {
   const branch = run.unitBranch(runId, taskId)
   const tip = git(['rev-parse', '--verify', '--quiet', branch], mainRoot, { allowFail: true })
   if (tip.status !== 0 || tip.stdout !== sha) throw new Error(`the commit must be the tip of ${branch}`)
+  const widened = widenList(mainRoot, cwd, runId, taskId, widen)
   record.state = 'delivered'
-  record.delivered = { commit: sha, reason, at: new Date().toISOString() }
+  record.delivered = { commit: sha, reason, at: new Date().toISOString(), ...(widened ? { widen: widened } : {}) }
   run.writeJson(run.stuckFile(mainRoot, runId, taskId), record)
-  return { delivered: true, task: taskId, commit: sha, reason }
+  return { delivered: true, task: taskId, commit: sha, reason, ...(widened ? { widen: widened } : {}) }
 }
 
 function declineUnit(cwd, runId, taskId, { reason } = {}) {

@@ -44,6 +44,16 @@ test('the guides describe the stuck wait and the commands the mod answers', () =
   for (const name of ['wt-config.js', 'wt-stuck.js', 'wt-watch.js', 'config/swarm.json']) assert.ok(components.includes(name), name)
 })
 
+test('the swarm skill tells the Lead to widen Owns with --widen, and to decline only when another unit owns the files or the plan error is larger (issue #258)', () => {
+  const skill = read('plugins', 'aether', 'skills', 'swarm', 'SKILL.md')
+  assert.ok(skill.includes('--widen'), 'the skill names --widen')
+  assert.doesNotMatch(skill, /for example, a plan error outside `Owns`/)
+  assert.match(skill, /another unit.*owns|owns.*another unit/i)
+  assert.match(skill, /decline/i)
+  const troubleshooting = read('docs', 'guide', 'troubleshooting.md')
+  assert.ok(troubleshooting.includes('--widen'), 'troubleshooting names --widen')
+})
+
 test('the start-up skill does not mention the stuck wait', () => {
   assert.doesNotMatch(read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md'), /aether-wt (watch|deliver|decline)|stuckWaitSeconds/)
 })
