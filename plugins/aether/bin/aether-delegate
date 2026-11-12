@@ -10,6 +10,7 @@
 // aether-delegate wait --id <id> --seconds <n> [--session <id>]
 // aether-delegate answer --session <id> --task <id> --attempt <n> --text <text>
 // aether-delegate renew --harness <agy|codex|grok|muse>
+// aether-delegate approve --task <id> [--worktree <path>] [--ignore <glob>]
 //
 // The delegate tasks of the Lead on the ladder. begin says how the attempt the mod caught runs (lib/delegate-task.js);
 // verdict records the Lead's judgment of the last attempt, which is the only one that counts, and says what the next
@@ -17,7 +18,8 @@
 // (lib/delegate-authorize.js, with an optional --effort the owner's words name; a refusal prints its error and exits 0); start launches run in a process of its own and
 // returns at once, run does the attempt on an external pair (lib/delegate-run.js), and wait polls for its result for up to n seconds (540 at most); answer records the end
 // of a delegate on Claude: its answer for a read-only attempt or an end marker for an editing attempt; renew takes a new quota reading of agy, codex, grok or muse and saves it where
-// the pair choice reads it. start and run work in the current directory. None of them merges or pushes. Each prints one
+// the pair choice reads it. start and run work in the current directory. approve is the one verb that merges: it gives
+// the approve verdict, merges the edit into the current branch and runs the project's tests. None of them pushes. Each prints one
 // JSON line and exits 0, except a wrong use or an error of its own, which prints { "error": <message> } and exits 1.
 
 const path = require('node:path')
@@ -42,6 +44,12 @@ const VERBS = {
   wait: { usage: 'wait --id <id> --seconds <n> [--session <id>]', flags: ['id', 'seconds', 'session'], required: ['id', 'seconds'] },
   answer: { usage: 'answer --session <id> --task <id> --attempt <n> --text <text>', flags: ['session', 'task', 'attempt', 'text'], required: ['task', 'attempt'] },
   renew: { usage: RENEW_USAGE, flags: ['harness'], required: ['harness'] },
+  approve: {
+    usage: 'approve --task <id> [--worktree <path>] [--ignore <glob>]',
+    flags: ['task', 'worktree', 'ignore'],
+    repeatable: ['ignore'],
+    required: ['task'],
+  },
 }
 const USAGE = `usage: aether-delegate ${Object.values(VERBS).map((verb) => verb.usage).join(' | ')}`
 
@@ -128,6 +136,15 @@ async function answerCommand(flags, dataDir) {
   return lib('delegate-run.js').recordAnswer({ task: flags.task, attempt, text: flags.text ?? '', session: flags.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null, dataDir })
 }
 
+async function approveCommand(flags) {
+  return lib('delegate-approve.js').approve(process.cwd(), {
+    task: flags.task,
+    worktree: flags.worktree,
+    ignore: flags.ignore ?? [],
+    env: process.env,
+  })
+}
+
 async function renewCommand(flags, dataDir) {
   const renewal = lib('router-renewal.js')
   const harness = flags.harness
@@ -143,7 +160,7 @@ async function renewCommand(flags, dataDir) {
   return { renewed: true, harness, readAt }
 }
 
-const COMMANDS = { begin: beginCommand, verdict: verdictCommand, authorize: authorizeCommand, start: startCommand, run: runCommand, wait: waitCommand, answer: answerCommand, renew: renewCommand }
+const COMMANDS = { begin: beginCommand, verdict: verdictCommand, authorize: authorizeCommand, start: startCommand, run: runCommand, wait: waitCommand, answer: answerCommand, renew: renewCommand, approve: approveCommand }
 
 async function main() {
   const [verb, ...args] = process.argv.slice(2)
