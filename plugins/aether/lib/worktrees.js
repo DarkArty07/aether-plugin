@@ -1250,8 +1250,9 @@ function pendingPatches(mainRoot, runId, patchesDir) {
 // integrated, R6) is never deleted. With `finish`, the run directory goes only when nothing is
 // kept: no retained task, no saved branch, no live unverified marker, no patch of a task not integrated, and no
 // worktree or branch remaining; `finished` says it went. The run's lane processes are stopped and
-// its lane copies removed first, so nothing is still writing when the units are saved.
-function sweepRun(cwd, runId, { finish = false } = {}) {
+// its lane copies removed first, so nothing is still writing when the units are saved. With
+// `endMark`, the run's end mark is written when its directory is still there afterwards.
+function sweepRun(cwd, runId, { finish = false, endMark = false } = {}) {
   run.assertRunId(runId)
   const { mainRoot } = repoPaths(cwd)
   const stopped = stopLaneProcesses(mainRoot, runId)
@@ -1294,6 +1295,12 @@ function sweepRun(cwd, runId, { finish = false } = {}) {
     assertInside(runDir, path.join(run.aetherDir(mainRoot), 'runs'))
     fs.rmSync(runDir, { recursive: true, force: true })
     finished = true
+  }
+  // The flow's cleanup asks for this mark when the launch ends without finishing the run. A sweep
+  // that finished the run deleted its directory, and a stale sweep never asks: writing here would
+  // renew the directory and make later stale sweeps read the run as active.
+  if (endMark && exists(runDir)) {
+    run.writeJson(run.launchEndFile(mainRoot, runId), { run: runId, at: new Date().toISOString() })
   }
   const result = {
     removedWorktrees,
