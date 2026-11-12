@@ -29,10 +29,9 @@ function parseSilence(value) {
   return seconds
 }
 
-// The newest modification time under the run directory, files and folders alike, without following
-// links. The heartbeat counts as a sign of life, since every pause of the stuck wait writes it.
-function newestWriteMs(dir) {
-  let newest = -Infinity
+// One lstat walk that does not follow links. visit(path, stat) returns true to stop.
+// Shared with worktrees.modifiedSince. A path that disappears or cannot be read is skipped.
+function walkNoFollow(dir, visit) {
   const pending = [dir]
   while (pending.length > 0) {
     const current = pending.pop()
@@ -42,7 +41,7 @@ function newestWriteMs(dir) {
     } catch {
       continue // gone since it was listed
     }
-    if (stat.mtimeMs > newest) newest = stat.mtimeMs
+    if (visit(current, stat)) return true
     if (!stat.isDirectory()) continue
     let names
     try {
@@ -52,8 +51,27 @@ function newestWriteMs(dir) {
     }
     for (const name of names) pending.push(path.join(current, name))
   }
+  return false
+}
+
+// The newest modification time under dir, files and folders alike, without following links.
+// The heartbeat counts as a sign of life, since every pause of the stuck wait writes it.
+function newestWriteMs(dir) {
+  let newest = -Infinity
+  walkNoFollow(dir, (_current, stat) => {
+    if (stat.mtimeMs > newest) newest = stat.mtimeMs
+    return false
+  })
   return newest
 }
+
+// The run directory and its unit worktrees. A quiet run directory is still alive while a unit
+// worktree is being written.
+function newestActivityMs(mainRoot, runId) {
+  return Math.max(newestWriteMs(run.runDir(mainRoot, runId)), newestWriteMs(run.worktreesDir(mainRoot, runId)))
+}
+
+const TASK_FILE = /^task-\d+\.json$/
 
 function taskNumber(taskId) {
   return Number(String(taskId).slice('task-'.length))
@@ -71,7 +89,7 @@ function readStuckRecords(mainRoot, runId) {
   }
   const records = []
   for (const name of names) {
-    if (!name.endsWith('.json')) continue
+    if (!TASK_FILE.test(name)) continue
     let record
     try {
       record = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))
@@ -100,15 +118,17 @@ function endedMessage(records) {
 // or a whole-number text from 1, default loadSwarmConfig().watchSilenceSeconds). sleep(ms) and
 // now() are injected by the tests (default setTimeout and Date.now).
 async function watchCommand(cwd, runId, { interval, silence, sleep, now } = {}) {
+  run.assertRunId(runId)
   const intervalSeconds = interval === undefined || interval === null ? DEFAULT_INTERVAL_SECONDS : parseInterval(interval)
   const silenceCap = silence === undefined || silence === null ? loadSwarmConfig().watchSilenceSeconds : parseSilence(silence)
   const wait = typeof sleep === 'function' ? sleep : (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   const clock = typeof now === 'function' ? now : () => Date.now()
   const { mainRoot } = repoPaths(cwd)
   const dir = run.runDir(mainRoot, runId)
-  if (!fs.existsSync(dir)) throw new Error(`run ${runId} not found`)
   const endFile = run.launchEndFile(mainRoot, runId)
   for (;;) {
+    // Checked on every poll: a run deleted while the watch waits has ended, and is not silent.
+    if (!fs.existsSync(dir)) throw new Error(`run ${runId} not found`)
     // The end mark is probed before the stuck units: a unit still waiting after the end is already
     // attended (R4), so it is listed in the ended result and never reported as stuck.
     if (fs.existsSync(endFile)) {
@@ -121,7 +141,7 @@ async function watchCommand(cwd, runId, { interval, silence, sleep, now } = {}) 
       })
       return { watch: 'ended', run: runId, stuck, message: endedMessage(records) }
     }
-    const silentSeconds = (clock() - newestWriteMs(dir)) / 1000
+    const silentSeconds = (clock() - newestActivityMs(mainRoot, runId)) / 1000
     const silent = silentSeconds > silenceCap
     if (!silent) {
       const waiting = readStuckRecords(mainRoot, runId).filter((record) => record.state === 'waiting')
@@ -147,4 +167,4 @@ async function watchCommand(cwd, runId, { interval, silence, sleep, now } = {}) 
   }
 }
 
-module.exports = { watchCommand }
+module.exports = { watchCommand, walkNoFollow, newestWriteMs }

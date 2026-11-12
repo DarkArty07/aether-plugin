@@ -3,6 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const path = require('node:path')
 const { makeRepo, compile, age, ageRun, commitIn, useDataDir } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const run = require('../plugins/aether/lib/run.js')
@@ -137,6 +138,96 @@ test('the silence cap comes from swarm.json when the watch is not given one', as
     },
   })
   assert.equal(out.watch, 'ended')
+})
+
+test('watch undefined-id and ../.. throw invalid run id', async (t) => {
+  const s = scenario(t)
+  await assert.rejects(() => watchCommand(s.repo.dir, undefined, quick), /invalid run id/)
+  await assert.rejects(() => watchCommand(s.repo.dir, '../..', quick), /invalid run id/)
+})
+
+test('a deleted run directory ends the watch as run not found, not as silent', async (t) => {
+  const s = scenario(t)
+  await assert.rejects(
+    () => watchCommand(s.repo.dir, s.args.runId, {
+      ...BIG,
+      sleep: async () => fs.rmSync(s.args.runDir, { recursive: true, force: true }),
+    }),
+    new RegExp(`run ${s.args.runId} not found`),
+  )
+})
+
+test('two different record names order by task number, and a stray json does not corrupt the order', async (t) => {
+  const s = scenario(t)
+  put(s, 'task-10')
+  put(s, 'task-2')
+  fs.writeFileSync(path.join(run.stuckDir(s.repo.dir, s.args.runId), 'notes.json'), JSON.stringify({
+    run: s.args.runId,
+    task: 'task-0',
+    reason: 'stray',
+    state: 'waiting',
+  }))
+  const out = await watchCommand(s.repo.dir, s.args.runId, quick)
+  assert.equal(out.watch, 'stuck')
+  assert.equal(out.task, 'task-2')
+})
+
+test('the newest mtime of the run directory is unchanged across a wait, and the wait writes no timings', async (t) => {
+  const s = scenario(t)
+  const { newestWriteMs } = require('../plugins/aether/lib/wt-watch.js')
+  const before = newestWriteMs(s.args.runDir)
+  let polls = 0
+  const out = await watchCommand(s.repo.dir, s.args.runId, {
+    ...BIG,
+    sleep: async () => {
+      polls++
+      if (polls === 1) assert.equal(newestWriteMs(s.args.runDir), before)
+      if (polls === 2) fs.writeFileSync(run.launchEndFile(s.repo.dir, s.args.runId), '{}\n')
+    },
+  })
+  assert.equal(out.watch, 'ended')
+  assert.equal(fs.existsSync(path.join(s.args.runDir, 'timings.jsonl')), false)
+})
+
+test('a quiet run whose unit worktree is being written is not silent', async (t) => {
+  const s = scenario(t)
+  const unit = wt.ensure(s.repo.dir, s.args.runId, 'task-1')
+  age(s.args.runDir, 2)
+  fs.writeFileSync(path.join(unit.path, 'live.js'), 'now\n')
+  let slept = false
+  const out = await watchCommand(s.repo.dir, s.args.runId, {
+    interval: 0.001,
+    silence: 600,
+    sleep: async () => {
+      slept = true
+      fs.writeFileSync(run.launchEndFile(s.repo.dir, s.args.runId), '{}\n')
+    },
+  })
+  assert.equal(slept, true)
+  assert.equal(out.watch, 'ended')
+})
+
+test('newestWriteMs and modifiedSince share one lstat walk that does not follow links', () => {
+  const watchSrc = fs.readFileSync(require.resolve('../plugins/aether/lib/wt-watch.js'), 'utf8')
+  const wtSrc = fs.readFileSync(require.resolve('../plugins/aether/lib/worktrees.js'), 'utf8')
+  assert.match(watchSrc, /function walkNoFollow/)
+  const body = wtSrc.slice(wtSrc.indexOf('function modifiedSince'), wtSrc.indexOf('function lastRecordStatus'))
+  assert.match(body, /walkNoFollow\(/)
+  assert.equal(body.includes('lstatSync'), false)
+  const { walkNoFollow } = require('../plugins/aether/lib/wt-watch.js')
+  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aether-walk-'))
+  const outside = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aether-walk-out-'))
+  fs.writeFileSync(path.join(outside, 'secret'), 'x')
+  const linked = path.join(root, 'linked')
+  fs.symlinkSync(outside, linked)
+  const seen = []
+  walkNoFollow(root, (current) => {
+    seen.push(current)
+    return false
+  })
+  assert.equal(seen.includes(path.join(outside, 'secret')), false)
+  fs.rmSync(root, { recursive: true, force: true })
+  fs.rmSync(outside, { recursive: true, force: true })
 })
 
 test('a bad option and an unknown run are refused', async (t) => {
