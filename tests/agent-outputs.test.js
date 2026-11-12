@@ -26,6 +26,8 @@ const UNREAD = [
       assert.ok(!Object.keys(schemas.SUPERVISOR_SCHEMA.properties).some((k) => /grade|criterion/i.test(k)))
       const items = schemas.SUPERVISOR_SCHEMA.properties.findings.items
       assert.ok(!items.required.includes('grade'))
+      // The grade words may stay only as an internal check that is not reported.
+      assert.ok(agent('supervisor').includes('Do not report those grades'), 'supervisor grades are not an output')
     },
   },
   {
@@ -126,6 +128,14 @@ test('turn budgets read as guidance, never as a limit (R16)', () => {
     assert.ok(/about|guide/i.test(line), `${name}.md budget reads as guidance: ${line.trim()}`)
     assert.ok(!/\blimit\b/i.test(line), `${name}.md budget never says limit: ${line.trim()}`)
     assert.ok(!/\bhard\b/i.test(line), `${name}.md budget never says hard: ${line.trim()}`)
+  }
+  // The turn-28 line of the Judge and the reviewer reads as guidance too.
+  for (const [name, text] of [['judge', budgets.judge], ['reviewer', budgets.reviewer]]) {
+    const line = budgetLine(text, 'turn 28')
+    assert.ok(line, `${name}.md states when to give its verdict`)
+    assert.ok(/about|guide/i.test(line), `${name}.md turn-28 line reads as guidance: ${line.trim()}`)
+    assert.ok(!/\blimit\b/i.test(line), `${name}.md turn-28 line never says limit: ${line.trim()}`)
+    assert.ok(!/\bhard\b/i.test(line), `${name}.md turn-28 line never says hard: ${line.trim()}`)
   }
   // No budget contradicts the time limit on another harness (lib/seats.js):
   // none of the three files caps the other harness by turns.

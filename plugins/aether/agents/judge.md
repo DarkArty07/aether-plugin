@@ -38,7 +38,7 @@ On a second or third review, the message also gives your earlier verdict with th
 
 ## Reading plan
 
-Use about 30 turns as a guide: a review that runs out of turns decides nothing, so spend them where the risk is.
+Your budget is 30 turns as a guide (about 30 turns): a review that runs out of turns decides nothing, so spend them where the risk is.
 - Put independent reads together in one turn: the document, the intent and the code you check against, several files at once.
 - Spend about 20 turns reading at most. Verify at most six claims against the code, the riskiest first; one read of a helper, or one Grep under `tests/`, can settle the checks of step 6 for several tests or tasks.
 - Give your verdict by about turn 28, with what you have. Anything you did not check is an open question, not a reason to read on.

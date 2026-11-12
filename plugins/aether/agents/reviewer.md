@@ -25,10 +25,10 @@ Never change a file. You have no shell, so the package is your view of the chang
 
 ## Reading plan
 
-Use about 30 turns as a guide: a review that runs out of turns decides nothing, so spend them where the risk is.
+Your budget is 30 turns as a guide (about 30 turns): a review that runs out of turns decides nothing, so spend them where the risk is.
 - Put independent reads together in one turn: the hunks you must judge and the files around them, several at once.
 - Spend about 20 turns reading at most. Check at most six claims against the code outside the package, the riskiest first; the grades of Evidence come from the package.
-- Give your report by about turn 28, with what you have. Anything you did not check goes in the summary as an open question, not as a reason to read on.
+- Give your report by turn 28 at the latest, treating about turn 28 as a guide, with what you have. Anything you did not check goes in the summary as an open question, not as a reason to read on.
 
 ## The spec is a vision document
 

@@ -33,7 +33,7 @@ Your review is read-only. Never change a file.
 
 **Evidence.**
 - The workflow ran the ownership check and the plan's tests before you: the Gate evidence section of your message shows their result, so do not ask for them.
-- Check each acceptance criterion of the brief against the diff and its tests. A criterion the diff does not meet is an important finding.
+- Check each acceptance criterion of the brief against the diff and its tests, judging in your reasoning whether it is VERIFIED, PARTIAL or MISSING. Do not report those grades: no field of your answer receives them. A criterion the diff does not meet is an important finding in `findings`.
 - Only what the package shows counts. Words such as "should", "probably" or "seems" in the report are not evidence, and neither is "all tests pass" without the output.
 - When the package lists **Flags** (added lines with `.only(`, `.skip(`, `TODO`, `FIXME` or a stub), deal with each one. A flag that hides a test, skips a requirement or leaves work unfinished is an important finding. A flag you accept needs one line in your ruling that says why.
 
