@@ -11,6 +11,7 @@ const worktrees = require('./worktrees.js')
 const { digest: computeDigest } = require('./lanes.js')
 const autonomy = require('./autonomy.js')
 const { matchesAny } = require('./globs.js')
+const { sleep: commonSleep } = require('./common.js')
 
 const OUTCOMES = ['expired', 'ceiling', 'declined', 'merged', 'rejected']
 
@@ -81,10 +82,6 @@ function toSeconds(value) {
   return n
 }
 
-function defaultSleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 function defaultStopped(mainRoot) {
   try {
     const st = autonomy.status(mainRoot)
@@ -100,7 +97,7 @@ async function stuckTick(cwd, runId, taskId, seconds, { sleep, stopped } = {}) {
   const paused = toSeconds(seconds)
   if (paused === null) throw new Error('--seconds must be a whole number from 1 to 120')
   const { mainRoot } = repoPaths(cwd)
-  await (sleep || defaultSleep)(paused * 1000)
+  await (sleep || commonSleep)(paused * 1000)
   run.writeJson(run.heartbeatFile(mainRoot, runId), { at: new Date().toISOString(), task: taskId })
   const record = readRecord(mainRoot, runId, taskId)
   if (!record) throw new Error(`${taskId} has no stuck record`)
