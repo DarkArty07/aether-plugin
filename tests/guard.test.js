@@ -861,7 +861,6 @@ test('Bash cannot name the autonomy registry or a run state unless it only reads
     `cd plugins && mv ../.aether/autonomy/${id} /tmp/x`,
     `cd .aether/autonomy && mv ${id} /tmp/x`,
     'mv .aether/autonomy/grants.json .aether/broken-runs/',
-    `echo note >> .aether/autonomy/${id}/diary.md`,
     'echo x > .aether/autonomy/grants.json.bak',
     'git commit -m "document grants.json"',
     'gh issue create --body "grants.json and run.json"',
@@ -918,6 +917,7 @@ test('Bash cannot name the autonomy registry or a run state unless it only reads
     'rm *.json',
     'mv a.txt b.txt',
     'cp -r src dst',
+    `echo note >> .aether/autonomy/${id}/diary.md`,
     'jq . .aether/autonomy/grants.json',
   ]) {
     assert.equal(guardBash(t, command, { cwd: repo.dir }).stdout, '', command)

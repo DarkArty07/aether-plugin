@@ -29,6 +29,7 @@ const PROTECTED = [
   /(^|\/)\.specify\/memory\/constitution\.md$/,
 ]
 const AUTONOMY_PROTECTED = /(^|\/)\.aether\/autonomy\/(grants\.json|[^/]+\/run\.json)$/
+const AUTONOMY_DOC = /(^|\/)\.aether\/autonomy\/[^/]+\/(diary|brief)\.md$/
 const LEAD = 'aether:lead'
 const WRITER = 'aether:writer'
 const EXAMINER = 'aether:examiner'
@@ -1006,8 +1007,11 @@ function normalizeMention(word) {
   return word.replace(/\/+/g, '/').replace(/(^|\/)\.\//g, '$1').replace(/(?:\/\.?|\/\*)+$/, '')
 }
 
-function directoryMention(word) {
+function directoryMention(word, agentType) {
   const w = normalizeMention(word)
+  // A run's diary.md and brief.md are writable through Bash exactly as Write allows them: never for the Examiner,
+  // which Write confines to .aether/exam/ (issue 239).
+  if (AUTONOMY_DOC.test(w)) return agentType === EXAMINER
   return /(?:^|\/)\.aether(?:\/autonomy)?$/.test(w) || w === 'autonomy' || w.includes('.aether/autonomy/') || /^auto-\d{8}-\d{6}-[a-z0-9]{4}$/.test(w) || /(?:=|-[^-]*t)\.aether\/autonomy$/.test(w)
 }
 
@@ -1095,7 +1099,7 @@ function commandSegments(command) {
   return segments
 }
 
-function protectedMention(command, cwd = process.cwd()) {
+function protectedMention(command, cwd = process.cwd(), agentType) {
   const shape = lineShape(command)
   const single = shape.commands.length === 1 ? shape.commands[0] : []
   const authorized = single[0] === 'aether-autonomy' || (single[0] === 'node' && single[1] && path.resolve(cwd, single[1]) === path.resolve(__dirname, '../bin/aether-autonomy'))
@@ -1111,7 +1115,7 @@ function protectedMention(command, cwd = process.cwd()) {
       const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
       if (after !== null) {
         const target = (after || segment[i + 1] || '').trim()
-        if (name(target) || patternMention(target) || directoryMention(target)) return target
+        if (name(target) || patternMention(target) || directoryMention(target, agentType)) return target
       }
     }
   }
@@ -1119,7 +1123,7 @@ function protectedMention(command, cwd = process.cwd()) {
   const direct = words.find((w) => name(w) || patternMention(w))
   if (direct) return direct
   const writer = words.some((w) => WRITE_COMMANDS.has(nameOf(w))) || (words.some((w) => nameOf(w) === 'find') && words.some((w) => ['-delete', '-exec', '-execdir'].includes(w)))
-  return writer ? words.find(directoryMention) || null : null
+  return writer ? words.find((w) => directoryMention(w, agentType)) || null : null
 }
 
 const CLAUDE_CONFIG = /(?:^|[\s'"`;|&()=,<>])((?:[^\s'"`;|&()=,<>]+\/)?\.claude\/(?:settings\.json|settings\.local\.json|hooks(?:\/[^\s'"`;|&()<>]*)?))(?=$|[\s'"`;|&()=,<>])/
@@ -1442,7 +1446,7 @@ function decideBash(input, env = process.env) {
   const command = input.tool_input?.command
   const cwd = typeof input.cwd === 'string' && input.cwd !== '' ? input.cwd : process.cwd()
   let mention
-  try { mention = module.exports.protectedMention(command, cwd) } catch { mention = 'the protected files' }
+  try { mention = module.exports.protectedMention(command, cwd, input.agent_type) } catch { mention = 'the protected files' }
   if (mention) return { reason: `Aether's autonomy registry and run states are written only by aether-autonomy. Use \`aether-autonomy\` (grant, revoke, start, spend, end, quarantine) instead of editing ${mention}.` }
   const claudeConfig = claudeConfigWrite(command)
   if (claudeConfig) return { reason: `In Aether mode no agent writes Claude Code's settings or hooks (${claudeConfig}).` }
