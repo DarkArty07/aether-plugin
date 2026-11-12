@@ -101,6 +101,10 @@ async function approve(cwd, { task, worktree, ignore = [], env: given = {} } = {
   const launch = typeof task === 'string' ? lastLaunch(dataDir, task) : null
   if (!launch) return stopped(branch, 'unknown task')
   if (launch.edits !== true && !(Array.isArray(launch.owns) && launch.owns.length > 0)) return stopped(branch, 'the task did not edit')
+  // The merge path is known before any verdict: a refusal here records nothing.
+  const unit = unitOf(lastResult(dataDir, task, launch.attempt)?.branch)
+  const hasWorktree = typeof worktree === 'string' && worktree.trim() !== ''
+  if (!unit && !hasWorktree) return stopped(branch, NO_WORKTREE)
   if ((branch === 'main' || branch === 'master') && !mergeMainAllows(cwd, env)) return stopped(branch, MERGE_MAIN)
 
   const judged = await taskLib.verdict(
@@ -109,12 +113,7 @@ async function approve(cwd, { task, worktree, ignore = [], env: given = {} } = {
   )
   if (!judged.ok) return stopped(branch, judged.error || 'approve was refused')
 
-  const result = lastResult(dataDir, task, launch.attempt)
-  const unit = unitOf(result?.branch)
-  let merged
-  if (unit) merged = mergeExternal(cwd, env, unit.runId, unit.taskId)
-  else if (typeof worktree !== 'string' || worktree.trim() === '') return stopped(currentBranch(cwd), NO_WORKTREE)
-  else merged = mergeWorktree(cwd, worktree, task)
+  const merged = unit ? mergeExternal(cwd, env, unit.runId, unit.taskId) : mergeWorktree(cwd, worktree, task)
 
   const landed = currentBranch(cwd)
   if (!merged.ok) return { approved: true, merged: false, reason: merged.reason, branch: landed }
