@@ -24,7 +24,7 @@ test('autonomous-runs requires per-part estimates with sources and a ceiling cov
 test('autonomous-runs Cost section describes what the figure really counts and warns on review per launch (#227, #252)', () => {
   assert.match(
     AUTONOMOUS,
-    /The figure adds up every run of `aether-wt` that starts while the run is open: each swarm launch and each attempt of a delegate task on another harness, each with its lanes, the external seats you record, and every native agent of the session inside its window, the Lead's turns included\. Runs that overlap count the same requests once per run, so the figure can exceed what the session spent \(issue 252\)\. A delegate task on Claude counts only inside those windows: the hours ceiling is the real guard\./
+    /The figure adds up every run of `aether-wt` that starts while the run is open: each swarm launch and each attempt of a delegate task on another harness, each with its lanes, the external seats you record, and every native agent of the session inside its window, the Lead's turns included\. Each request counts once even when windows overlap\. A delegate task on Claude counts only inside those windows: the hours ceiling is the real guard\./
   )
   assert.match(
     AUTONOMOUS,

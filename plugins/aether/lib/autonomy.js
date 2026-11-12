@@ -15,7 +15,8 @@ const { readBrakeSettings, isAetherSession } = require('./session.js')
 const { repoPaths } = require('./git.js')
 const { isObject } = require('./common.js')
 const { trustedFile } = require('./skill-rules.js')
-const { report: reportRun, runStartOf, finalizedRecords } = require('./report.js')
+const { report: reportRun, runStartOf, finalizedRecords, readUsage } = require('./report.js')
+const { loadPrices, priceEntry } = require('./prices.js')
 
 const CLASSES = ['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call', 'skill-install']
 const SCOPES = ['repo', 'session']
@@ -527,17 +528,45 @@ function pausedMsOf(run, now) {
   return total
 }
 
+function mergeWindows(intervals) {
+  if (intervals.length === 0) return []
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0])
+  const merged = [sorted[0].slice()]
+  for (let i = 1; i < sorted.length; i++) {
+    const last = merged[merged.length - 1]
+    const curr = sorted[i]
+    if (curr[0] <= last[1]) {
+      last[1] = Math.max(last[1], curr[1])
+    } else {
+      merged.push(curr.slice())
+    }
+  }
+  return merged
+}
+
 // The swarm runs of this repository that belong to the open run: compiled at or after the run started and before it
 // ended (issue 191). Each one's figure is the lanes total of aether-report --run, read now from the usage meter and the
 // lane logs, or from its record in runs.jsonl once it is finalized; the larger reading counts when both exist. A run
-// with no readable figure is named in `unreadable` and counts as 0. Writes nothing.
+// with no readable figure is named in `unreadable` and counts as 0. Overlapping windows deduplicate native requests
+// (issue 252); a run the union cannot place keeps its standalone figure.
 function swarmSpend(mainRoot, run, { dataDir, now }) {
   const from = Date.parse(run.started)
   const until = run.ended ? Date.parse(run.ended) : Infinity
   const inWindow = (start) => Number.isFinite(start) && start >= from && start < until
-  const figures = new Map()
+  const runsInfo = new Map()
   const failed = new Set()
-  const keep = (id, usd) => { if (typeof usd === 'number' && Number.isFinite(usd)) figures.set(id, Math.max(figures.get(id) ?? 0, usd)) }
+  const keep = (id, rep) => {
+    const totalUsd = rep && rep.lanes && rep.lanes.totals && rep.lanes.totals.run && rep.lanes.totals.run.totalUsd
+    if (typeof totalUsd !== 'number' || !Number.isFinite(totalUsd)) return
+    const prev = runsInfo.get(id)
+    if (!prev || totalUsd >= prev.totalUsd) {
+      const lanesUsd = (rep.lanes && rep.lanes.totals && rep.lanes.totals.run && rep.lanes.totals.run.lanesUsd) || 0
+      const start = Date.parse(rep.speed && rep.speed.run && rep.speed.run.start)
+      const end = Date.parse(rep.speed && rep.speed.run && rep.speed.run.end)
+      const session = (rep.usage && rep.usage.session) || null
+      runsInfo.set(id, { id, totalUsd, lanesUsd, start, end, session })
+    }
+  }
   let ids = []
   try {
     ids = fs.readdirSync(path.join(aetherDir(mainRoot), 'runs')).filter(isRunId)
@@ -556,7 +585,7 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
     }
     if (!inWindow(start)) continue
     try {
-      keep(id, reportRun(mainRoot, id, { tests: false, dataDir, now }).lanes.totals.run.totalUsd)
+      keep(id, reportRun(mainRoot, id, { tests: false, dataDir, now }))
     } catch {
       failed.add(id)
     }
@@ -564,24 +593,135 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
   for (const record of finalizedRecords(dataDir)) {
     if (record.repo !== mainRoot || !isRunId(record.runId)) continue
     const report = record.report || {}
-    if (!inWindow(Date.parse(report.speed && report.speed.run && report.speed.run.start))) continue
-    keep(record.runId, report.lanes && report.lanes.totals && report.lanes.totals.run && report.lanes.totals.run.totalUsd)
+    const recordStart = Date.parse(report.speed && report.speed.run && report.speed.run.start)
+    if (!inWindow(recordStart)) {
+      // A record with no finite start cannot be placed by its window; it stays
+      // when nothing proves it outside the run (a finite finalizedAt must lie
+      // inside), so the deduplication below can fall back to its standalone figure.
+      if (Number.isFinite(recordStart)) continue
+      const finalizedAt = Date.parse(record.finalizedAt)
+      if (Number.isFinite(finalizedAt) && !inWindow(finalizedAt)) continue
+    }
+    keep(record.runId, report)
   }
+
+  // `estimated` holds the runs named in `unreadable` when reading usage or prices
+  // fails below; runs that keep a standalone figure are not named there.
+  const estimated = new Set()
+  let totalUsd = 0
+  if (runsInfo.size === 1) {
+    totalUsd = [...runsInfo.values()][0].totalUsd
+  } else if (runsInfo.size > 1) {
+    // Lanes count once per run; each native request counts once over the union of the
+    // runs' windows (issue 252). readUsage and loadPrices throw on unreadable files, and
+    // status must never throw: on failure every run keeps its standalone figure (spentOf
+    // counts those with the issue-191 rule when totalUsd is null) and every run is named.
+    try {
+      let totalLanesUsd = 0
+      for (const info of runsInfo.values()) totalLanesUsd += info.lanesUsd
+
+      const minStart = Math.min(...[...runsInfo.values()].map((r) => r.start).filter(Number.isFinite))
+      let nativeUsd = 0
+      if (Number.isFinite(minStart)) {
+        const sessions = readUsage(dataDir, { since: minStart })
+        const prices = loadPrices()
+        const sessionIds = new Set()
+        for (const info of runsInfo.values()) if (info.session) sessionIds.add(info.session)
+        if (sessionIds.size === 0 && run.session) sessionIds.add(run.session)
+
+        const covered = new Set()
+        for (const sessionId of sessionIds) {
+          const usage = sessions.get(sessionId)
+          const sessionRuns = [...runsInfo.values()].filter((r) => r.session === sessionId || (!r.session && sessionId === run.session))
+          for (const r of sessionRuns) covered.add(r.id)
+          if (usage && Array.isArray(usage.entries)) {
+            const sessionWindows = sessionRuns
+              .filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end))
+              .map((r) => [r.start, r.end])
+            const merged = mergeWindows(sessionWindows)
+            for (const entry of usage.entries) {
+              if (merged.some(([s, e]) => entry.t >= s && entry.t <= e)) {
+                const usd = priceEntry(entry, prices)
+                if (usd !== null) nativeUsd += usd
+              }
+            }
+            // A run without a finite start and end has no window to place its native
+            // requests in, so the union would lose them: fall back to its standalone
+            // native figure.
+            for (const r of sessionRuns) {
+              if (!Number.isFinite(r.start) || !Number.isFinite(r.end)) nativeUsd += Math.max(0, r.totalUsd - r.lanesUsd)
+            }
+          } else {
+            // The session's usage cannot be read, so each run's native figure is its own
+            // reading and adding them would count shared requests once per run. Group the
+            // runs by overlapping windows and count each group's native spend once, as the
+            // largest of its figures; a run with no finite window stands on its own figure.
+            const windowed = sessionRuns
+              .filter((r) => Number.isFinite(r.start) && Number.isFinite(r.end))
+              .sort((a, b) => a.start - b.start)
+            const groups = []
+            for (const r of windowed) {
+              const last = groups[groups.length - 1]
+              if (last && r.start <= last.end) {
+                last.runs.push(r)
+                last.end = Math.max(last.end, r.end)
+              } else {
+                groups.push({ runs: [r], end: r.end })
+              }
+            }
+            for (const r of sessionRuns) {
+              if (!Number.isFinite(r.start) || !Number.isFinite(r.end)) groups.push({ runs: [r], end: Infinity })
+            }
+            for (const group of groups) {
+              nativeUsd += Math.max(0, ...group.runs.map((r) => r.totalUsd - r.lanesUsd))
+            }
+          }
+        }
+        // A run no iterated session admitted (no session while another run has
+        // one, or a session matching none) keeps its standalone native figure.
+        for (const info of runsInfo.values()) {
+          if (!covered.has(info.id)) nativeUsd += Math.max(0, info.totalUsd - info.lanesUsd)
+        }
+      } else {
+        // No run has a finite start, so no window can place any native request:
+        // every run keeps its standalone native figure.
+        for (const info of runsInfo.values()) nativeUsd += Math.max(0, info.totalUsd - info.lanesUsd)
+      }
+      totalUsd = totalLanesUsd + nativeUsd
+    } catch {
+      totalUsd = null
+      for (const id of runsInfo.keys()) estimated.add(id)
+    }
+  }
+
+  const unreadable = [...failed].filter((id) => !runsInfo.has(id))
   return {
-    runs: [...figures.keys()].sort().map((id) => ({ run: id, usd: round2(figures.get(id)) })),
-    unreadable: [...failed].filter((id) => !figures.has(id)).sort(),
+    runs: [...runsInfo.keys()].sort().map((id) => ({ run: id, usd: round2(runsInfo.get(id).totalUsd) })),
+    unreadable: [...new Set([...unreadable, ...estimated])].sort(),
+    totalUsd,
   }
 }
 
 // The spend of the open run in USD: each recorded figure, except that a swarm run's own figure is read here and the
-// larger of it and its recorded figure counts once (issue 191).
-function spentOf(run, swarms) {
+// larger of it and its recorded figure counts once (issue 191). Overlapping swarm runs deduplicate native requests (issue 252).
+function spentOf(run, swarms, dedupedSwarmUsd = null) {
   const counted = new Map(swarms.runs.map((entry) => [entry.run, entry.usd]))
   let total = 0
   for (const entry of run.spend) if (!counted.has(entry.source)) total += entry.usd
-  for (const [id, usd] of counted) {
-    const recorded = run.spend.filter((entry) => entry.source === id).map((entry) => entry.usd)
-    total += Math.max(usd, ...recorded)
+  if (dedupedSwarmUsd === null || counted.size <= 1) {
+    for (const [id, usd] of counted) {
+      const recorded = run.spend.filter((entry) => entry.source === id).map((entry) => entry.usd)
+      total += Math.max(usd, ...recorded)
+    }
+  } else {
+    total += dedupedSwarmUsd
+    for (const [id, usd] of counted) {
+      const recorded = run.spend.filter((entry) => entry.source === id).map((entry) => entry.usd)
+      const maxRecorded = Math.max(0, ...recorded)
+      if (maxRecorded > usd) {
+        total += maxRecorded - usd
+      }
+    }
   }
   return round2(total)
 }
@@ -591,8 +731,9 @@ function statusOfRun(run, paths, now, { mainRoot = null, dataDir = runDataDir() 
   const pausedMs = pausedMsOf(run, now)
   const elapsed = round2((now - Date.parse(run.started) - pausedMs) / 3600000)
   const paused = round2(pausedMs / 3600000)
-  const swarms = mainRoot ? swarmSpend(mainRoot, run, { dataDir, now }) : { runs: [], unreadable: [] }
-  const spent = spentOf(run, swarms)
+  const swarmData = mainRoot ? swarmSpend(mainRoot, run, { dataDir, now }) : { runs: [], unreadable: [], totalUsd: 0 }
+  const swarms = { runs: swarmData.runs, unreadable: swarmData.unreadable }
+  const spent = spentOf(run, swarms, swarmData.totalUsd)
   const idleMinutes = Math.max(0, Math.floor((now - lastActivity(run, paths)) / 60000))
   const quotaPaused = !run.brakeOff && run.quotaPauses.some((pause) => Date.parse(pause.resumeAt) > now)
   let stop = null
