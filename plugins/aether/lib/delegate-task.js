@@ -469,6 +469,34 @@ function treeNamed(cwd, named) {
   return { ok: false, error: `AETHER-TREE: ${named} is not a worktree of this repository (the worktrees are ${worktrees.join(', ')})` }
 }
 
+// Issue 243: the brief the external reader receives names no AETHER-TREE: line. Its working directory already is a copy
+// of that tree, and the raw line named a path different from its own directory, which confused a real reader. The line
+// is replaced by one sentence saying so; the launch line keeps `tree` for the system's own records. Only the first line
+// counts, as in parseBrief, and the sentence names no path, so it cannot be parsed back into a tree.
+const READER_TREE_SENTENCE = 'Your working directory already is a copy of the tree this task named, with its uncommitted work: read it here and nowhere else.'
+function readerPromptOf(prompt, tree) {
+  if (tree === null) return prompt
+  const lines = prompt.split('\n')
+  const at = lines.findIndex((line) => line.trimStart().startsWith(TREE_PREFIX))
+  if (at === -1) return prompt
+  return [...lines.slice(0, at), READER_TREE_SENTENCE, ...lines.slice(at + 1)].join('\n')
+}
+
+// Issue 241: the worktree of this repository holding `abs`, or null. Only a path inside another worktree of the same
+// repository gets the AETHER-TREE hint in the launch notice; the Lead's own root is skipped, so a path inside its own
+// checkout (an ignored file, a .env file, one of Aether's folders) gets none.
+function worktreeHolding(cwd, abs) {
+  const real = realOf(abs)
+  if (real === null) return null
+  const root = rootOf(cwd)
+  for (const listed of worktreesOf(cwd)) {
+    const wt = realOf(listed) ?? listed
+    if (wt === root) continue
+    if (real === wt || real.startsWith(`${wt}${path.sep}`)) return wt
+  }
+  return null
+}
+
 // The real path of the top level of the checkout `dir`, or null when it is not in a repository.
 function rootOf(dir) {
   const top = git(['rev-parse', '--show-toplevel'], dir, { allowFail: true })
@@ -608,7 +636,7 @@ async function begin(input, deps = {}) {
     // The prompt of the call is what a delegate on Claude reads, the rescue of an external pair too; the brief file of an
     // external pair is `externalPrompt`, whose branch the lane command makes from the base.
     let claudePrompt = edits && base !== null ? withSections(prompt, [...sections, startSection(base)]) : fullPrompt
-    let externalPrompt = edits ? withSections(prompt, laneSections) : fullPrompt
+    let externalPrompt = edits ? withSections(prompt, laneSections) : readerPromptOf(fullPrompt, tree)
     if (loadedSkills && loadedSkills.length > 0) {
       const skillsText = skillsSection(loadedSkills).trimEnd()
       claudePrompt = `${claudePrompt.trimEnd()}\n\n${skillsText}`
@@ -680,7 +708,15 @@ async function begin(input, deps = {}) {
       const of = relaunchOf(r.dataDir, session, id, brief)
       if (of !== null) log.appendEntry(r.dataDir, { kind: 'relaunch', time, session, task: id, of })
     }
-    if (outside !== null) notes.push(`Aether delegate task ${id}: the brief names ${outside}, which the copy of the tree does not hold (it lies outside the tree, in another repository, is ignored by git, is a .env file or is one of Aether's folders), so this attempt runs on claude ${args.model} ${args.effort} and no other harness.`)
+    if (outside !== null) {
+      let notice = `Aether delegate task ${id}: the brief names ${outside}, which the copy of the tree does not hold (it lies outside the tree, in another repository, is ignored by git, is a .env file or is one of Aether's folders), so this attempt runs on claude ${args.model} ${args.effort} and no other harness.`
+      // Issue 241: the Lead is told about AETHER-TREE: only here, never in its startup text. A path in another worktree
+      // of the same repository could run on another harness with the line naming that worktree; anything else stays on
+      // Claude by design and gets no hint.
+      const holder = worktreeHolding(r.cwd, outside)
+      if (holder !== null) notice += ` Adding AETHER-TREE: ${holder} to the brief would let it run on another harness.`
+      notes.push(notice)
+    }
     notes.push(stepNote(id, step, attempt, launchKind, args, pick))
     return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: external === null ? { task: id, attempt } : null })
   } catch (err) {
