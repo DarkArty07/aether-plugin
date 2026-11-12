@@ -194,4 +194,21 @@ test('forkBase moves the check base forward to where the branch was built (issue
   assert.equal(checks.forkBase(repo.dir, launch), launch, 'a detached worktree keeps the base')
 })
 
+test('runTests collects failing test signatures and checkEdits includes them in reasons (issue 249)', (t) => {
+  const repo = makeRepo(t)
+  const fail = checks.runTests(repo.dir, 'node -e "console.log(\'not ok 1 - test_a\\nnot ok 2 - test_b\'); process.exit(1)"')
+  assert.equal(fail.passed, false)
+  assert.deepEqual(fail.failures, ['test_a', 'test_b'])
+
+  const check = checks.checkEdits({ files: ['src/a.js'], owns: ['src/**'], tests: fail })
+  assert.equal(check.ok, false)
+  assert.deepEqual(check.failures, ['test_a', 'test_b'])
+  assert.deepEqual(check.reasons, ['tests failed (not ok: test_a, test_b)'])
+
+  // Capped to 5 names
+  const many = ['t1', 't2', 't3', 't4', 't5', 't6']
+  const capped = checks.checkEdits({ files: ['src/a.js'], owns: ['src/**'], tests: { passed: false, failures: many } })
+  assert.deepEqual(capped.reasons, ['tests failed (not ok: t1, t2, t3, t4, t5, and 1 more)'])
+})
+
 

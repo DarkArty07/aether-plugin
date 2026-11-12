@@ -256,6 +256,18 @@ test('a small editing charge leaves Claude for an external pair and comes back a
   assert.equal(merged.json.merged, true, merged.stdout + merged.stderr)
 })
 
+test('an external editing charge whose test command fails reports failures extracted from output (issue 249)', (t) => {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t) })
+  const brief = writeBrief(repo, briefLines())
+  const r = runDelegate(repo, env, { brief, tests: 'node -e "console.log(\'not ok 1 - test_broken\'); process.exit(1)"' })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  const json = r.json
+  assert.equal(json.status, 'done')
+  assert.equal(json.tests.passed, false)
+  assert.deepEqual(json.tests.failures, ['test_broken'])
+})
+
 test('the CLI runs in the unit worktree with the lane environment, never the owner checkout or its secrets (E8)', (t) => {
   const repo = makeRepo(t)
   const envFile = path.join(tempDir(t), 'agy-env.json')

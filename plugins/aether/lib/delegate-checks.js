@@ -7,6 +7,17 @@
 const { nulEntries, runShell } = require('./common.js')
 const { git, repoPaths } = require('./git.js')
 const { matchesAny } = require('./globs.js')
+const { failureSignatures } = require('./baseline.js')
+
+const MAX_FAILURES = 5
+
+function formatFailures(names) {
+  const list = Array.isArray(names) ? names : []
+  if (list.length === 0) return ''
+  const shown = list.slice(0, MAX_FAILURES)
+  const more = list.length > MAX_FAILURES ? `, and ${list.length - MAX_FAILURES} more` : ''
+  return `${shown.join(', ')}${more}`
+}
 
 function changedFiles(worktree, base) {
   const root = repoPaths(worktree).worktree
@@ -87,7 +98,8 @@ function runTests(worktree, command, { timeoutMs = 900000, tailChars = 4000, env
   const outputTail = fullOutput.slice(-tailChars)
   const exitCode = timedOut ? null : (r.status !== null ? r.status : null)
   const passed = !timedOut && exitCode === 0
-  return { command, exitCode, passed, timedOut, outputTail }
+  const failures = !passed ? failureSignatures(fullOutput) : []
+  return { command, exitCode, passed, timedOut, outputTail, failures }
 }
 
 function isPythonBytecode(filePath) {
@@ -111,8 +123,13 @@ function checkEdits({ files = [], owns = [], tests = null } = {}) {
   if (outside.length > 0) {
     reasons.push(`files outside owns: ${outside.join(', ')}`)
   }
+  let failures = []
   if (testStatus === 'fail') {
-    reasons.push('tests failed')
+    failures = Array.isArray(tests?.failures)
+      ? tests.failures
+      : (typeof tests?.outputTail === 'string' ? failureSignatures(tests.outputTail) : [])
+    const detail = failures.length > 0 ? ` (not ok: ${formatFailures(failures)})` : ''
+    reasons.push(`tests failed${detail}`)
   }
   return {
     kind: 'edits',
@@ -120,6 +137,7 @@ function checkEdits({ files = [], owns = [], tests = null } = {}) {
     empty,
     outside,
     tests: testStatus,
+    failures,
     reasons,
   }
 }
@@ -153,4 +171,5 @@ module.exports = {
   checkEdits,
   checkReadOnly,
   isPythonBytecode,
+  formatFailures,
 }
