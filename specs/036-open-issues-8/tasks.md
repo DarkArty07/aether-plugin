@@ -38,10 +38,11 @@
 - [ ] T015 [P] [US2] Agent texts ask only for what is read, in `plugins/aether/agents/*.md` → Task 15
 - [ ] T016 [P] [US7] `aether-observe proposals` and the start-up note → Task 16
 - [ ] T017 One list of harness names in `plugins/aether/lib/harness-names.js` → Task 17
-- [ ] T018 One pick-data function and one mark store → Task 18
+- [ ] T018 One pick-data function in `plugins/aether/lib/pick-data.js` → Task 18
 - [ ] T019 [US8] `aether-autonomy quota-brake` in `plugins/aether/lib/autonomy-command.js` → Task 19
 - [ ] T020 [US9] `aether-delegate approve` in `plugins/aether/lib/delegate-approve.js` → Task 20
 - [ ] T021 The skills name the commands and the start-up parts do not grow → Task 21
+- [ ] T022 One mark store in `plugins/aether/lib/lane-marks.js` and `router-marks.js` → Task 22
 
 ### Task 1: The ops reply is read from its last JSON line (#257)
 
@@ -61,16 +62,16 @@ In each workflow file add a local function (the two files do not share modules):
 function lastJsonObject(text)
 ```
 
-Use it in `opsOnce` (`run.workflow.js` around line 378), in `ops` (`design.workflow.js` around line 295), in the `paused` read of `capClock` (run, around line 338), in the stuck `tick` read (run, around line 1737) and in any other place of the two files that parses an ops reply with `JSON.parse(lines[lines.length - 1])`. A reply with no such line keeps today's result: `{ error: 'unreadable output from <command> (the ops agent may have refused or not run it): <first 300 chars>' }`, and in `run.workflow.js` the `notRun` flag when `NOT_RUN` matches. The git-diff list read near line 1003 of `run.workflow.js` already looks only at the last line; apply the same function there.
+Use it in `opsOnce` (`run.workflow.js` around line 378), in `ops` (`design.workflow.js` around line 295), in the `paused` read of `capClock` (run, around line 338), in the stuck `tick` read (run, around line 1737) and in any other place of the two files that parses a bin's reply with `JSON.parse(lines[lines.length - 1])`. A reply with no such line keeps today's result: `{ error: 'unreadable output from <command> (the ops agent may have refused or not run it): <first 300 chars>' }`, and in `run.workflow.js` the `notRun` flag when `NOT_RUN` matches. The `trackedFiles` read near line 1001 of `run.workflow.js` is not a bin reply (git prints paths, one per line) and stays as it is.
 
 **Tests (write first):** `tests/ops-note.test.js` runs both workflows in `tests/workflow-harness.js` with an ops handler that returns `{ raw: { exitCode: 0, stdout } }` (see `tests/ops-exit-code.test.js` for the shape):
 
 1. Run workflow, a one-unit plan built as in `ops-exit-code.test.js`: the first `ops:ladder` read returns `stdout = JSON.stringify(out) + '\n(Note: the command output did not print an exit code)\n'`; the unit finishes `merged` and its result has no `unreadable` error. A second case puts the note before the JSON line (`'Ran it.\n' + json`) with the same expectation.
 2. Run workflow: the same read returns `stdout = 'I could not run that command.'`; the result carries the error `unreadable output from` and the old retry/`notRun` behaviour, i.e. the same outcome as before the change.
 3. Design workflow: a design run in the harness of `tests/workflow-design.test.js` whose ops read (e.g. the `aether-lane seat-start` or the first `ops` call) returns the JSON line plus a trailing note continues and ends `approved` as without the note; a stdout with no JSON line returns the `unreadable output from` error.
-4. A direct unit case: a stdout of `'text\n{"a":1}\nmore'` yields `{a:1}`; `'{bad\n{"b":2}'` yields `{b:2}`; `'[1,2]'` and `''` yield the unreadable error.
+4. The function is local to each workflow and the workflows export only `meta`, so its edge cases run through the harness, as the `ops:ladder` read of case 1 (`n === 1`) with these stdouts: `'text\n' + json + '\nmore'` and `'{bad\n' + json` finish `merged` as without the change; `'[1,2]'` and `''` end with the `unreadable output from` error and no `merged`.
 
-**Acceptance:** all four tests pass; they fail on the old code for cases 1, 2-before and 3; `node --test tests/ops-note.test.js tests/ops-exit-code.test.js tests/workflow.test.js tests/workflow-design.test.js` passes.
+**Acceptance:** all four tests pass; they fail on the old code for cases 1, 3 and the first two stdouts of case 4; `node --test tests/ops-note.test.js tests/ops-exit-code.test.js tests/workflow.test.js tests/workflow-design.test.js` passes.
 
 ### Task 2: A commit on a detached HEAD is not lost (#255)
 
@@ -159,7 +160,7 @@ The prompt and brief are not changed. Where `begin` returns its fields (find the
 
 **Acceptance:** `node --test tests/refresh-lanes.test.js tests/aa-api.test.js tests/pairs.test.js tests/pairs-claude.test.js tests/muse-spark.test.js tests/copies-muse.test.js tests/docs-032.test.js tests/lanes-docs.test.js tests/lane-table-index.test.js tests/agents-md.test.js tests/superdelegation.test.js tests/router-pick.test.js` passes; no figure changes the pair that serves a rung.
 
-### Task 5: Watch and cleanup minors of #256, with the stuck-wait and merge-test durations
+### Task 5: Watch and cleanup minors of #256, with the merge-test duration
 
 **Aether:**
 - Area: swarm-stuck
@@ -171,9 +172,9 @@ The prompt and brief are not changed. Where `begin` returns its fields (find the
 
 Fix, each with the triage test (`#256 N`): 15 `watchCommand` calls `run.assertRunId(runId)` (an invalid id such as `../..` or `undefined` throws `invalid run id`); 16 the run directory is checked on each poll, so a deleted run ends as `run <id> not found`/`ended`, not `silent` with a null silence; 17 the lstat/no-follow walk of `newestWriteMs` (`wt-watch.js`) and `modifiedSince` (`worktrees.js`) is one function, exported from one module and used by both; 18 `worktrees.js` writes the end mark in a `finally` so a failing cleanup still leaves it; 19(d) the watch writes nothing: the newest mtime of the run directory is unchanged across a wait; 20 the liveness scope includes `.aether/worktrees/<id>`, so a run that is quiet but whose unit worktree is being written is not `silent`; 21 `taskNumber`/`readStuckRecords` filter names with the task-id pattern so a stray `.json` does not corrupt the order. Export from `worktrees.js` the task-merging loader that `lib/wt-stuck.js` `loadTasks` duplicates (#256 14 is done by Task 6, which needs that export; the existing `loadGraph` stays).
 
-Durations: call `require('./run-timings.js').recordTiming(runDir, 'merge-tests', ms)` after the test command of each merge in `worktrees.js`, and `recordTiming(runDir, 'wait-stuck', ms)` at the end of each `watch` wait in `wt-watch.js`. The module's signature: `recordTiming(runDir, klass, ms)`.
+Duration: call `require('./run-timings.js').recordTiming(runDir, 'merge-tests', ms)` after the test command of each merge in `worktrees.js`. The module's signature: `recordTiming(runDir, klass, ms)`. `aether-wt watch` records nothing: it writes nothing (`wt-watch.js` opens with that rule and counts any write under the run directory as a sign of life), which fix 19(d) tests. The stuck wait is timed by Task 6.
 
-**Tests (write first):** one test per fix in `tests/wt-watch.test.js` and `tests/worktrees-cleanup.test.js` (use the cases named in the triage lines: `watch undefined-id` and `../..` throw `invalid run id`; deleted run directory; two different record names order by task number; a failing cleanup still leaves the end mark; mtime unchanged across a wait; live worktree activity is not silent), and in `tests/worktrees-merge.test.js` a merge writes one `merge-tests` line to `<runDir>/timings.jsonl` and a `watch` wait writes one `wait-stuck` line.
+**Tests (write first):** one test per fix in `tests/wt-watch.test.js` and `tests/worktrees-cleanup.test.js` (use the cases named in the triage lines: `watch undefined-id` and `../..` throw `invalid run id`; deleted run directory; two different record names order by task number; a failing cleanup still leaves the end mark; mtime unchanged across a wait; live worktree activity is not silent), and in `tests/worktrees-merge.test.js` a merge writes one `merge-tests` line to `<runDir>/timings.jsonl`; a `watch` wait leaves no `timings.jsonl` (the same newest-mtime assertion as 19(d)).
 
 **Acceptance:** all tests above pass and fail on the old code; `node --test tests/wt-watch.test.js tests/worktrees-cleanup.test.js tests/worktrees-merge.test.js tests/aether-wt.test.js tests/aether-wt-stuck.test.js tests/wt-sweep.test.js tests/worktrees-salvage.test.js` passes.
 
@@ -184,23 +185,25 @@ Durations: call `require('./run-timings.js').recordTiming(runDir, 'merge-tests',
 - Area: swarm-stuck
 - Owns: `plugins/aether/lib/wt-stuck.js`, `tests/wt-stuck.test.js`, `tests/aether-wt-stuck.test.js`, `tests/ops-command-stuck.test.js`
 - Depends on: Task 5 — it exports the task-merging loader that `loadTasks` duplicates
-- Serves: R12
+- Depends on: Task 7 — `lib/run-timings.js` and its `recordTiming` are what this task calls
+- Serves: R12, R18
 
 **Interfaces:**
 
 - #256 10: `stuckEnd(…)` on a record whose state is `delivered` leaves it unchanged and returns it with `state: 'delivered'` (no overwrite to `expired`/`ceiling`); the flow (Task 10) acts on that state.
 - #256 11: `deliver --commit <value>` checks the value with the shape check `adoptUnit` uses (a hex id or a branch-like name, not starting with `-`) and calls `git rev-parse --verify --quiet --end-of-options <value>^{commit}`.
 - #256 14: `loadTasks` is removed and `wt-stuck.js` uses the exported loader of `worktrees.js`.
+- Duration (R18): the stuck wait is timed here, from the stuck record, not by the watch: when the wait of a record ends, `wt-stuck.js` calls `require('./run-timings.js').recordTiming(run.runDir(mainRoot, runId), 'wait-stuck', ms)` with `ms` = the end time minus the record's `at` (set by `stuckBegin`). The wait ends in exactly one of three places, each once per record: `deliverFix` (end = `delivered.at`), `declineUnit` (end = `declined.at`) and `stuckEnd` on a record still `waiting` (end = `ended.at`). `stuckEnd` on a `delivered` record (fix 10) records nothing more.
 
-**Tests (write first):** in `tests/wt-stuck.test.js`: (10) deliverFix then `stuckEnd(expired)` keeps state `delivered`; (11) `deliver --commit -q` is rejected by the shape check and a valid commit still works; (14) both `salvageUnit` and `stuckBegin` read tasks through the one exported loader (assert `typeof worktrees.<loader>` is used: spy by requiring the module and checking `wt-stuck.js` has no function `loadTasks`). In `tests/aether-wt-stuck.test.js`: (12) the test `decline attends the unit` re-reads the tick and asserts the state is `declined` on a fresh run directory, so the silence does not mask a wait; (13) a new test opens an autonomous run whose hours have passed (`time` ceiling) and asserts `stuck-tick` returns `stop: true` through the default path, not through an injected `stopped`.
+**Tests (write first):** in `tests/wt-stuck.test.js`: (10) deliverFix then `stuckEnd(expired)` keeps state `delivered`; (11) `deliver --commit -q` is rejected by the shape check and a valid commit still works; (14) both `salvageUnit` and `stuckBegin` read tasks through the one exported loader (assert `typeof worktrees.<loader>` is used: spy by requiring the module and checking `wt-stuck.js` has no function `loadTasks`). In `tests/aether-wt-stuck.test.js`: (12) the test `decline attends the unit` re-reads the tick and asserts the state is `declined` on a fresh run directory, so the silence does not mask a wait; (13) a new test opens an autonomous run whose hours have passed (`time` ceiling) and asserts `stuck-tick` returns `stop: true` through the default path, not through an injected `stopped`; (R18) `stuckBegin` then `deliverFix` writes one `wait-stuck` line to `<runDir>/timings.jsonl` whose `ms` is the time between the record's `at` and `delivered.at` (use a record with a fixed `at`); `stuckBegin` then `declineUnit` one line; `stuckBegin` then `stuckEnd(expired)` one line; `deliverFix` then `stuckEnd(expired)` still one line.
 
-**Acceptance:** the tests pass and the new/changed ones fail on the old code; `node --test tests/wt-stuck.test.js tests/aether-wt-stuck.test.js tests/ops-command-stuck.test.js tests/wt-watch.test.js` passes.
+**Acceptance:** the tests pass and the new/changed ones fail on the old code; `node --test tests/wt-stuck.test.js tests/aether-wt-stuck.test.js tests/ops-command-stuck.test.js tests/wt-watch.test.js tests/report-timings.test.js` passes.
 
 ### Task 7: Run durations in the report, and the report minors (#209, #256 2 and 3, #236 5)
 
 **Aether:**
 - Area: report
-- Owns: `plugins/aether/lib/run-timings.js`, `plugins/aether/lib/report.js`, `plugins/aether/lib/wt-gate.js`, `plugins/aether/lib/lane-command.js`, `plugins/aether/lib/delegate-log.js`, `tests/report-timings.test.js`, `tests/report-fixed.test.js`, `tests/report.test.js`, `tests/aether-report.test.js`, `tests/wt-gate.test.js`, `tests/aether-lane.test.js`, `tests/delegate-log.test.js`
+- Owns: `plugins/aether/lib/run-timings.js`, `plugins/aether/lib/report.js`, `plugins/aether/lib/wt-gate.js`, `plugins/aether/lib/delegate-log.js`, `tests/report-timings.test.js`, `tests/report-fixed.test.js`, `tests/report.test.js`, `tests/aether-report.test.js`, `tests/wt-gate.test.js`, `tests/delegate-log.test.js`
 - Depends on: none
 - Serves: R12, R18, R19
 
@@ -209,22 +212,28 @@ Durations: call `require('./run-timings.js').recordTiming(runDir, 'merge-tests',
 New `lib/run-timings.js`:
 
 ```text
-const CLASSES = ['gate', 'merge-tests', 'baseline', 'wait-quota', 'wait-stuck']
+// The classes that a bin records. `wait-quota` is not one of them: the report calculates it (below).
+const CLASSES = ['gate', 'merge-tests', 'baseline', 'wait-stuck']
 // Appends one line {"class":<klass>,"ms":<integer>,"at":<ISO>} to <runDir>/timings.jsonl (one write per line).
 // Throws on a class not in CLASSES; never throws on a failed write (a timing must not stop a run).
 function recordTiming(runDir, klass, ms)
 // Reads the file: { byClass: { gate: { count, ms }, ... }, totalMs } ; missing file or bad lines => { byClass: {}, totalMs: 0, none: true }
 function timingsOf(runDir)
-module.exports = { CLASSES, recordTiming, timingsOf }
+// The quota wait of one swarm run: the quota pauses of the autonomous runs in <mainRoot>/.aether/autonomy/*/run.json
+// (`quotaPauses`) whose `savedUnits` name the run (`swarmRun === runId`). Each pause counts from `started` to
+// `resumeAt`, or to `now` when `resumeAt` is later. Returns { count, ms }; { count: 0, ms: 0 } when none names the run;
+// a run.json that cannot be read or whose dates are not valid is skipped.
+function quotaWaitOf(mainRoot, runId, now)
+module.exports = { CLASSES, recordTiming, timingsOf, quotaWaitOf }
 ```
 
-- `wt-gate.js` records `gate` with the duration of each gate pass; `lane-command.js`'s `pause` verb records `wait-quota` with the seconds it waited (the run dir comes from the run id the verb already has; when it has none, nothing is recorded).
-- `report.js`: the report of a run shows `timings` (per class: count and ms, and `totalMs`) and a line `not a model: <total> of <wall clock>`; a run with no `timings.jsonl` is reported exactly as today, with no error and no `timings` key.
+- `wt-gate.js` records `gate` with the duration of each gate pass. The other recorders are Task 5 (`merge-tests`), Task 6 (`wait-stuck`) and Task 9 (`baseline`). `aether-lane pause` is the clock of the agents' time cap in `run.workflow.js` (it only waits, with no run), and `aether-wt watch` writes nothing: neither is timed.
+- `report.js`: the report of a run shows `timings` (per class: count and ms, with `wait-quota` from `quotaWaitOf(mainRoot, runId, now)` among them, and `totalMs`) and a line `not a model: <total> of <wall clock>`; a run with no `timings.jsonl` and no quota pause that names it is reported exactly as today, with no error and no `timings` key.
 - #256 2: the comment above `qualityOf` (around `report.js:274-282`) explains `fixedUnits` as well as `adopted`. #256 3: `fixedUnits` drops a unit whose later launch is not a fix (a unit fixed on launch 1 and blocked without a fix on launch 2 has no `fixedUnits` entry). #236 5: the comments in `delegate-log.js:107` and `report.js:207` no longer say «correction(s)» for the retired policy (say «rung»).
 
-**Tests (write first):** `tests/report-timings.test.js`: `recordTiming` writes the line and rejects a bad class; `timingsOf` totals by class; the report of a fixture run with a `timings.jsonl` shows each class and the total; a fixture run without the file reports as before (deep-equal to the same fixture report with the file absent); a gate pass writes one `gate` line; `aether-lane pause --seconds 1` with a run id writes `wait-quota`. In `tests/report-fixed.test.js`: launch1 fix + launch2 blocked has no `fixedUnits` entry. A test that reads `report.js` source asserts the comment names `fixedUnits` and that neither `report.js` nor `delegate-log.js` contains `correction` in those comments.
+**Tests (write first):** `tests/report-timings.test.js`: `recordTiming` writes the line and rejects a bad class; `timingsOf` totals by class; the report of a fixture run with a `timings.jsonl` shows each class and the total; a fixture run without the file reports as before (deep-equal to the same fixture report with the file absent); a gate pass writes one `gate` line; `quotaWaitOf` on a fixture `.aether/autonomy/<id>/run.json` whose `quotaPauses[0]` has `started`, `resumeAt` and `savedUnits: [{ swarmRun: <runId>, … }]` returns `count: 1` and `ms` = `resumeAt` − `started`; a pause that names another swarm run, an unreadable `run.json` and a `resumeAt` later than `now` (the wait counts up to `now`) each give the result the test names; the report of that run shows a `wait-quota` entry. In `tests/report-fixed.test.js`: launch1 fix + launch2 blocked has no `fixedUnits` entry. A test that reads `report.js` source asserts the comment names `fixedUnits` and that neither `report.js` nor `delegate-log.js` contains `correction` in those comments.
 
-**Acceptance:** the tests pass and fail before; `node --test tests/report-timings.test.js tests/report-fixed.test.js tests/report.test.js tests/aether-report.test.js tests/wt-gate.test.js tests/aether-lane.test.js tests/delegate-log.test.js tests/spend.test.js tests/report-ladder.test.js tests/report-relaunch.test.js` passes.
+**Acceptance:** the tests pass and fail before; `node --test tests/report-timings.test.js tests/report-fixed.test.js tests/report.test.js tests/aether-report.test.js tests/wt-gate.test.js tests/delegate-log.test.js tests/spend.test.js tests/report-ladder.test.js tests/report-relaunch.test.js` passes.
 
 ### Task 8: Swarm skill and components page (#256 4, 5, 6, 7, 9)
 
@@ -323,7 +332,7 @@ New `lib/bash-parse.js` exports `commandSegments`, `dropWrappers`, `nameOf` and 
 
 (#232 13) `launchRefusal` (`autonomy.js` ~807) catches an error reading `status()` or `run.json` and returns a clean refusal (a message that says the open run's state could not be read), never throws into `plan-compile`. (#232 14) the not-a-repository probe (`autonomy.js` ~811-818) lives in `lib/git.js` as `isRepository(cwd)`; `autonomy.js` uses it. (#232 16) `aether-autonomy start` passes the config-dir env (`env.CLAUDE_CONFIG_DIR`) as `trustAuthor` does (`autonomy-command.js` ~156). (#232 17) a test only.
 
-**Tests (write first):** `tests/autonomy-refusal.test.js`: (13) an open run whose `run.json` is unreadable (replace with a directory) makes `launchRefusal` return a refusal and not throw; (14) `require('../plugins/aether/lib/git.js').isRepository` exists, is true in a `makeRepo` and false in a `tempDir`, and `autonomy.js` source no longer contains the inline probe; (16) `start` with `CLAUDE_CONFIG_DIR` set to a temp dir reads trusted authors from that dir. In `tests/delegate-report.test.js` (17) a launch recorded in one install and its result recorded in another report as one task.
+**Tests (write first):** `tests/autonomy-refusal.test.js`: (13) an open run whose `run.json` is unreadable (replace with a directory) makes `launchRefusal` return a refusal and not throw; (14) `require('../plugins/aether/lib/git.js').isRepository` exists, is true for `isRepository(makeRepo(t).dir)` and false for a `tempDir`, and `autonomy.js` source no longer contains the inline probe; (16) `start` with `CLAUDE_CONFIG_DIR` set to a temp dir reads trusted authors from that dir. In `tests/delegate-report.test.js` (17) a launch recorded in one install and its result recorded in another report as one task.
 
 **Acceptance:** tests pass and (13), (14), (16) fail before; `node --test tests/autonomy-refusal.test.js tests/autonomy.test.js tests/aether-autonomy.test.js tests/delegate-report.test.js tests/autonomy-trust.test.js tests/baseline.test.js` passes.
 
@@ -392,25 +401,22 @@ New `lib/harness-names.js`: `const HARNESS_NAMES = Object.freeze(['agy', 'codex'
 
 **Acceptance:** `node --test tests/harness-lists.test.js tests/router-renewal.test.js tests/router-quota.test.js tests/router-pick.test.js tests/delegate-calls.test.js tests/codex-lists.test.js tests/lane-delegate.test.js tests/delegate-mod.test.js` passes; the full `npm test` shows no changed message.
 
-### Task 18: One pick-data function and one mark store (#203)
+### Task 18: One pick-data function (#203, R25)
 
 **Aether:**
-- Review: xhigh — a lost quota mark would let a spent pair be chosen again and spend the owner's quota
 - Area: router
-- Owns: `plugins/aether/lib/pick-data.js`, `plugins/aether/lib/lane-quota.js`, `plugins/aether/lib/lane-pick.js`, `plugins/aether/lib/seats.js`, `plugins/aether/lib/router-marks.js`, `plugins/aether/lib/lane-marks.js`, `plugins/aether/lib/router-pick.js`, `plugins/aether/lib/lane-calls.js`, `plugins/aether/lib/delegate-task.js`, `plugins/aether/lib/delegate-chain.js`, `tests/pick-data.test.js`, `tests/lane-marks.test.js`, `tests/router-marks.test.js`, `tests/lane-quota.test.js`, `tests/lane-pick.test.js`, `tests/seats.test.js`, `tests/lane-start-marks.test.js`, `tests/seat-calls.test.js`
+- Owns: `plugins/aether/lib/pick-data.js`, `plugins/aether/lib/lane-quota.js`, `plugins/aether/lib/lane-pick.js`, `plugins/aether/lib/seats.js`, `plugins/aether/lib/router-pick.js`, `plugins/aether/lib/lane-calls.js`, `tests/pick-data.test.js`, `tests/lane-quota.test.js`, `tests/lane-pick.test.js`, `tests/seats.test.js`, `tests/seat-calls.test.js`
 - Depends on: Task 17 — it changes `router-pick.js` first
 - Depends on: Task 2 — it changes `lane-calls.js` first
-- Depends on: Task 3 — it changes `delegate-task.js` first
-- Serves: R25, R26
+- Serves: R25
 
 **Interfaces:**
 
-- New `lib/pick-data.js` exports `pickData(config, name, reading, { marks, now, lift, … })`, the one function that prepares what `choose` of `lib/superdelegation.js` takes for the delegates (`viewOf` of `router-pick.js`), the swarm (`harnessView` of `lane-quota.js`) and the design seats (the wrapper in `lib/seats.js`); the three call it. The pair `choose` returns for the same inputs does not change.
-- One mark store: `<dataDir>/lanes/marks/` (the swarm's). `router-marks.js` reads and writes it; a mark found in `<dataDir>/router/lanes/marks/` is read and moved to the store (migrated, same file name and content) on the first read; no mark is lost or changes its effect (harness, group, reset time and reason keep their meaning).
+New `lib/pick-data.js` exports `pickData(config, name, reading, { marks, now, lift, … })`, the one function that prepares what `choose` of `lib/superdelegation.js` takes for the delegates (`viewOf` of `router-pick.js`), the swarm (`harnessView` of `lane-quota.js`) and the design seats (the wrapper in `lib/seats.js`); the three call it. The pair `choose` returns for the same inputs does not change. Where the marks live is Task 22's: this task reads them through the functions that exist (`liveMarks`, `readAllMarks`) and changes no mark path.
 
-**Tests (write first):** `tests/pick-data.test.js`: for fixed inputs, the choices of the delegate, swarm and seat entry points equal the choices they gave before (assert with the values from the existing scenario tests of `router-pick.test.js`, `lane-pick.test.js`, `seats.test.js`); `tests/router-marks.test.js` and `tests/lane-marks.test.js`: a mark placed in the old router directory is found by the router read and by the swarm read, is moved to `lanes/marks/` once, has the same content, and an expired mark stays expired; a mark written by the router appears in the swarm's view.
+**Tests (write first):** `tests/pick-data.test.js`: for fixed inputs, the choices of the delegate, swarm and seat entry points equal the choices they gave before (assert with the values from the existing scenario tests of `router-pick.test.js`, `lane-pick.test.js`, `seats.test.js`); the three entry points call `pickData` (the three sources contain `pickData` and none keeps its own copy of the view preparation).
 
-**Acceptance:** `node --test tests/pick-data.test.js tests/lane-marks.test.js tests/router-marks.test.js tests/lane-quota.test.js tests/lane-pick.test.js tests/seats.test.js tests/lane-start-marks.test.js tests/seat-calls.test.js tests/router-pick.test.js tests/superdelegation.test.js tests/superdelegation-scenarios.test.js tests/lane-pick-slow.test.js tests/router-slow.test.js tests/harness-lists.test.js` passes with no existing expectation edited except for the mark path.
+**Acceptance:** `node --test tests/pick-data.test.js tests/lane-quota.test.js tests/lane-pick.test.js tests/seats.test.js tests/seat-calls.test.js tests/router-pick.test.js tests/superdelegation.test.js tests/superdelegation-scenarios.test.js tests/lane-pick-slow.test.js tests/router-slow.test.js tests/harness-lists.test.js` passes with no existing expectation edited.
 
 ### Task 19: `aether-autonomy quota-brake` (#201, R28)
 
@@ -423,9 +429,9 @@ New `lib/harness-names.js`: `const HARNESS_NAMES = Object.freeze(['agy', 'codex'
 
 **Interfaces:**
 
-New verb `aether-autonomy quota-brake [--session <id>]`, added to the verb list and the usage line of `lib/autonomy-command.js`. For each swarm run the open autonomous run's diary names as in flight (the runs of its state), it runs `aether-wt save <runId>` (the bin by path next to this bin), reads the `saved.json` that printed, records `quota-saved` as `quota-saved --from <saved.json>` does, and, when `brake-settings` reports `push` true and `check push` covers it, runs `git push origin <branch>` for each saved unit branch (never otherwise). It prints one JSON line `{ saved: [<runId>…], recorded: true|false, pushed: [<branch>…] }`. It does not stop workflows, delegates or lane calls (those stay with the Lead: `TaskStop`, `aether-lane stop`), and says so in its first line of help. With no open run it prints `{ saved: [], recorded: false, pushed: [] }`.
+New verb `aether-autonomy quota-brake [--session <id>] [--run <swarmRunId>]…`, added to the verb list and the usage line of `lib/autonomy-command.js`. The swarm runs in flight come from one source, nothing recorded in the diary: with one or more `--run <id>` (repeatable, each a valid run id) exactly those runs; with none, a scan of `<mainRoot>/.aether/runs/` for the directories that hold `graph.json` and no `launch-end.json` (`run.launchEndFile`, the end mark of a run) and whose `graph.json` was written at or after the open autonomous run's `started`. For each of them it runs `aether-wt save <runId>` (the bin by path next to this bin), reads the `<runDir>/saved.json` that `save` writes, records `quota-saved` as `quota-saved --from <saved.json>` does, and, when `brake-settings` reports `push` true and `check push` covers it, runs `git push origin <branch>` for each saved unit branch (never otherwise). It prints one JSON line `{ saved: [<runId>…], recorded: true|false, pushed: [<branch>…] }`. It does not stop workflows, delegates or lane calls (those stay with the Lead: `TaskStop`, `aether-lane stop`), and says so in its first line of help. With no open run it prints `{ saved: [], recorded: false, pushed: [] }`.
 
-**Tests (write first):** `tests/quota-brake-command.test.js`, on a throwaway repo with an open autonomous run and one run in flight (a real `aether-wt ensure` of one unit with an uncommitted file) and a bare repository as `origin`: (1) the command saves the unit's work on its branch, records `quota-saved` (the run state shows it), and pushes nothing when `push` is false; (2) with push on and a grant for `push` it pushes the saved branch to `origin`; with push on and no grant it pushes nothing and reports it; (3) with no open run it prints the empty JSON; (4) the usage line contains `quota-brake`; (5) the command's source does not call `TaskStop`/`lane stop` (it does not stop running work).
+**Tests (write first):** `tests/quota-brake-command.test.js`, on a throwaway repo with an open autonomous run and one run in flight (a real `aether-wt ensure` of one unit with an uncommitted file) and a bare repository as `origin`: (1) the command, with no `--run`, finds the run in flight by the scan, saves the unit's work on its branch, records `quota-saved` (the run state shows it), and pushes nothing when `push` is false; a second run directory that has a `launch-end.json`, and a third whose `graph.json` is older than the autonomous run's `started`, are not saved; with `--run <id>` naming only the first, the scan is not used (the other in-flight run is left alone); (2) with push on and a grant for `push` it pushes the saved branch to `origin`; with push on and no grant it pushes nothing and reports it; (3) with no open run it prints the empty JSON; (4) the usage line contains `quota-brake`; (5) the command's source does not call `TaskStop`/`lane stop` (it does not stop running work).
 
 **Acceptance:** tests pass and fail before; `node --test tests/quota-brake-command.test.js tests/quota-brake.test.js tests/quota-brake-scenarios.test.js tests/aether-autonomy.test.js tests/autonomy.test.js tests/wt-save.test.js` passes.
 
@@ -441,11 +447,30 @@ New verb `aether-autonomy quota-brake [--session <id>]`, added to the verb list 
 
 **Interfaces:**
 
-New `lib/delegate-approve.js` exports `approve(cwd, { task, ignore = [], env })` and the bin verb `aether-delegate approve --task <id> [--ignore <glob>]` (added to the bin's usage line). Steps, in order: (1) look up the task's branch and worktree; (2) if the branch the merge would land on is `main` or `master`, run `aether-autonomy check merge-main` and, when it does not allow, stop with `{ approved: false, merged: false, reason: 'merge-main needs a grant' }` and give no verdict; (3) give the verdict `approve` through the same code path as `aether-delegate verdict --verdict approve` (a failed check still refuses, as today); (4) merge the unit branch (`aether-wt merge`); (5) run the project's test command on the branch (the one in `.aether` settings or `npm test`) and report its result. Prints `{ approved, merged, tests: 'passed'|'failed', branch }`. A task that did not edit is refused with a reason.
+New `lib/delegate-approve.js` exports `approve(cwd, { task, worktree, ignore = [], env })` and the bin verb `aether-delegate approve --task <id> [--worktree <path>] [--ignore <glob>]` (added to the bin's usage line). Steps, in order: (1) look up the task's branch and worktree; (2) if the checkout's current branch (`git branch --show-current` in `cwd`: both merge paths land there) is `main` or `master`, run `aether-autonomy check merge-main` and, when it does not allow, stop with `{ approved: false, merged: false, reason: 'merge-main needs a grant' }` and give no verdict; (3) give the verdict `approve` through the same code path as `aether-delegate verdict --verdict approve` (a failed check still refuses, as today); (4) merge, by the path the task's result entry in the log decides: an external pair's entry has `branch` `aether/<runId>/<taskId>` (`run.unitBranch`), so run `aether-wt merge <runId> <taskId>` (the bin by path next to this one), which lands on the checkout's current branch; a delegate on Claude has no such branch in its entry, so `--worktree <path>` is required (as `verdict` requires it, with the same refusal text when it is missing) and the command merges that worktree's HEAD commit into the checkout's current branch with `git merge --no-ff <commit>`, and a merge that conflicts is aborted (`git merge --abort`) and reported as `merged: false` with its reason; (5) run the project's test command on the branch (the one in `.aether` settings or `npm test`) and report its result. Prints `{ approved, merged, tests: 'passed'|'failed', branch }`. A task that did not edit is refused with a reason.
 
-**Tests (write first):** `tests/delegate-approve.test.js` on a throwaway repo with a started editing task (as `delegate-task.test.js` builds one): (1) on a feature branch the command gives the verdict, merges and runs the test script (a `package.json` whose `test` script writes a marker file) and prints `merged: true, tests: 'passed'`; (2) a failing test script gives `tests: 'failed'` and the merge is not undone silently (the output says so); (3) the branch is `main` and no grant: nothing merged, no verdict recorded, `reason` names `merge-main`; with the grant recorded the same call merges; (4) a read-only task is refused; (5) a failed delegate check refuses the approve, as `verdict` does today; (6) the usage line of the bin contains `approve`.
+**Tests (write first):** `tests/delegate-approve.test.js` on a throwaway repo with a started editing task (as `delegate-task.test.js` builds one): (1) on a feature branch the command gives the verdict, merges and runs the test script (a `package.json` whose `test` script writes a marker file) and prints `merged: true, tests: 'passed'`; (2) a failing test script gives `tests: 'failed'` and the merge is not undone silently (the output says so); (3) the branch is `main` and no grant: nothing merged, no verdict recorded, `reason` names `merge-main`; with the grant recorded the same call merges; (4) a read-only task is refused; (5) a failed delegate check refuses the approve, as `verdict` does today; (6) the usage line of the bin contains `approve`; (8) an external pair: the entry's `branch` is `aether/<runId>/task-1` of a real `aether-wt ensure` unit with one commit, and the command's merge is `aether-wt merge <runId> task-1` (the unit's file is on the checkout's branch afterwards); (7) a Claude delegate (the entry has no unit branch; its worktree is a real `git worktree` with one commit on a side branch): `approve --task <id> --worktree <path>` gives the verdict, merges that commit into the checkout's branch with git and runs the test script; without `--worktree` it is refused with the `verdict` text; a conflicting merge is aborted and reported as `merged: false` with the checkout clean.
 
 **Acceptance:** tests pass and fail before; `node --test tests/delegate-approve.test.js tests/delegate-task.test.js tests/guard-merge-main.test.js tests/delegate-checks.test.js tests/delegate-approve-rerun.test.js tests/delegate-mod.test.js` passes.
+
+### Task 22: One mark store (#203, R26)
+
+**Aether:**
+- Review: xhigh — a lost quota mark would let a spent pair be chosen again and spend the owner's quota
+- Area: router
+- Owns: `plugins/aether/lib/lane-marks.js`, `plugins/aether/lib/router-marks.js`, `tests/lane-marks.test.js`, `tests/router-marks.test.js`, `tests/lane-start-marks.test.js`, `tests/no-router.test.js`, `tests/lane-refusal.test.js`, `tests/delegate-chain.test.js`
+- Depends on: none
+- Serves: R26
+
+**Interfaces:**
+
+- One mark store: `<dataDir>/lanes/marks/` (the swarm's). `router-marks.js` reads and writes it, and its `routerMarksRoot` no longer names another folder. `lane-marks.js` exports `migrateRouterMarks(dataDir)`: for each `<harness>__<group>.json` in `<dataDir>/router/lanes/marks/` it moves the file to the store (same name; `rename`, or copy and delete) and removes the old file; it runs on the first read of `liveMark`, `liveMarks` and of `readAllMarks`, and again at no cost when the old folder is empty or missing. `router-marks.js` cannot be required from `lane-marks.js` (the dependency goes the other way): the old path is a literal in `lane-marks.js`.
+- Collision rule (both stores have the same `<harness>__<group>.json`, as both write through `markFile`): the store keeps the mark whose `until` is later (a tie keeps the one already in the store), so a mark never shortens; the other mark's `reason` and `source` are kept in the kept mark's `alsoReasons` array (`[{ source, reason, until }]`), and the old file is removed. The comparison reads the raw `until` numbers: an expired mark in either store is moved or merged the same way and stays expired; a file that cannot be read as a mark is left where it is and reported by `migrateRouterMarks` in its result (`skipped`), never deleted.
+- No mark is lost and none changes its effect: harness, group, reset time and reason of the kept mark keep their meaning.
+
+**Tests (write first):** `tests/router-marks.test.js` and `tests/lane-marks.test.js`: (1) a mark placed in the old router directory is found by the router read and by the swarm read, is moved to `lanes/marks/` once, has the same content, and the old file is gone; an expired mark stays expired; (2) a mark written by the router appears in the swarm's view; (3) collision: the same harness and group in both stores, the router's mark ending later: the store holds the router's `until` and its `alsoReasons` names the swarm mark's reason; the swarm's ending later: the store keeps it and `alsoReasons` names the router's; equal `until`: the store's mark is kept; in each case the old file is gone and one file remains; (4) a damaged file in the old folder stays in place and is named in `skipped`.
+
+**Acceptance:** `node --test tests/lane-marks.test.js tests/router-marks.test.js tests/lane-start-marks.test.js tests/no-router.test.js tests/lane-refusal.test.js tests/router-quota.test.js tests/delegate-chain.test.js tests/lane-status.test.js tests/lane-quota.test.js` passes with no existing expectation edited except for the mark path.
 
 ### Task 21: The skills name the commands and the start-up does not grow (#201, #203)
 
@@ -462,8 +487,8 @@ New `lib/delegate-approve.js` exports `approve(cwd, { task, ignore = [], env })`
 
 Text only. (R28) in `autonomous-runs/SKILL.md` («The quota brake») and `swarm/SKILL.md` (line on the brake) replace the steps of `aether-wt save`, `quota-saved` and the push with `aether-autonomy quota-brake`, keeping the line that stopping workflows (`TaskStop`), native agents and lane calls (`aether-lane stop <run> [<call>]`) is the Lead's. (R29) «The verdict» of `using-aether/SKILL.md` names `aether-delegate approve --task <id>` for an edit and keeps the plain `verdict` line for the other cases. (R27) the rules say once, in one short sentence, that reading Muse's quota costs a real call. (R30) the other procedures of #201 (the «sí» with the guard in `enforce`, the closing spend sentence, `aether-autonomy status`, the launch of the design) stay as they are.
 
-Before editing, measure the character count of each part (`aether-session-start --part 1` to `--part 3`, in a Lead session environment as `tests/session-start-parts.test.js` sets it up) and write the three numbers into that test as the 0.41.0 base. The edit must leave every part no longer than its base; the net of R27 (added) against R28 and R29 (replaced) is a decrease.
+Before editing, measure the base from the 0.41.0 source, not from a checkout that depends on where the plugin sits: each part's output starts with a heading that holds the absolute path of the rules file, so `out.length` changes with the checkout (the test's own comment on issue #230 says the same). Take the text with `git show 6b31c62:plugins/aether/skills/using-aether/SKILL.md`, prepare it as the test's `source()` does (front matter removed, trimmed, `${CLAUDE_PLUGIN_ROOT}` replaced) with the fixed folder `installed = '/' + 'i'.repeat(63)` that the last test of the file already uses, split it with `splitParts(text, installed)` and write into the test the length of each `part.slice` (the slice, without the heading) as `BASE = [n1, n2, n3]`. The edit must leave every `part.slice` no longer than its base; the net of R27 (added) against R28 and R29 (replaced) is a decrease. Parts are packed greedily at the headings, so a shorter part 1 may pull the next section into it and make it longer than its base: when that happens, shorten that part's own prose further (never move the cut by hand); the 9,800-character limit of each part's whole output stays as it is.
 
-**Tests (write first):** `tests/session-start-parts.test.js`: for each part, `length <= BASE[i]` and `<= 9800`; the three base constants measured on the unedited tree; `tests/autonomous-runs-skill.test.js`/`quota-brake-docs.test.js`: the quota-brake paragraph contains `aether-autonomy quota-brake` and `aether-lane stop`, and no longer contains `aether-wt save <runId>` followed by `quota-saved --from`; `tests/using-aether-030.test.js`: «The verdict» contains `aether-delegate approve`; the rules contain the sentence about Muse's quota being a real call exactly once.
+**Tests (write first):** `tests/session-start-parts.test.js`: with `splitParts(source(installed), installed)`, for each part `slice.length <= BASE[i]`, and the sum of the three is less than the sum of `BASE`; each part's whole output from the real command (`bootstrapParts(PLUGIN)`) is `<= 9800` as the file already asserts; the three base constants are those measured from the 0.41.0 source; `tests/autonomous-runs-skill.test.js`/`quota-brake-docs.test.js`: the quota-brake paragraph contains `aether-autonomy quota-brake` and `aether-lane stop`, and no longer contains `aether-wt save <runId>` followed by `quota-saved --from`; `tests/using-aether-030.test.js`: «The verdict» contains `aether-delegate approve`; the rules contain the sentence about Muse's quota being a real call exactly once.
 
 **Acceptance:** the tests pass; the three parts together are shorter than the base; `npm test` passes and `npm run check` passes (R31).
