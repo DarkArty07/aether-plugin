@@ -89,7 +89,7 @@ None.
 - #232, #236 y #256: los hallazgos que hoy ya no aplican se descartan en esta spec; los que son una duda decidida por el dueño o por el Lead no se reabren. Reversible: cualquiera de los descartes puede volver a ser un arreglo.
 - #209: las duraciones se guardan en el registro de la corrida que ya existe y el informe las suma por clase; el formato es del plan. Reversible.
 - Descartes de C4: se llena en la ronda del plan, un hallazgo por línea con su motivo (R13); el Judge del plan la revisa contra esta spec.
-- #209 y #201 (R28): el comando del freno no detiene flujos ni delegados porque un bin no puede; lo hace el Lead con `TaskStop`. Reversible: que el comando también corra `aether-lane stop <run>`.
+- #201 (R28): el comando del freno no detiene flujos ni delegados porque un bin no puede; lo hace el Lead con `TaskStop`. Reversible: que el comando también corra `aether-lane stop <run>`.
 
 ## Irreversible actions
 
