@@ -41,3 +41,10 @@ test('the bootstrap records the owner effort with the placement (issue 141)', ()
   assert.ok(SKILL.includes('authorize --model <sonnet|opus> [--effort <low|medium|high|xhigh|max>]'))
   assert.ok(SKILL.includes('at the recorded effort when the words name one'))
 })
+
+test('the brief bullet tells the Lead to put tests that pin changes in AETHER-OWNS (issue #251)', () => {
+  assert.match(
+    SKILL,
+    /\*\*The brief\*\*[^\n]*search `tests\/` for the text the task changes \(and for a folder list it adds to or removes from\), and put each test file that pins it in `AETHER-OWNS`/,
+  )
+})
