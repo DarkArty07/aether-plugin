@@ -56,6 +56,7 @@ test('compile writes the graph, briefs and state for the integration branch', (t
   assert.equal(args.testCommand, 'true')
   assert.equal('ladder' in args, false)
   assert.equal(args.maxAgents, 200)
+  assert.equal(args.stuckWaitSeconds, 1800)
   assert.equal(args.tasks['task-2'].brief, path.join(args.runDir, 'briefs', 'task-2.md'))
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(args.runDir, 'graph.json'), 'utf8')), args)
   assert.equal(JSON.parse(fs.readFileSync(path.join(args.runDir, 'state.json'), 'utf8')).status, 'compiled')
