@@ -62,6 +62,12 @@ function aetherWt(call, state) {
       return { files: [] }
     case 'gate':
       return { pass: true, checks: 'pass', findings: [], detail: '', tests: '# pass 12', knownFailures: [], timedOut: false, files: ['src/t1/a.js'] }
+    case 'stuck':
+      return { stuck: true, task: second, state: 'waiting', branch: `aether/${first}/${second}`, worktree: `wt-${second}`, head: `head-${second}`, outside: [], left: [] }
+    case 'stuck-end': {
+      const at = call.command.rest.indexOf('--outcome')
+      return { ended: true, task: second, outcome: at === -1 ? undefined : call.command.rest[at + 1] }
+    }
     case 'ladder': {
       const [first, second] = call.command.rest
       const rest = call.command.rest
@@ -97,6 +103,8 @@ function aetherWt(call, state) {
 }
 
 const DEADLINE_TICK = /: deadline \d+\/\d+$/
+const STUCK_TICK = /: stuck wait \d+\/\d+$/
+const stuckWaiting = (seconds) => ({ exitCode: 0, stdout: `${JSON.stringify({ paused: seconds, state: 'waiting', stop: false })}\n` })
 const LEVEL = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high' }
 const GROUP = { 'gemini-3.8-flash': 'gemini', 'claude-sonnet-5-5': 'claude', 'claude-opus-5-5': 'claude', 'gpt-5.5-codex': 'openai', 'grok-4.7': 'grok' }
 // The harness that runs a model when it is not agy's. A lane call names only its model, so this stands in for aether-lane's choice.
@@ -172,7 +180,7 @@ function parseCommand(prompt) {
   // Checked before the bin match: the prompt's `cd` line is not an aether-wt command.
   const listed = prompt.match(/git -C '([^']*)' ls-files/)
   if (listed) return { tool: 'git', line: listed[0], verb: 'ls-files', rest: [listed[1]] }
-  const m = prompt.match(/(aether-wt|aether-lane) ([a-z]+)((?: [^\s']+)*)/)
+  const m = prompt.match(/(aether-wt|aether-lane) ([a-z]+(?:-[a-z]+)*)((?: [^\s']+)*)/)
   if (!m) return null
   return { tool: m[1], line: m[0], verb: m[2], rest: m[3].trim().split(' ').filter(Boolean) }
 }
@@ -232,7 +240,13 @@ async function runWorkflow(args, overrides = {}, options = {}) {
   const custom = Boolean(options.script)
   const script = custom ? options.script : SWARM_SCRIPT
   const roles = custom ? options.roles : SWARM_ROLES
-  const state = { args: parseLeniently(args), merged: new Set(), lanes: {}, ladder: overrides.ladder || options.ladder }
+  // The wait of the stuck units: the scenario's stuckWaitSeconds, or 0 when it gives none, even when
+  // aether-plan compile printed another value. Anything that is not an object reaches the flow as it is.
+  const parsed = parseLeniently(args)
+  const flowArgs = !custom && parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? { ...parsed, stuckWaitSeconds: 'stuckWait' in overrides ? overrides.stuckWait : 0 }
+    : args
+  const state = { args: parseLeniently(flowArgs), merged: new Set(), lanes: {}, ladder: overrides.ladder || options.ladder }
   const defaults = custom ? options.defaults(state) : defaultHandlers(state)
   const calls = []
   const events = []
@@ -248,18 +262,23 @@ async function runWorkflow(args, overrides = {}, options = {}) {
     if (!opts.agentType) throw new Error('every agent call needs an agentType')
     const role = opts.agentType.replace(/^aether:/, '')
     if (!roles.includes(role)) throw new Error(`unknown agent type: ${opts.agentType}`)
-    if (!custom && role === 'ops' && DEADLINE_TICK.test(opts.label || '')) {
+    if (!custom && role === 'ops' && (DEADLINE_TICK.test(opts.label || '') || STUCK_TICK.test(opts.label || ''))) {
       const seconds = Number(/--seconds (\d+)/.exec(prompt)[1])
-      ticks.push({ label: opts.label, seconds })
-      if (!overrides.deadline) return new Promise(() => {})
+      const stuck = STUCK_TICK.test(opts.label || '')
+      if (!overrides.deadline) {
+        if (stuck) return stuckWaiting(seconds)
+        return new Promise(() => {})
+      }
+      ticks.push({ label: opts.label, seconds, prompt })
       await tick()
       const reply = await overrides.deadline({ label: opts.label, seconds })
-      return reply || { exitCode: 0, stdout: `${JSON.stringify({ paused: seconds })}\n` }
+      return reply || (stuck ? stuckWaiting(seconds) : { exitCode: 0, stdout: `${JSON.stringify({ paused: seconds })}\n` })
     }
     const unitMatch = (opts.label || '').match(/^(task-\d+):/)
     const command = role === 'ops' ? (custom ? options.commandOf(prompt) : parseCommand(prompt)) : null
     const isLane = !custom && Boolean(command && command.tool === 'aether-lane')
     const isLadder = !custom && Boolean(command && command.tool === 'aether-wt' && command.verb === 'ladder')
+    const isStuckOpen = !custom && Boolean(command && command.tool === 'aether-wt' && command.verb === 'stuck')
     const call = {
       role,
       model: opts.model,
@@ -271,7 +290,7 @@ async function runWorkflow(args, overrides = {}, options = {}) {
       unit: unitMatch ? unitMatch[1] : null,
       command,
       lane: isLane ? laneFlags(command.rest) : null,
-      payload: isLane || isLadder || (custom && role === 'ops') ? payloadOf(prompt) : null,
+      payload: isLane || isLadder || isStuckOpen || (custom && role === 'ops') ? payloadOf(prompt) : null,
     }
     if (isLane && command.verb === 'start') {
       call.digestOk = Boolean(call.payload) && lanes.digest(call.payload.text) === call.lane.digest
@@ -310,7 +329,7 @@ async function runWorkflow(args, overrides = {}, options = {}) {
   let result = null
   let error = null
   try {
-    result = await loadWorkflow(script)(agent, parallel, pipeline, phase, log, args, NoDate, NoRandomMath, undefined, undefined)
+    result = await loadWorkflow(script)(agent, parallel, pipeline, phase, log, flowArgs, NoDate, NoRandomMath, undefined, undefined)
   } catch (err) {
     error = err
   }

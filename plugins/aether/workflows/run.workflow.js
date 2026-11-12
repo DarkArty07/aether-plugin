@@ -159,6 +159,8 @@ function readArgs(raw) {
   // `review: true` runs the final review even when this launch did not merge every unit, including a
   // launch whose waves are empty (issues #5 and #33). Anything else that is set is refused.
   if (input.review !== undefined && typeof input.review !== 'boolean') bad.push('review')
+  // How long a stuck unit waits for the Lead's fix (spec 034). Missing means no wait.
+  if (input.stuckWaitSeconds !== undefined && (!Number.isInteger(input.stuckWaitSeconds) || input.stuckWaitSeconds < 0)) bad.push('stuckWaitSeconds')
   // What the earlier launches of the run merged (issue 122), as aether-plan compile --run reads it from the run
   // directory. Args of a first launch, or of an older compile, lack it.
   const earlierOk = (u) => isObject(u) && text(u.id) && text(u.title) && Array.isArray(u.owns) && Array.isArray(u.minors) && Array.isArray(u.tiers)
@@ -191,6 +193,8 @@ const { runId, repoRoot, runDir, integration, testCommand, maxAgents, waves, tas
 const earlierUnits = Array.isArray(input.earlierUnits) ? input.earlierUnits : []
 // The run's lanes, or null when every call runs native.
 const lanes = input.lanes || null
+// How long a stuck unit waits for the Lead's fix, in seconds (spec 034). Zero turns the wait off.
+const stuckWait = input.stuckWaitSeconds === undefined ? 0 : input.stuckWaitSeconds
 // The bins of the version that compiled the run: implementers run them by path, and the ops
 // commands put them first on PATH, so a --plugin-dir session never mixes two versions (issue 008).
 const binDir = input.binDir || null
@@ -235,6 +239,27 @@ const rulings = {}
 const refusals = {}
 // Merges and closes run one at a time, in the order they are asked for.
 let queue = Promise.resolve()
+// One promise per unit, resolved when its state is final (after close and blockHint): the dependents of a
+// stuck unit wait for it while the other units go on (spec 034).
+const done = {}
+const resolveDone = {}
+// The stuck units with their wait in flight, the waits themselves, and whether each unit's ladder was at a
+// clean start when its work began (for the first-try mark of a fix merge).
+const waiting = new Set()
+const rescues = []
+const cleanStarts = {}
+for (const id of Object.keys(units)) {
+  done[id] = new Promise((resolve) => {
+    resolveDone[id] = resolve
+  })
+}
+
+// A stuck unit (spec 034): its wait runs while the other units go on. Only these blocks wait: a question of
+// the supervisor, a lane block, an unverified merge or an internal error never does.
+const STUCK_REASONS = ['blocked-same-cause:', 'blocked-outside-owns:', 'the ladder is spent (exhausted)', 'merge failed again:']
+function isStuck(unit) {
+  return stuckWait > 0 && unit.status === 'blocked' && unit.attempts > 0 && typeof unit.reason === 'string' && STUCK_REASONS.some((prefix) => unit.reason.startsWith(prefix))
+}
 // The lane calls by outcome.
 const laneCounts = lanes ? { calls: 0, ok: 0, failed: 0, quota: 0, violation: 0, blocked: 0, unavailable: 0 } : null
 // The picks run one at a time, in the order they are asked for (see decide).
@@ -1250,8 +1275,109 @@ function gateFindingsOf(gate, task) {
   return gate.findings && gate.findings.length ? gate.findings : [{ file: task.owns[0], what: gate.checks || 'la puerta falló' }]
 }
 
+// One held merge: the merge, the status check and the rerun stay in one turn of the merge queue, so no
+// other unit merges between a cut and its rerun (issue #2). Used by work() and by rescue() (spec 034) without
+// changing its behavior or its labels. Resolves to { done: 'merged' }, to { done: 'blocked', reason } when the
+// unit ends there, to { retryMerge, context } or { retryLadder, view, model, effort } when work() goes on, or,
+// for a rescue only, to { refused: true, out } when the Lead's fix did not merge.
+async function mergeHeld(unit, task, { wasCleanStart, rescue: forRescue }) {
+  const round = unit.rounds[unit.rounds.length - 1]
+  // A merge runs the plan's whole test command, so its Bash call, when the model runs it, needs the long timeout (issue 002).
+  // A merge the mod cuts at 600 s has its commit on the branch and its tests unfinished (issue #2). The merge, the
+  // status check and the rerun stay in one turn of the merge queue, so no other unit merges between a cut and its
+  // rerun. The unit is merged only when the rerun passes, with the commit the rerun names. A rerun that is cut,
+  // errors, or is refused for any reason but a finished test run leaves the commit there and blocks the unit.
+  const UNTESTED = 'its merge commit is on the integration branch without a passing test run'
+  refusals[unit.id] = null
+  const held = await serialized(async () => {
+    const first = await ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true })
+    if (first.merged || !first.error) return { first }
+    // Never blocked on captured output alone (issue 002): the git history says whether the unit is in.
+    const status = await ops(`aether-wt status ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge status` })
+    if (status.error || !status.unverified) return { first, status }
+    const again = await ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: verify merge`, long: true })
+    return { first, status, again }
+  })
+  const take = async (commit) => {
+    unit.commit = commit
+    unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
+    // A fix the Lead delivered merges without a rung of the ladder: no approval verdict (spec 034).
+    if (!forRescue) await approved(unit)
+    return { done: 'merged' }
+  }
+  let out = held.first
+  if (out.merged) return take(out.commit)
+  round.merge = describeMerge(out)
+  if (held.again) {
+    const again = held.again
+    if (again.merged) {
+      const res = await take(again.commit)
+      round.merge = 'merged: the tests were rerun after the merge was cut, and they passed'
+      log(`${unit.id}: merge was cut before its tests finished; a rerun of the tests passed, counting it merged`)
+      return res
+    }
+    // A failing test run is the usual failing merge, so the one retry below applies when the
+    // commit was reverted. A failing test run whose commit could not be reverted stays untested:
+    // do not retry, as the retry would only be refused unverified-moved (issue #2).
+    if (again.reason === 'tests' && again.reverted === false) {
+      round.merge = UNTESTED
+      log(`${unit.id}: merge rerun failed and commit was left in place; ${UNTESTED}`)
+      return forRescue ? { refused: true, out: again } : { done: 'blocked', reason: UNTESTED }
+    }
+    // Any other rerun leaves the commit untested: a second cut, an error, a dirty worktree,
+    // unverified-buried, unverified-moved or unverified-other. The reason is prefixed so the
+    // Lead still sees why, and the sentence says the commit is untested (issue #2).
+    if (again.reason !== 'tests' || again.error) {
+      const reason = again.error ? UNTESTED : `${again.reason}: ${UNTESTED}`
+      round.merge = reason
+      log(`${unit.id}: merge rerun did not finish (${again.error || again.reason}); ${reason}`)
+      return forRescue ? { refused: true, out: again } : { done: 'blocked', reason }
+    }
+    out = again
+    round.merge = describeMerge(out)
+  } else if (out.error) {
+    const status = held.status
+    if (status && !status.error && status.merged) {
+      const res = await take(status.commit)
+      round.merge = 'merged: the merge output was unreadable, and the merge commit is on the integration branch'
+      log(`${unit.id}: merge output unreadable, but its merge commit is on ${integration.branch}; counting it merged`)
+      return res
+    }
+    return forRescue ? { refused: true, out } : { done: 'blocked', reason: `merge ${round.merge}` }
+  }
+  refusals[unit.id] = refusalOf(out)
+  // A rescue never retries the merge nor asks the ladder: anything unmerged is refused (spec 034).
+  if (forRescue) return { refused: true, out }
+  if (out.reason === 'conflict' || out.reason === 'tests') {
+    if (unit.mergeRetried) return { done: 'blocked', reason: `merge failed again: ${round.merge}` }
+    return { retryMerge: true, context: mergeContext(out) }
+  }
+  // Changes outside Owns, or nothing committed: the attempt failed, and the ladder decides.
+  if (out.reason === 'ownership') {
+    const files = Array.isArray(out.files) && out.files.length ? out.files : [task.owns[0]]
+    round.findings = files.map((f) => ({ severity: 'important', title: 'fuera de Owns', file: f, evidence: '' }))
+    const res = await step(unit, 'fix', { findings: files.map((f) => ({ file: f, what: 'fuera de Owns' })) })
+    if (res.blocked) return { done: 'blocked', reason: res.blocked }
+    if (res.rejected) return { done: 'blocked', reason: `the ladder rejected the verdict: ${res.rejected}` }
+    return { retryLadder: true, view: res.next, model: res.next.model, effort: res.next.effort }
+  }
+  if (out.reason === 'empty') {
+    const what = 'el intento no cambió ningún archivo'
+    round.findings = [{ severity: 'important', title: what, file: task.owns[0], evidence: '' }]
+    const res = await step(unit, 'fix', { findings: [{ file: task.owns[0], what }] })
+    if (res.blocked) return { done: 'blocked', reason: res.blocked }
+    if (res.rejected) return { done: 'blocked', reason: `the ladder rejected the verdict: ${res.rejected}` }
+    return { retryLadder: true, view: res.next, model: res.next.model, effort: res.next.effort }
+  }
+  return { done: 'blocked', reason: `merge ${round.merge}` }
+}
+
 // The unit loop. Returns when the unit is merged, blocked, skipped or not run.
 async function work(unit, task) {
+  // The dependents, direct and indirect, of a stuck unit wait for its result; the others do not (spec 034).
+  for (const d of task.dependsOn) {
+    if (units[d] && (units[d].status === 'pending' || waiting.has(d))) await done[d]
+  }
   const dep = task.dependsOn.find((d) => units[d] && units[d].status !== 'merged')
   if (dep) return finish(unit, 'skipped', `${dep} is ${units[dep].status}`)
 
@@ -1262,6 +1388,7 @@ async function work(unit, task) {
   if (view.status !== 'open' || !view.model) return finish(unit, 'blocked', `the ladder is not open (${view.status})`)
 
   const wasCleanStart = view.attempts === 0
+  cleanStarts[unit.id] = wasCleanStart
   let model = view.model
   let effort = view.effort
   let context = null
@@ -1519,103 +1646,19 @@ async function work(unit, task) {
       continue
     }
 
-    // A merge runs the plan's whole test command, so its Bash call, when the model runs it, needs the long timeout (issue 002).
-    // A merge the mod cuts at 600 s has its commit on the branch and its tests unfinished (issue #2). The merge, the
-    // status check and the rerun stay in one turn of the merge queue, so no other unit merges between a cut and its
-    // rerun. The unit is merged only when the rerun passes, with the commit the rerun names. A rerun that is cut,
-    // errors, or is refused for any reason but a finished test run leaves the commit there and blocks the unit.
-    const UNTESTED = 'its merge commit is on the integration branch without a passing test run'
-    refusals[unit.id] = null
-    const held = await serialized(async () => {
-      const first = await ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge`, long: true })
-      if (first.merged || !first.error) return { first }
-      // Never blocked on captured output alone (issue 002): the git history says whether the unit is in.
-      const status = await ops(`aether-wt status ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: merge status` })
-      if (status.error || !status.unverified) return { first, status }
-      const again = await ops(`aether-wt merge ${runId} ${unit.id}`, { phase: 'Merge', label: `${unit.id}: verify merge`, long: true })
-      return { first, status, again }
-    })
-    let out = held.first
-    if (out.merged) {
-      unit.commit = out.commit
-      unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
-      await approved(unit)
-      return finish(unit, 'merged')
-    }
-    round.merge = describeMerge(out)
-    if (held.again) {
-      const again = held.again
-      if (again.merged) {
-        unit.commit = again.commit
-        unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
-        await approved(unit)
-        round.merge = 'merged: the tests were rerun after the merge was cut, and they passed'
-        log(`${unit.id}: merge was cut before its tests finished; a rerun of the tests passed, counting it merged`)
-        return finish(unit, 'merged')
-      }
-      // A failing test run is the usual failing merge, so the one retry below applies when the
-      // commit was reverted. A failing test run whose commit could not be reverted stays untested:
-      // do not retry, as the retry would only be refused unverified-moved (issue #2).
-      if (again.reason === 'tests' && again.reverted === false) {
-        round.merge = UNTESTED
-        log(`${unit.id}: merge rerun failed and commit was left in place; ${UNTESTED}`)
-        return finish(unit, 'blocked', UNTESTED)
-      }
-      // Any other rerun leaves the commit untested: a second cut, an error, a dirty worktree,
-      // unverified-buried, unverified-moved or unverified-other. The reason is prefixed so the
-      // Lead still sees why, and the sentence says the commit is untested (issue #2).
-      if (again.reason !== 'tests' || again.error) {
-        const reason = again.error ? UNTESTED : `${again.reason}: ${UNTESTED}`
-        round.merge = reason
-        log(`${unit.id}: merge rerun did not finish (${again.error || again.reason}); ${reason}`)
-        return finish(unit, 'blocked', reason)
-      }
-      out = again
-      round.merge = describeMerge(out)
-    } else if (out.error) {
-      const status = held.status
-      if (status && !status.error && status.merged) {
-        unit.commit = status.commit
-        unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
-        await approved(unit)
-        round.merge = 'merged: the merge output was unreadable, and the merge commit is on the integration branch'
-        log(`${unit.id}: merge output unreadable, but its merge commit is on ${integration.branch}; counting it merged`)
-        return finish(unit, 'merged')
-      }
-      return finish(unit, 'blocked', `merge ${round.merge}`)
-    }
-    refusals[unit.id] = refusalOf(out)
-    if (out.reason === 'conflict' || out.reason === 'tests') {
-      if (unit.mergeRetried) return finish(unit, 'blocked', `merge failed again: ${round.merge}`)
+    // One held merge (see mergeHeld): the merge, the status check and the rerun stay in one turn of the queue.
+    const held2 = await mergeHeld(unit, task, { wasCleanStart, rescue: false })
+    if (held2.done === 'merged') return finish(unit, 'merged')
+    if (held2.done === 'blocked') return finish(unit, 'blocked', held2.reason)
+    if (held2.retryMerge) {
       unit.mergeRetried = true
       mergeRetry = true
-      context = mergeContext(out)
+      context = held2.context
       continue
     }
-    // Changes outside Owns, or nothing committed: the attempt failed, and the ladder decides.
-    if (out.reason === 'ownership') {
-      const files = Array.isArray(out.files) && out.files.length ? out.files : [task.owns[0]]
-      round.findings = files.map((f) => ({ severity: 'important', title: 'fuera de Owns', file: f, evidence: '' }))
-      const res = await step(unit, 'fix', { findings: files.map((f) => ({ file: f, what: 'fuera de Owns' })) })
-      if (res.blocked) return finish(unit, 'blocked', res.blocked)
-      if (res.rejected) return finish(unit, 'blocked', `the ladder rejected the verdict: ${res.rejected}`)
-      view = res.next
-      model = view.model
-      effort = view.effort
-      continue
-    }
-    if (out.reason === 'empty') {
-      const what = 'el intento no cambió ningún archivo'
-      round.findings = [{ severity: 'important', title: what, file: task.owns[0], evidence: '' }]
-      const res = await step(unit, 'fix', { findings: [{ file: task.owns[0], what }] })
-      if (res.blocked) return finish(unit, 'blocked', res.blocked)
-      if (res.rejected) return finish(unit, 'blocked', `the ladder rejected the verdict: ${res.rejected}`)
-      view = res.next
-      model = view.model
-      effort = view.effort
-      continue
-    }
-    return finish(unit, 'blocked', `merge ${round.merge}`)
+    view = held2.view
+    model = held2.model
+    effort = held2.effort
   }
 }
 
@@ -1650,6 +1693,86 @@ async function close(unit) {
   else unit.patch = out.patch || null
 }
 
+// The wait of a stuck unit for the Lead's fix (spec 034). Always resolves done[unit.id] and never throws:
+// the wave's barrier let go when runUnit started it, and the run waits for every rescue after the waves.
+async function rescue(unit) {
+  const before = unit.reason
+  const end = async (outcome) => {
+    const out = await ops(`aether-wt stuck-end ${runId} ${unit.id} --outcome ${outcome}`, { phase: 'Merge', label: `${unit.id}: stuck end` })
+    if (out.error) log(`${unit.id}: stuck-end ${outcome} failed: ${out.error}`)
+  }
+  try {
+    waiting.add(unit.id)
+    const filePath = `${runDir}/ladder/${unit.id}-stuck.json`
+    const text = JSON.stringify({ reason: unit.reason })
+    const opened = await ops(`aether-wt stuck ${runId} ${unit.id} --payload ${shellArg(filePath)} --digest ${digest(text)}`, {
+      phase: 'Merge',
+      label: `${unit.id}: stuck`,
+      payload: { path: filePath, text },
+    })
+    if (opened.error) {
+      log(`${unit.id}: the stuck wait could not open: ${opened.error}`)
+      return
+    }
+    log(`${unit.id}: stuck (${unit.reason}); waiting up to ${stuckWait} s for the Lead's fix`)
+    const steps = Math.ceil(stuckWait / CAP_TICK_SECONDS)
+    let fate = null
+    for (let k = 1; k <= steps && !fate; k++) {
+      const seconds = Math.min(CAP_TICK_SECONDS, stuckWait - (k - 1) * CAP_TICK_SECONDS)
+      let tick = null
+      try {
+        const reply = await agent(opsPrompt(`aether-wt stuck-tick ${runId} ${unit.id} --seconds ${seconds}`, { long: true }), {
+          agentType: 'aether:ops',
+          model: 'haiku',
+          effort: 'low',
+          phase: 'Merge',
+          label: `${unit.id}: stuck wait ${k}/${steps}`,
+          schema: OPS_SCHEMA,
+        })
+        const lines = reply && (reply.exitCode === 0 || reply.exitCode === MODEL_UNKNOWN_EXIT) ? String(reply.stdout || '').trim().split('\n') : []
+        tick = JSON.parse(lines[lines.length - 1])
+      } catch {
+        tick = null
+      }
+      if (!tick || tick.paused !== seconds) {
+        log(`${unit.id}: the stuck wait cannot be kept: the pause did not run`)
+        fate = { kind: 'expired' }
+      } else if (tick.stop) {
+        fate = { kind: 'ceiling' }
+      } else if (tick.state === 'delivered') {
+        fate = { kind: 'delivered', commit: tick.commit, reason: tick.reason }
+      } else if (tick.state === 'declined') {
+        fate = { kind: 'declined', reason: tick.reason }
+      }
+    }
+    if (!fate) fate = { kind: 'expired' }
+    if (fate.kind === 'delivered') {
+      const held2 = await mergeHeld(unit, tasks[unit.id], { wasCleanStart: cleanStarts[unit.id], rescue: true })
+      if (held2.done === 'merged') {
+        finish(unit, 'merged')
+        unit.fixedByLead = { commit: fate.commit, reason: fate.reason }
+        await end('merged')
+        return
+      }
+      unit.reason = `${before}${/[.!?]$/.test(before) ? '' : '.'} The Lead's fix was refused: ${describeMerge(held2.out)}`
+      await end('rejected')
+      return
+    }
+    if (fate.kind === 'declined') {
+      const lead = typeof fate.reason === 'string' && fate.reason !== '' ? fate.reason : 'no reason given'
+      unit.reason = `${before}${/[.!?]$/.test(before) ? '' : '.'} The Lead declined to fix it: ${lead}`
+      await end('declined')
+      return
+    }
+    await end(fate.kind)
+  } finally {
+    waiting.delete(unit.id)
+    if (unit.attempts > 0) await close(unit)
+    if (unit.status === 'blocked') blockHint(unit)
+    resolveDone[unit.id]()
+  }
+}
+
 async function runUnit(id) {
   const unit = units[id]
   try {
@@ -1657,8 +1780,14 @@ async function runUnit(id) {
   } catch (err) {
     finish(unit, 'blocked', `internal error: ${message(err)}`)
   }
+  if (isStuck(unit)) {
+    // The wave's barrier lets go: the wait runs on while the other units go on (spec 034).
+    rescues.push(rescue(unit))
+    return
+  }
   if (unit.attempts > 0) await close(unit)
   if (unit.status === 'blocked') blockHint(unit)
+  resolveDone[id]()
 }
 
 // Every merged unit the final review covers: this launch's plus the earlier launches' (issue 122).
@@ -1903,6 +2032,9 @@ try {
   for (let i = 0; i < waves.length; i++) {
     await parallel(waves[i].map((id) => () => runUnit(id)))
   }
+  // The waits of the stuck units (spec 034): the final review is decided only with every state final, so one
+  // review covers the fixes too.
+  await Promise.allSettled(rescues)
   // Once per run, when this launch closed it (issues #5 and #33). A launch that leaves a unit blocked,
   // skipped or not run does not pay for the review; the Lead forces it with `review: true`.
   if (input.review === true || launchComplete()) finalReview = await reviewRun(input.review === true)
@@ -1913,6 +2045,7 @@ try {
 } catch (err) {
   error = message(err)
 } finally {
+  await Promise.allSettled(rescues)
   // The took logs no call waited for: the run returns, and sweeps, only after every one of them ended.
   await Promise.all(tookLogs)
   const command = `aether-wt sweep --run ${runId}`
