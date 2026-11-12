@@ -14,7 +14,7 @@ test('the manifest, the launcher pin, the README and the changelog all say 0.39.
   assert.equal(readme.split('\n').filter((line) => /^Version \d/.test(line)).length, 1)
   assert.ok(readme.includes('Version 0.39.0 ('))
   const firstVersion = read('docs/changelog.md').split('\n').find((line) => /^Version \d+\.\d+\.\d+: /.test(line))
-  assert.ok(firstVersion.startsWith('Version 0.39.0: ') && /issues 185, 189, 198 and 233/.test(firstVersion) && /A123/.test(firstVersion) && /typed in a session with a terminal/.test(firstVersion), firstVersion)
+  assert.ok(firstVersion.startsWith('Version 0.39.0: ') && /issues 185, 189, 198 and 233/.test(firstVersion) && /A123/.test(firstVersion) && /Terminal-Bench/.test(firstVersion), firstVersion)
 })
 
 test('the decisions record A100 with the owner\'s words and what was decided about Codex (R25)', () => {
