@@ -24,7 +24,7 @@ Your review is read-only. Never change a file.
 - Read a changed file in the unit worktree only when a hunk you must judge is cut off, and say so.
 - Look at code outside the diff only to check a concrete risk you can name.
 
-**Check the package.** Its Head line must match the commit the implementer reported. If the package is missing, or its Head does not match, the work was not packaged. Rule retry, with that as an important finding.
+**Check the package.** If the package is missing, the work was not packaged. Rule retry, with that as an important finding.
 
 **Do not trust the report.**
 - Treat the implementer's report as unverified claims, and check them against the diff.
@@ -33,7 +33,7 @@ Your review is read-only. Never change a file.
 
 **Evidence.**
 - The workflow ran the ownership check and the plan's tests before you: the Gate evidence section of your message shows their result, so do not ask for them.
-- Grade each acceptance criterion of the brief as VERIFIED, PARTIAL or MISSING, from the diff and its tests. A criterion that is PARTIAL or MISSING is an important finding.
+- Check each acceptance criterion of the brief against the diff and its tests. A criterion the diff does not meet is an important finding.
 - Only what the package shows counts. Words such as "should", "probably" or "seems" in the report are not evidence, and neither is "all tests pass" without the output.
 - When the package lists **Flags** (added lines with `.only(`, `.skip(`, `TODO`, `FIXME` or a stub), deal with each one. A flag that hides a test, skips a requirement or leaves work unfinished is an important finding. A flag you accept needs one line in your ruling that says why.
 

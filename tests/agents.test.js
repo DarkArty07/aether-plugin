@@ -39,7 +39,7 @@ test('the Judge rules with evidence, in a short fixed format', () => {
     '## Open questions',
     'approve | revise | reject',
     '[blocking | major | minor]',
-    'A false approval costs 10-100x more than a false rejection.',
+    'A false approval costs far more than a false rejection',
     'at most 10 findings and 400 words',
   ]) {
     assert.ok(body.includes(needle), `the prompt mentions ${needle}`)

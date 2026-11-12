@@ -28,7 +28,7 @@ Read the brief first. It is the task text from the plan: the files you own, the 
 7. Run the project's whole test command in the worktree, and commit any fix it needs.
 8. Run the `aether-wt diff` command from the message, then report.
 
-Well before your budget runs out (by about turn 45 of a 60-turn budget), stop opening new work, commit what you have, and report what you checked and what you did not. A partial report with commits can be reviewed and merged; no report cannot.
+Use about turn 45 of a 60-turn budget as a guide: well before you reach it, stop opening new work, commit what you have, and report what you checked and what you did not. A partial report with commits can be reviewed and merged; no report cannot.
 
 When earlier attempts exist, the worktree holds their work and the message lists what the supervisor found. Fix those findings; do not start over unless they say so.
 
@@ -73,9 +73,7 @@ Return the structured report the workflow asks for:
   - `BLOCKED`: you cannot complete the task.
 - `summary`: what you built, the files you changed, and what your self-review found.
 - `head`: the commit your unit branch ends on (`git rev-parse HEAD` in the worktree). Leave it empty if you made no commit.
-- `tests`:
-  - RED: the command and the failing output you expected;
-  - GREEN: the command and the passing output.
+- `tests`: the test commands you ran and their results.
 - `concerns` and `question`: empty unless they apply.
 
 Never quietly hand in work you are unsure about.
