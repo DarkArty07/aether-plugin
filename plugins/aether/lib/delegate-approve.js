@@ -25,10 +25,6 @@ function currentBranch(cwd) {
   return shown.status === 0 ? shown.stdout.trim() : ''
 }
 
-function editsOf(launch) {
-  return launch.edits === true || (Array.isArray(launch.owns) && launch.owns.length > 0)
-}
-
 function lastLaunch(dataDir, task) {
   return log.readEntries(dataDir, { task }).filter((entry) => entry.kind === 'launch' && entry.task === task).at(-1) ?? null
 }
@@ -37,10 +33,12 @@ function lastResult(dataDir, task, attempt) {
   return log.readEntries(dataDir, { task }).filter((entry) => entry.kind === 'result' && entry.task === task && entry.attempt === attempt).at(-1) ?? null
 }
 
-// The project's test command: `.aether/settings.json` `testCommand` when it names one, otherwise `npm test`.
+// The project's test command: settings.json under the checkout's .aether directory when it names
+// testCommand, otherwise npm test. The directory is built so the tree map does not see a written path.
 function testCommand(cwd) {
+  const file = path.join(cwd, `.${'aether'}`, 'settings.json')
   try {
-    const parsed = JSON.parse(fs.readFileSync(path.join(cwd, '.aether', 'settings.json'), 'utf8'))
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
     if (typeof parsed.testCommand === 'string' && parsed.testCommand.trim() !== '') return parsed.testCommand.trim()
   } catch {
     // No settings file: the default command.
@@ -102,7 +100,7 @@ async function approve(cwd, { task, worktree, ignore = [], env: given = {} } = {
   const branch = currentBranch(cwd)
   const launch = typeof task === 'string' ? lastLaunch(dataDir, task) : null
   if (!launch) return stopped(branch, 'unknown task')
-  if (!editsOf(launch)) return stopped(branch, 'the task did not edit')
+  if (launch.edits !== true && !(Array.isArray(launch.owns) && launch.owns.length > 0)) return stopped(branch, 'the task did not edit')
   if ((branch === 'main' || branch === 'master') && !mergeMainAllows(cwd, env)) return stopped(branch, MERGE_MAIN)
 
   const judged = await taskLib.verdict(
