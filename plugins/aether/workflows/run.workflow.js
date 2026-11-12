@@ -247,6 +247,11 @@ const implementedBy = {}
 // --- agents ----------------------------------------------------------------------------------
 
 const quote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`
+const BARE_TOKEN = /^[A-Za-z0-9._:=@/,-]+$/
+// A path of only bare-token characters (what the mod's COMMAND_LINE in hooks/ops-command.mjs takes
+// unquoted) stays bare, so an ordinary run's command is byte-for-byte what it was; anything else
+// (a space in the repository root, issue #247) is quoted.
+const shellArg = (value) => (BARE_TOKEN.test(String(value)) ? String(value) : quote(value))
 const list = (files) => (files && files.length ? files.join(', ') : 'unknown files')
 const message = (err) => (err && err.message ? err.message : String(err))
 
@@ -437,7 +442,7 @@ async function applyVerdict(unit, kind, body) {
   const filePath = `${runDir}/ladder/${unit.id}-verdict.json`
   const text = JSON.stringify(body)
   const d = digest(text)
-  const command = `aether-wt ladder ${runId} ${unit.id} --verdict ${kind} --payload ${filePath} --digest ${d}`
+  const command = `aether-wt ladder ${runId} ${unit.id} --verdict ${kind} --payload ${shellArg(filePath)} --digest ${d}`
   return await ops(command, {
     phase: 'Supervise',
     label: `${unit.id}: ladder verdict`,
