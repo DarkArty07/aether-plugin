@@ -102,6 +102,15 @@ test('the components page counts the commands of bin/ and says the ladder adds n
   assert.match(components, /delegate ladder[^\n]*adds nothing at the start of a plain session/)
 })
 
+test('the components page lists the stuck, deliver, decline and watch verbs of aether-wt (#256 9)', () => {
+  const components = read('docs', 'reference', 'components.md')
+  const row = components.split('\n').find((line) => line.startsWith('| `aether-wt` |'))
+  assert.ok(row, 'the page has a row for aether-wt')
+  for (const verb of ['stuck', 'stuck-tick', 'stuck-end', 'deliver', 'decline', 'watch']) {
+    assert.ok(row.includes(`\`${verb}\``), `the row names ${verb}`)
+  }
+})
+
 test('components.md declares the library families, the orchestrator of each and the loose modules (R16)', () => {
   const text = fs.readFileSync(path.join(__dirname, '..', 'docs', 'reference', 'components.md'), 'utf8')
   const section = text.split(/^## /m).find((part) => part.startsWith('Library families'))

@@ -57,3 +57,16 @@ test('the swarm skill tells the Lead to widen Owns with --widen, and to decline 
 test('the start-up skill does not mention the stuck wait', () => {
   assert.doesNotMatch(read('plugins', 'aether', 'skills', 'using-aether', 'SKILL.md'), /aether-wt (watch|deliver|decline)|stuckWaitSeconds/)
 })
+
+test('the swarm skill formats the watch command, names the blocked outcome, and documents the stuck wait (#256 4-7)', () => {
+  const skill = read('plugins', 'aether', 'skills', 'swarm', 'SKILL.md')
+  assert.ok(skill.includes('`aether-wt watch <runId>`'), 'the watch command is a code span')
+  assert.ok(
+    skill.includes('${CLAUDE_PLUGIN_ROOT}/bin/`aether-wt watch <runId>`'),
+    'the code span is preceded by the plugin-root path form',
+  )
+  assert.doesNotMatch(skill, /treated as today/, 'no placeholder "treated as today"')
+  assert.doesNotMatch(skill, /launch arguments may set/, 'no launch argument sets the wait')
+  assert.ok(skill.includes('act on it as a blocked unit'), 'the untimely delivery names the blocked outcome')
+  assert.ok(skill.includes('no second wait'), 'the stuck-unit entry names no second wait')
+})
