@@ -7,12 +7,11 @@
 
 const fs = require('node:fs')
 const crypto = require('node:crypto')
-const { spawnSync } = require('node:child_process')
 const path = require('node:path')
 const { ownerMessages, findTranscript } = require('./voice.js')
 const { newRunId, isRunId, dataDir: runDataDir, aetherDir, runDir } = require('./run.js')
 const { readBrakeSettings, isAetherSession } = require('./session.js')
-const { repoPaths } = require('./git.js')
+const { repoPaths, isRepository } = require('./git.js')
 const { isObject } = require('./common.js')
 const { trustedFile } = require('./skill-rules.js')
 const { report: reportRun, runStartOf, finalizedRecords, readUsage } = require('./report.js')
@@ -807,17 +806,21 @@ function status(mainRoot, { now = Date.now(), dataDir = runDataDir() } = {}) {
 function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date.now() } = {}) {
   if (!isAetherSession(resolveDataDir(dataDir), session)) return null
   let mainRoot
-  try { mainRoot = repoPaths(cwd).mainRoot } catch (error) {
-    // Normalize only the diagnostic probe's locale; repoPaths preserves operational errors.
-    if (error.code) throw error
-    const probe = spawnSync('git', ['rev-parse', '--show-toplevel'], {
-      cwd, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' },
-    })
-    if (probe.error) throw probe.error
-    if (probe.status === 128 && /^fatal: not a git repository\b/.test(probe.stderr)) return null
-    throw error
+  try {
+    mainRoot = repoPaths(cwd).mainRoot
+  } catch (error) {
+    if (isRepository(cwd)) throw error
+    return null
   }
-  const st = status(mainRoot, { now, dataDir: resolveDataDir(dataDir) })
+  // An unreadable run state refuses the launch instead of throwing into the
+  // caller (plan-compile has no catch): the run cannot be honored, and its
+  // state names the broken file.
+  let st
+  try {
+    st = status(mainRoot, { now, dataDir: resolveDataDir(dataDir) })
+  } catch (error) {
+    return { stop: 'unreadable', id: null, message: `the open run's state could not be read: ${error.message}` }
+  }
   if (!st.open || !st.stop) return null
   let message
   if (st.stop === 'time') message = `autonomous run ${st.id} reached its time ceiling (${st.hours.elapsed}h / ${st.hours.ceiling}h); close it with: aether-autonomy end --outcome ceiling`

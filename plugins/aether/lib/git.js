@@ -22,6 +22,25 @@ function git(args, cwd, { allowFail = false, raw = false } = {}) {
   return result
 }
 
+// Whether cwd is inside a Git repository. The C-locale probe normalizes the
+// diagnostic: a localized Git reports «not a git repository» in its own
+// language. An operational failure (a spawn error) throws; any other Git
+// failure reads as inside, so the caller surfaces its own error.
+function isRepository(cwd) {
+  try {
+    repoPaths(cwd)
+    return true
+  } catch (error) {
+    if (error.code) throw error
+  }
+  const probe = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+    cwd, encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' },
+  })
+  if (probe.error) throw probe.error
+  if (probe.status === 128 && /^fatal: not a git repository\b/.test(probe.stderr)) return false
+  return true
+}
+
 // worktree: top of the current worktree; mainRoot: the main checkout, which holds .aether/
 function repoPaths(cwd) {
   const worktree = git(['rev-parse', '--show-toplevel'], cwd).stdout
@@ -37,4 +56,4 @@ function head(cwd) {
   return git(['rev-parse', 'HEAD'], cwd).stdout
 }
 
-module.exports = { git, repoPaths, currentBranch, head }
+module.exports = { git, repoPaths, isRepository, currentBranch, head }
