@@ -28,7 +28,7 @@ Read the brief first. It is the task text from the plan: the files you own, the 
 7. Run the project's whole test command in the worktree, and commit any fix it needs.
 8. Run the `aether-wt diff` command from the message, then report.
 
-Use about turn 45 of a 60-turn budget as a guide: well before you reach it, stop opening new work, commit what you have, and report what you checked and what you did not. A partial report with commits can be reviewed and merged; no report cannot.
+Well before your budget runs out (by about turn 45 of a 60-turn budget), stop opening new work, commit what you have, and report what you checked and what you did not. A partial report with commits can be reviewed and merged; no report cannot.
 
 When earlier attempts exist, the worktree holds their work and the message lists what the supervisor found. Fix those findings; do not start over unless they say so.
 
