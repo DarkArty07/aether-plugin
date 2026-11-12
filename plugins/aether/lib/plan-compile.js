@@ -293,7 +293,7 @@ function recordBaseline(cwd, testCommand, { timeoutMs = BASELINE_TIMEOUT_MS } = 
     durationMs: Date.now() - started,
     exitCode: r.status,
     // A newline before the output stops a reporter that ends on an incomplete line from running together with the error count.
-    signatures: baseline.failureSignatures(`${r.stdout || ''}\n${r.stderr || ''}`),
+    signatures: baseline.failureSignatures(`${r.stdout || ''}\n${r.stderr || ''}`, cwd),
     timedOut: Boolean(r.error && r.error.code === 'ETIMEDOUT'),
   }
 }

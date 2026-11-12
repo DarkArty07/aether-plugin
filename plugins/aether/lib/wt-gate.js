@@ -90,7 +90,7 @@ function gateCommand(cwd, runId, taskId, opts = {}) {
   }
 
   const baseline = readBaseline(mainRoot, runId)
-  const verdict = judge(baseline, { exitCode: testsResult.exitCode, output: testsResult.outputTail })
+  const verdict = judge(baseline, { exitCode: testsResult.exitCode, output: testsResult.outputTail }, worktree)
   if (verdict.pass) {
     const knownFailures = verdict.known || []
     return {
@@ -105,7 +105,7 @@ function gateCommand(cwd, runId, taskId, opts = {}) {
     }
   }
 
-  const allSigs = failureSignatures(testsResult.outputTail)
+  const allSigs = failureSignatures(testsResult.outputTail, worktree)
   const rawNames = verdict.new ?? allSigs
   if (rawNames.length === 0) {
     return {
