@@ -348,7 +348,8 @@ test('issue 037: an exception of runDelegate is a failed attempt with its outcom
 // A file where each directory of the marks must be makes every mark fail to write, while the journal still works.
 function breakMarks(dataDir) {
   fs.mkdirSync(path.join(dataDir, 'router'), { recursive: true })
-  for (const name of ['lanes', 'slow']) fs.writeFileSync(path.join(dataDir, 'router', name), 'not a directory')
+  fs.writeFileSync(path.join(dataDir, 'router', 'slow'), 'not a directory')
+  fs.writeFileSync(path.join(dataDir, 'lanes'), 'not a directory')
 }
 
 test('issue 037: a mark that cannot be written is swallowed: the outcome is still journaled and the chain goes on or ends as it would', async (t) => {

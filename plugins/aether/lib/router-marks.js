@@ -1,12 +1,12 @@
 'use strict'
 
-// Quota marks written by the delegate router, kept apart from the swarm's marks.
-// agy and Muse state an explicit refusal in words (quota-refusal.js). The router turns that into a
-// mark in its own store, `<dataDir>/router/lanes/marks/`, of the same shape lane-marks.js reads. The swarm's store is
-// only read here, never written, so a router refusal does not change what the swarm's marks hold.
+// Quota marks written by the delegate router, in the single mark store the swarm reads and writes:
+// `<dataDir>/lanes/marks/`. agy and Muse state an explicit refusal in words (quota-refusal.js). The router turns that
+// into a mark in the single store, of the same shape lane-marks.js reads, so a router refusal is seen by the swarm.
+// Marks left under the old `<dataDir>/router/lanes/marks/` directory are moved into the single store on the first
+// read (lane-marks.js `migrateRouterMarks`).
 // Family: router.
 
-const path = require('node:path')
 const { writeAtomic } = require('./common.js')
 const laneMarks = require('./lane-marks.js')
 const { quotaRefusal } = require('./quota-refusal.js')
@@ -14,8 +14,10 @@ const { quotaRefusal } = require('./quota-refusal.js')
 const REFUSAL_DEFAULT_MINUTES = 60
 const MINUTE_MS = 60 * 1000
 
+// The root the router reads and writes marks under: the data directory itself, so `markFile` lands in the single
+// store. Kept for callers that address the store through it; it names no other folder.
 function routerMarksRoot(dataDir) {
-  return path.join(dataDir, 'router')
+  return dataDir
 }
 
 // A harness that names its own quota failures, as Muse does with structured quota data («quota: muse weekly limit,
@@ -57,16 +59,14 @@ function markRefusal(dataDir, { harness, group, text, now = Date.now() }) {
   return mark
 }
 
-// The live marks of the swarm (read only) and of the router, sorted by harness and group.
+// The live marks of the single store, sorted by harness and group. A mark the router wrote keeps its stored
+// `source: 'router'`; a mark without one came from the swarm and reads as `'swarm'`.
 // known(harness, group), when given, leaves out the marks of a group the lane table does not have.
 function readAllMarks(dataDir, now = Date.now(), known = null) {
-  const swarm = laneMarks.liveMarks(dataDir, now, known).map((mark) => ({ ...mark, source: 'swarm' }))
-  const router = laneMarks.liveMarks(routerMarksRoot(dataDir), now, known).map((mark) => ({ ...mark, source: 'router' }))
-  return [...swarm, ...router].sort((a, b) => {
-    const keyA = `${a.harness}/${a.group}`
-    const keyB = `${b.harness}/${b.group}`
-    return keyA < keyB ? -1 : (keyA > keyB ? 1 : 0)
-  })
+  try {
+    laneMarks.migrateRouterMarks(dataDir)
+  } catch {}
+  return laneMarks.liveMarks(dataDir, now, known).map((mark) => (mark.source === undefined ? { ...mark, source: 'swarm' } : { ...mark }))
 }
 
 module.exports = {
