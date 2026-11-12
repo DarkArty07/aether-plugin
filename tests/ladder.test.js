@@ -86,7 +86,7 @@ test('the effort of a rung is the rung\'s, and stateOf folds the recorded verdic
   assert.deepEqual([state.step, state.attempts, state.status], ['opus-xhigh', 2, 'open'])
 })
 
-test('repeatBlocked defaults to two and rejects invalid configured counts', () => {
+test('a missing repeatBlocked is refused, and invalid configured counts are rejected', () => {
   const fs = require('node:fs')
   const os = require('node:os')
   const path = require('node:path')
@@ -96,7 +96,7 @@ test('repeatBlocked defaults to two and rejects invalid configured counts', () =
     return file
   }
   const { repeatBlocked, ...withoutCount } = L
-  assert.equal(loadLadder(write(withoutCount)).repeatBlocked, 2)
+  assert.throws(() => loadLadder(write(withoutCount)), /ladder: missing repeatBlocked/)
   for (const bad of [0, -1, 1.5, 'two']) {
     assert.throws(() => loadLadder(write({ ...L, repeatBlocked: bad })), /ladder: repeatBlocked/, `${bad}`)
   }
@@ -112,6 +112,23 @@ test('an empty sentence is no reset of the BLOCKED streak: with no red test the 
   // A DONE report (not BLOCKED) is what clears the streak: the workflow sends it as an attempt with that status.
   const cleared = judge(first.state, { kind: 'attempt', status: 'DONE', reason: '', findings: [] }, L)
   assert.deepEqual([cleared.state.blockedKey, cleared.state.blockedCount], [null, 0])
+})
+
+test('a ladder config missing supervisorFloor, repeatBlocked or law throws ladder: missing <name>', () => {
+  const fs = require('node:fs')
+  const os = require('node:os')
+  const path = require('node:path')
+  const write = (data) => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aether-ladder-')), 'ladder.json')
+    fs.writeFileSync(file, JSON.stringify(data))
+    return file
+  }
+  const { supervisorFloor, ...withoutFloor } = L
+  assert.throws(() => loadLadder(write(withoutFloor)), /ladder: missing supervisorFloor/)
+  const { repeatBlocked, ...withoutCount } = L
+  assert.throws(() => loadLadder(write(withoutCount)), /ladder: missing repeatBlocked/)
+  const { law, ...withoutLaw } = L
+  assert.throws(() => loadLadder(write(withoutLaw)), /ladder: missing law/)
 })
 
 test('loadLadder reads the stored ladder and refuses a rung with no effort, an effort that does not exist and a repeated step', () => {
