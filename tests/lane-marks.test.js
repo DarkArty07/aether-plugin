@@ -248,3 +248,132 @@ test('the source rule needs the time of the mark: a mark without one is lifted b
   assert.notEqual(marks.liveMark(dir, 'agy', 'claude', NOW + 10 * MIN), null)
   assert.equal(liftWith(dir, { ts: iso(NOW - 60 * MIN) }), null)
 })
+
+// ---- one mark store (task 22): the old router directory migrates into lanes/marks/ ----
+
+const oldMarksDir = (dataDir) => path.join(dataDir, 'router', 'lanes', 'marks')
+
+function writeOldMark(dataDir, name, mark) {
+  const dir = oldMarksDir(dataDir)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, name), typeof mark === 'string' ? mark : JSON.stringify(mark))
+}
+
+const swarmMarkAt = (until, extra = {}) => ({ harness: 'agy', group: 'gemini', at: NOW, until, confirmed: true, resetsAt: new Date(until).toISOString(), usedPercentAbsent: false, source: 'swarm', reason: 'dry mark', ...extra })
+const routerMarkAt = (until, extra = {}) => ({ harness: 'agy', group: 'gemini', at: NOW, until, confirmed: false, resetsAt: null, usedPercentAbsent: false, source: 'router', reason: 'quota refusal', ...extra })
+
+test('lane-marks.js never requires router-marks.js: the old path is a literal', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'lane-marks.js'), 'utf8')
+  assert.ok(!/require\(['"]\.\/router-marks/.test(source))
+  assert.ok(source.includes(path.posix.join('router', 'lanes', 'marks')))
+})
+
+test('migrateRouterMarks moves a mark from the old router directory into the single store', (t) => {
+  const dir = tempDir(t)
+  const stored = routerMarkAt(NOW + 60 * MIN, { statedResetMs: null, statedResetAt: null })
+  writeOldMark(dir, 'agy__gemini.json', stored)
+  const result = marks.migrateRouterMarks(dir)
+  assert.deepEqual(result, { moved: ['agy__gemini.json'], skipped: [] })
+  assert.deepEqual(JSON.parse(fs.readFileSync(marks.markFile(dir, 'agy', 'gemini'), 'utf8')), stored)
+  assert.equal(fs.existsSync(path.join(oldMarksDir(dir), 'agy__gemini.json')), false)
+})
+
+test('liveMark and liveMarks run the migration on the first read', (t) => {
+  const dir = tempDir(t)
+  writeOldMark(dir, 'agy__gemini.json', routerMarkAt(NOW + 60 * MIN))
+  assert.notEqual(marks.liveMark(dir, 'agy', 'gemini', NOW + MIN), null, 'the first liveMark sees the old mark')
+  assert.equal(fs.existsSync(path.join(oldMarksDir(dir), 'agy__gemini.json')), false, 'and the move happened on that read')
+
+  const other = tempDir(t)
+  writeOldMark(other, 'agy__gemini.json', routerMarkAt(NOW + 60 * MIN))
+  assert.deepEqual(marks.liveMarks(other, NOW + MIN).map((m) => m.group), ['gemini'])
+  assert.equal(fs.existsSync(path.join(oldMarksDir(other), 'agy__gemini.json')), false)
+})
+
+test('migrating twice costs nothing: an empty or missing old folder migrates nothing and creates nothing', (t) => {
+  const missing = tempDir(t)
+  assert.deepEqual(marks.migrateRouterMarks(missing), { moved: [], skipped: [] })
+  assert.equal(fs.existsSync(path.join(missing, 'router')), false)
+  assert.equal(fs.existsSync(path.join(missing, 'lanes')), false)
+
+  const dir = tempDir(t)
+  writeOldMark(dir, 'agy__gemini.json', routerMarkAt(NOW + 60 * MIN))
+  assert.deepEqual(marks.migrateRouterMarks(dir).moved, ['agy__gemini.json'])
+  assert.deepEqual(marks.migrateRouterMarks(dir), { moved: [], skipped: [] })
+  assert.deepEqual(JSON.parse(fs.readFileSync(marks.markFile(dir, 'agy', 'gemini'), 'utf8')).until, NOW + 60 * MIN)
+})
+
+test('collision: the later router mark wins and the swarm reason is kept in alsoReasons', (t) => {
+  const dir = tempDir(t)
+  fs.mkdirSync(marks.marksDir(dir), { recursive: true })
+  fs.writeFileSync(marks.markFile(dir, 'agy', 'gemini'), JSON.stringify(swarmMarkAt(NOW + 30 * MIN)))
+  writeOldMark(dir, 'agy__gemini.json', routerMarkAt(NOW + 60 * MIN))
+  assert.deepEqual(marks.migrateRouterMarks(dir), { moved: ['agy__gemini.json'], skipped: [] })
+  const kept = JSON.parse(fs.readFileSync(marks.markFile(dir, 'agy', 'gemini'), 'utf8'))
+  assert.equal(kept.until, NOW + 60 * MIN, 'the mark never shortens')
+  assert.equal(kept.reason, 'quota refusal')
+  assert.deepEqual(kept.alsoReasons, [{ source: 'swarm', reason: 'dry mark', until: NOW + 30 * MIN }])
+  assert.equal(fs.existsSync(path.join(oldMarksDir(dir), 'agy__gemini.json')), false)
+  assert.deepEqual(fs.readdirSync(marks.marksDir(dir)), ['agy__gemini.json'])
+})
+
+test('collision: the later swarm mark is kept and the router reason is kept in alsoReasons', (t) => {
+  const dir = tempDir(t)
+  fs.mkdirSync(marks.marksDir(dir), { recursive: true })
+  fs.writeFileSync(marks.markFile(dir, 'agy', 'gemini'), JSON.stringify(swarmMarkAt(NOW + 90 * MIN)))
+  writeOldMark(dir, 'agy__gemini.json', routerMarkAt(NOW + 60 * MIN))
+  marks.migrateRouterMarks(dir)
+  const kept = JSON.parse(fs.readFileSync(marks.markFile(dir, 'agy', 'gemini'), 'utf8'))
+  assert.equal(kept.until, NOW + 90 * MIN)
+  assert.equal(kept.reason, 'dry mark', 'harness, group, reset time and reason keep their meaning')
+  assert.deepEqual(kept.alsoReasons, [{ source: 'router', reason: 'quota refusal', until: NOW + 60 * MIN }])
+  assert.equal(fs.existsSync(path.join(oldMarksDir(dir), 'agy__gemini.json')), false)
+  assert.deepEqual(fs.readdirSync(marks.marksDir(dir)), ['agy__gemini.json'])
+})
+
+test('collision with equal ends keeps the mark already in the store', (t) => {
+  const dir = tempDir(t)
+  fs.mkdirSync(marks.marksDir(dir), { recursive: true })
+  fs.writeFileSync(marks.markFile(dir, 'agy', 'gemini'), JSON.stringify(swarmMarkAt(NOW + 60 * MIN)))
+  writeOldMark(dir, 'agy__gemini.json', routerMarkAt(NOW + 60 * MIN))
+  marks.migrateRouterMarks(dir)
+  const kept = JSON.parse(fs.readFileSync(marks.markFile(dir, 'agy', 'gemini'), 'utf8'))
+  assert.equal(kept.reason, 'dry mark')
+  assert.deepEqual(kept.alsoReasons, [{ source: 'router', reason: 'quota refusal', until: NOW + 60 * MIN }])
+  assert.equal(fs.existsSync(path.join(oldMarksDir(dir), 'agy__gemini.json')), false)
+})
+
+test('an expired mark in either store is moved or merged the same way and stays expired', (t) => {
+  const moved = tempDir(t)
+  const expired = routerMarkAt(NOW - MIN, { at: NOW - 120 * MIN })
+  writeOldMark(moved, 'agy__gemini.json', expired)
+  marks.migrateRouterMarks(moved)
+  assert.deepEqual(JSON.parse(fs.readFileSync(marks.markFile(moved, 'agy', 'gemini'), 'utf8')), expired)
+  assert.equal(marks.liveMark(moved, 'agy', 'gemini', NOW), null, 'it stays expired')
+
+  const merged = tempDir(t)
+  fs.mkdirSync(marks.marksDir(merged), { recursive: true })
+  const live = swarmMarkAt(NOW + 60 * MIN)
+  fs.writeFileSync(marks.markFile(merged, 'agy', 'gemini'), JSON.stringify(live))
+  writeOldMark(merged, 'agy__gemini.json', expired)
+  marks.migrateRouterMarks(merged)
+  const kept = JSON.parse(fs.readFileSync(marks.markFile(merged, 'agy', 'gemini'), 'utf8'))
+  assert.equal(kept.until, NOW + 60 * MIN, 'the live store mark wins over the expired old one')
+  assert.deepEqual(kept.alsoReasons, [{ source: 'router', reason: 'quota refusal', until: NOW - MIN }])
+  assert.equal(fs.existsSync(path.join(oldMarksDir(merged), 'agy__gemini.json')), false)
+})
+
+test('a file in the old folder that cannot be read as a mark stays and is named in skipped', (t) => {
+  const dir = tempDir(t)
+  writeOldMark(dir, 'agy__gemini.json', '{not json')
+  writeOldMark(dir, 'grok__grok.json', JSON.stringify({ harness: 'grok', group: 'grok', at: NOW }))
+  writeOldMark(dir, 'muse__muse.json', JSON.stringify(routerMarkAt(NOW + 60 * MIN, { harness: 'muse', group: 'muse' })))
+  const result = marks.migrateRouterMarks(dir)
+  assert.deepEqual(result.skipped.sort(), ['agy__gemini.json', 'grok__grok.json'])
+  assert.deepEqual(result.moved, ['muse__muse.json'])
+  assert.equal(fs.existsSync(path.join(oldMarksDir(dir), 'agy__gemini.json')), true, 'a damaged file is never deleted')
+  assert.equal(fs.existsSync(path.join(oldMarksDir(dir), 'grok__grok.json')), true)
+  assert.notEqual(marks.liveMark(dir, 'muse', 'muse', NOW + MIN), null, 'the readable mark still moves')
+  const again = marks.migrateRouterMarks(dir)
+  assert.deepEqual(again.skipped.sort(), ['agy__gemini.json', 'grok__grok.json'], 'damaged files are reported again, never moved')
+})
