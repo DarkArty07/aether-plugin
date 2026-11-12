@@ -11,8 +11,8 @@
 
 const { isObject } = require('./common.js')
 const lanes = require('./lanes.js')
-const marks = require('./lane-marks.js')
 const order = require('./lane-order.js')
+const { pickData, groupView, localTime } = require('./pick-data.js')
 const readings = require('./lane-readings.js')
 const run = require('./run.js')
 const { createAdapter } = require('./harness/index.js')
@@ -40,20 +40,8 @@ function parseArgs(args) {
   return out
 }
 
-const pad = (n) => String(n).padStart(2, '0')
-
 function utcTime(ms) {
   return `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC`
-}
-
-// The machine's local time, with its offset from UTC.
-function localTime(ms) {
-  const d = new Date(ms)
-  const offset = -d.getTimezoneOffset()
-  const hours = Math.trunc(Math.abs(offset) / 60)
-  const minutes = Math.abs(offset) % 60
-  const zone = `UTC${offset < 0 ? '-' : '+'}${hours}${minutes === 0 ? '' : `:${pad(minutes)}`}`
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())} ${zone}`
 }
 
 const round = (value, digits) => Number(value.toFixed(digits))
@@ -64,51 +52,12 @@ function lifeMsOf(settings) {
   return minutes * MINUTE_MS
 }
 
-// Where a group's reading came from. A reading with a source of its own keeps it (grok's log line, its answer over
-// ACP, or muse's minimal exec call); one without that has windows was read from the CLI at readAt, as agy's /usage
-// is. A reading with neither has no source.
-function sourceOf(reading, windows, { command, now, readAt, lifeMs }) {
-  if (!isObject(reading)) return null
-  let source
-  if (isObject(reading.source)) {
-    source = { ...reading.source, stale: reading.source.ageMinutes * MINUTE_MS > lifeMs }
-  } else if (Object.keys(windows).length > 0) {
-    const at = Number.isFinite(readAt) ? readAt : now
-    source = { command, ts: new Date(at).toISOString(), ageMinutes: Math.max(0, Math.floor((now - at) / MINUTE_MS)), stale: false }
-  } else {
-    return null
-  }
-  if (reading.usedPercentAbsent !== undefined) Object.assign(source, { usedPercent: reading.usedPercent, usedPercentAbsent: reading.usedPercentAbsent })
-  return source
-}
-
-// One group as `quota` and `status` show it: the numbers of lane-order.js's view, the group's label, the local time of
-// each reset and the source. reading is the group's reading as an adapter gives it; mark is its live dry mark, if any.
-function groupView(label, reading, { reserve, now, command, mark = null, readAt = now, lifeMs = STALE_MS }) {
-  const view = order.groupView(reading, { reserve, now, mark })
-  const windows = Object.fromEntries(
-    Object.entries(view.windows).map(([name, w]) => [name, w.hoursLeft === null ? w : { ...w, resetsLocal: localTime(Date.parse(w.resetsAt)) }]),
-  )
-  return {
-    label: label ?? null,
-    unknown: view.unknown,
-    usable: view.usable,
-    priority: view.priority,
-    remaining: view.remaining,
-    resetsAt: view.resetsAt,
-    usedPercentAbsent: view.usedPercentAbsent,
-    mark: view.mark,
-    windows,
-    source: sourceOf(reading, windows, { command, now, readAt, lifeMs }),
-  }
-}
-
 // One harness of the table: whether it is installed, its version, and the view of each group. The reading is the
 // kept one when fresh is false and the harness keeps its readings (lane-readings.js), a new one otherwise; latest, a
 // reading a refresh just took, is used instead of asking the adapter. A reading that fails leaves every group of the
 // table's entry unknown, with the error, and the harness with it: it is the harness's error, not the caller's.
 // onRead({ groups, readAt }, version) is told of each reading that was taken, as the adapter gave it.
-function harnessView(name, settings, { reserve, now, dataDir = run.dataDir(), fresh = true, latest = null, onRead = null, refreshed, refreshMethod }) {
+function harnessView(name, settings, { reserve, now, dataDir = run.dataDir(), fresh = true, latest = null, onRead = null, refreshed, refreshMethod, assemble = true }) {
   const found = lanes.commandPath(settings.command)
   const base = { command: settings.command, path: found, installed: found !== null }
   if (refreshed !== undefined) Object.assign(base, { refreshed, refreshMethod: refreshMethod ?? null })
@@ -126,35 +75,28 @@ function harnessView(name, settings, { reserve, now, dataDir = run.dataDir(), fr
     // A version that cannot be read is no reason to lose the quota.
   }
   const keys = Object.keys(settings.groups ?? {})
-  const lifeMs = lifeMsOf(settings)
-  const markOf = (key) => marks.liveMark(dataDir, name, key, now)
-
-  let read
+  const life = lifeMsOf(settings)
+  let read = null
+  let readError = null
   try {
     // A refresh's reading is the plan's one reading, and a plan's groups share it, as a refresher gives it.
     read = latest !== null ? { groups: Object.fromEntries(keys.map((key) => [key, { ...latest }])), readAt: now } : readings.readGroups(adapter, { harness: name, settings, dataDir, now, fresh })
   } catch (err) {
-    const groups = {}
-    for (const key of keys) {
-      groups[key] = { ...groupView(settings.groups[key], { unknown: true, windows: {} }, { reserve, now, command: settings.command, mark: markOf(key), lifeMs }), error: err.message }
-    }
-    return { ...base, version, error: err.message, groups }
+    readError = err.message
   }
-  if (onRead !== null) {
+  if (onRead !== null && read !== null) {
     try {
       onRead({ groups: read.groups, readAt: read.readAt }, version)
     } catch {
       // Whoever listens may fail without taking the view with it.
     }
   }
-  const groups = {}
-  for (const key of new Set([...keys, ...Object.keys(read.groups ?? {})])) {
-    const reading = Object.hasOwn(read.groups ?? {}, key) ? read.groups[key] : { unknown: true, windows: {} }
-    // A mark that came from a reading is lifted by a fresh healthy one (lane-marks.js), so the view shows no mark for it.
-    const mark = marks.liftIfHealthy(dataDir, { harness: name, group: key, reading, readAt: read.readAt, reserve, lifeMs, now })
-    groups[key] = groupView(settings.groups?.[key], reading, { reserve, now, command: settings.command, mark, readAt: read.readAt, lifeMs })
-  }
-  return { ...base, version, groups }
+  // A seat builds the view itself, from this same reading, so a mark is lifted once.
+  if (!assemble) return { ...base, version, reading: read, ...(readError ? { error: readError } : {}) }
+  const prepared = pickData({ harnesses: { [name]: settings }, reserve }, name, read, {
+    now, dataDir, lifeMs: life, extraGroups: readError === null, groupError: readError ?? undefined, honorLiftResult: true,
+  })
+  return { ...base, version, ...(readError ? { error: readError } : {}), groups: prepared.groups }
 }
 
 // Asks a harness's refresher for a new reading. Never throws: a refresher that throws gave none.
