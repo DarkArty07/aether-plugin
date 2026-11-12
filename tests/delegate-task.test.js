@@ -691,6 +691,7 @@ test('an attempt that edits and runs on Claude names its end like a read-only on
   const external = world(t, { settings: EXTERNAL, pick: GROK, cwd: repo.dir })
   const delegated = await task.begin(call(BRIEF('e2', more)), external.deps)
   assert.equal(delegated.external.edits, true)
+  assert.deepEqual(delegated.external.pair, { harness: 'grok', model: 'grok-4.7', effort: 'high' }, 'the pair the mod names in its rescue line (#240)')
   assert.equal(delegated.answerOf, null, 'the external pair writes its own result')
 })
 

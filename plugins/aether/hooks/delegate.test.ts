@@ -11,15 +11,15 @@ type Write = { path: string; text: string }
 
 const PLAN = { id: 't1', skip: false, step: 'haiku', kind: 'first', attempt: 1, args: { model: 'haiku', effort: 'high' }, notes: ['Aether delegate task t1: step haiku, attempt 1'], external: null }
 const EXTERNAL = { id: 't1', edits: true, timeoutMs: 570000, pin: null }
-// The step note the plan carries when a pair is picked: it names the external pair, as delegate-task.js writes it.
-const PAIR_NOTE = 'Aether delegate task t1: step haiku, attempt 1 (first), runs on muse muse-2 high (pair muse-2-high), with claude haiku high as its rescue.'
+// The external plan of a pair pick: delegate-task.js puts the pair on plan.external, as { harness, model, effort }.
+const EXTERNAL_PAIR = { ...EXTERNAL, pair: { harness: 'muse', model: 'muse-2', effort: 'high' } }
 const RESCUE_REASON = 'Aether: the external attempt on muse muse-2 high did not deliver (off: quota gone); this task ran on Claude haiku high instead.'
 
 // Answers what the mod asks Claude Code for. `verbs` answers each verb of aether-delegate
 // (argv[2]) from a queue; every `wait` that says { done: false } moves the clock 540 s.
 // The brake's calls to aether-autonomy fail, which leaves the brake inert (its own tests
 // cover it). `replies` answers each step that reaches the model.
-function stubs(on, { marked = true, verbs = {} as Record<string, unknown[]>, replies = [] as Record<string, unknown>[] } = {}) {
+function stubs(on, { marked = true, verbs = {} as Record<string, unknown[]>, replies = [] as { answer: string; stopReason: string }[] } = {}) {
   const runs: Run[] = []
   const writes: Write[] = []
   const toolCalls: any[] = []
@@ -43,6 +43,9 @@ function stubs(on, { marked = true, verbs = {} as Record<string, unknown[]>, rep
   on('turn.step', async function* ($, e) {
     counts.modelSteps++
     const reply = replies.length > 0 ? replies.shift()! : { answer: 'from the model', stopReason: 'end_turn' }
+    // The step as the engine streams it: the text of the answer in block 0, then the stop that ends the response.
+    if (reply.answer !== '') yield { kind: 'text', index: 0, text: reply.answer }
+    yield { kind: 'stop', stopReason: reply.stopReason, usage: null }
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null, ...reply }
   })
   on('process.run', async ($, e) => {
@@ -186,8 +189,14 @@ test('the rescue of an editing external delegate records the end of its attempt 
   await call($, 'AETHER-TASK: t1\nAETHER-OWNS: src/**\nDo it.')
   const spawned = await spawn($, toolCalls[0].prompt)
   const rescued = await step($, { index: 0, agentId: spawned.agentId })
-  // No pair note in this plan and no reason in the end: the line names the status only.
-  expect(rescued.result.answer).toBe('Aether: the external attempt did not deliver (off); this task ran on Claude haiku high instead.\n\nfrom the model')
+  // No pair in this plan and no reason in the end: the line names the status only, as a text chunk before the stop.
+  const line = 'Aether: the external attempt did not deliver (off); this task ran on Claude haiku high instead.'
+  expect(rescued.chunks).toEqual([
+    { kind: 'text', index: 0, text: 'from the model' },
+    { kind: 'text', index: 1, text: line },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ])
+  expect(rescued.result.answer).toBe(`from the model\n\n${line}`)
   expect(counts.modelSteps).toBe(1)
   const answered = runs.filter((r) => r.argv[2] === 'answer')
   expect(answered.length).toBe(1)
@@ -195,10 +204,10 @@ test('the rescue of an editing external delegate records the end of its attempt 
   expect(answered[0].init.timeoutMs).toBeLessThanOrEqual(15000)
 })
 
-test('a failed external end with a reason puts its line first on the answer, and the record keeps the model answer', async ($, on) => {
+test('a failed external end with a reason yields its line as a text chunk before the stop, and the record keeps the model answer', async ($, on) => {
   const { runs, toolCalls } = stubs(on, {
     verbs: {
-      begin: [{ ...PLAN, external: EXTERNAL, notes: [PAIR_NOTE] }],
+      begin: [{ ...PLAN, external: EXTERNAL_PAIR }],
       start: [{ started: true, id: 't1', pid: 1 }],
       wait: [{ done: true, ok: false, status: 'off', reason: 'quota gone', text: null }],
       answer: [{ recorded: true }],
@@ -207,15 +216,20 @@ test('a failed external end with a reason puts its line first on the answer, and
   await call($, 'AETHER-TASK: t1\nAETHER-OWNS: src/**\nDo it.')
   const spawned = await spawn($, toolCalls[0].prompt)
   const rescued = await step($, { index: 0, agentId: spawned.agentId })
-  expect(rescued.result.answer).toBe(`${RESCUE_REASON}\n\nfrom the model`)
+  expect(rescued.chunks).toEqual([
+    { kind: 'text', index: 0, text: 'from the model' },
+    { kind: 'text', index: 1, text: RESCUE_REASON },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ])
+  expect(rescued.result.answer).toBe(`from the model\n\n${RESCUE_REASON}`)
   const answered = runs.filter((r) => r.argv[2] === 'answer')
   expect(answered[0].argv.slice(answered[0].argv.indexOf('--text'))).toEqual(['--text', 'from the model'])
 })
 
-test('a start that fails leaves the line with start failed, and no wait runs', async ($, on) => {
+test('a start that fails yields the line with start failed, and no wait runs', async ($, on) => {
   const { runs, toolCalls, counts } = stubs(on, {
     verbs: {
-      begin: [{ ...PLAN, external: EXTERNAL, notes: [PAIR_NOTE] }],
+      begin: [{ ...PLAN, external: EXTERNAL_PAIR }],
       start: [new Error('boom')],
       answer: [{ recorded: true }],
     },
@@ -223,7 +237,13 @@ test('a start that fails leaves the line with start failed, and no wait runs', a
   await call($, 'AETHER-TASK: t1\nAETHER-OWNS: src/**\nDo it.')
   const spawned = await spawn($, toolCalls[0].prompt)
   const rescued = await step($, { index: 0, agentId: spawned.agentId })
-  expect(rescued.result.answer).toBe('Aether: the external attempt on muse muse-2 high did not deliver (start failed); this task ran on Claude haiku high instead.\n\nfrom the model')
+  const line = 'Aether: the external attempt on muse muse-2 high did not deliver (start failed); this task ran on Claude haiku high instead.'
+  expect(rescued.chunks).toEqual([
+    { kind: 'text', index: 0, text: 'from the model' },
+    { kind: 'text', index: 1, text: line },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ])
+  expect(rescued.result.answer).toBe(`from the model\n\n${line}`)
   expect(counts.modelSteps).toBe(1)
   expect(runs.map((r) => r.argv[2])).toEqual(['begin', 'start', 'answer'])
 })
@@ -231,7 +251,7 @@ test('a start that fails leaves the line with start failed, and no wait runs', a
 test('the rescue line is put on the answer once, on the step that ends the turn, when the rescue takes several steps', async ($, on) => {
   const { runs, toolCalls, counts } = stubs(on, {
     verbs: {
-      begin: [{ ...PLAN, external: EXTERNAL, notes: [PAIR_NOTE] }],
+      begin: [{ ...PLAN, external: EXTERNAL_PAIR }],
       start: [{ started: true, id: 't1', pid: 1 }],
       wait: [{ done: true, ok: false, status: 'off', reason: 'quota gone', text: null }],
       answer: [{ recorded: true }, { recorded: true }],
@@ -247,9 +267,19 @@ test('the rescue line is put on the answer once, on the step that ends the turn,
   const agentId = spawned.agentId
   const first = await step($, { index: 0, agentId })
   expect(first.result.answer).toBe('')
+  expect(first.chunks).toEqual([{ kind: 'stop', stopReason: 'tool_use', usage: null }])
   const second = await step($, { index: 1, agentId })
-  expect(second.result.answer).toBe(`${RESCUE_REASON}\n\ndone`)
+  expect(second.chunks).toEqual([
+    { kind: 'text', index: 0, text: 'done' },
+    { kind: 'text', index: 1, text: RESCUE_REASON },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ])
+  expect(second.result.answer).toBe(`done\n\n${RESCUE_REASON}`)
   const third = await step($, { index: 2, agentId })
+  expect(third.chunks).toEqual([
+    { kind: 'text', index: 0, text: 'again' },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ])
   expect(third.result.answer).toBe('again')
   expect(counts.modelSteps).toBe(3)
   const recorded = runs.filter((r) => r.argv[2] === 'answer').map((r) => r.argv[r.argv.indexOf('--text') + 1])
@@ -260,7 +290,7 @@ test('a delivered external answer and a pure Claude answer carry no rescue line'
   const { toolCalls } = stubs(on, {
     verbs: {
       begin: [
-        { ...PLAN, external: EXTERNAL, notes: [PAIR_NOTE] },
+        { ...PLAN, external: EXTERNAL },
         { ...PLAN, id: 't2', external: null, answerOf: { task: 't2', attempt: 1 } },
       ],
       start: [{ started: true, id: 't1', pid: 1 }],
@@ -273,8 +303,11 @@ test('a delivered external answer and a pure Claude answer carry no rescue line'
   await call($, 'AETHER-TASK: t2\nAnswer this.')
   const delivered = await spawn($, toolCalls[0].prompt)
   const claude = await spawn($, toolCalls[1].prompt)
+  // Neither step yields a line: the delivered answer is the delegate's own, the Claude answer the model's.
   const external = await step($, { index: 0, agentId: delivered.agentId })
+  expect(external.chunks).toEqual([{ kind: 'text', index: 0, text: 'branch aether/r/task-1' }, { kind: 'stop', stopReason: 'end_turn', usage: null }])
   expect(external.result.answer).toBe('branch aether/r/task-1')
   const answer = await step($, { index: 0, agentId: claude.agentId })
+  expect(answer.chunks).toEqual([{ kind: 'text', index: 0, text: 'found it' }, { kind: 'stop', stopReason: 'end_turn', usage: null }])
   expect(answer.result.answer).toBe('found it')
 })
