@@ -222,6 +222,7 @@ Before one, run `aether-autonomy check <class>`.
 - Trusted author: `aether-autonomy trust --author <author> --quote "<their words>"`.
 - Read with `aether-autonomy list`. Only `aether-autonomy` writes the registry and `run.json`; aether-guard refuses edits.
 - In `AETHER_IRREVERSIBLE=enforce`, even an approved action needs a covering grant: record the reply as a session grant, act, revoke. Quotes require 12 owner characters; for shorter replies, give the owner the exact command to run.
+- In a session without a terminal no grant, trusted author or brake-off can be recorded: put the action in the owner's list.
 
 **Repetition.** Stop work without progress: the same task redesigned twice or unit relaunched twice unsuccessfully. Record the defect, defer that task as the smallest reversible path, and continue the rest. Delegate failures follow the ladder (each rejected attempt climbs one rung, and a cause that repeats in two attempts blocks the task on its rung without climbing); this rule applies after the last rung, the fifth (Opus `xhigh`).
 

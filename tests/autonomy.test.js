@@ -35,6 +35,9 @@ const subagent = (text) =>
   JSON.stringify({ type: 'user', isSidechain: true, origin: { kind: 'human' }, timestamp: '2026-10-09T19:00:03.000Z', message: { role: 'user', content: text } })
 
 const OWNER_LINES = [human(MERGE, '2026-10-09T19:32:31.611Z'), human(HOURS, '2026-10-09T19:50:00.000Z'), human(REVOKE, '2026-10-09T21:00:00.000Z')]
+// The same words typed in a session with a terminal (entrypoint cli): what a grant, a trusted author or a brake-off takes (spec 034).
+const typed = (text, time) => human(text, time, { entrypoint: 'cli' })
+const TYPED_LINES = [typed(MERGE, '2026-10-09T19:32:31.611Z'), typed(HOURS, '2026-10-09T19:50:00.000Z'), typed(REVOKE, '2026-10-09T21:00:00.000Z')]
 
 // A Claude config directory with one transcript per session, and an empty main checkout.
 function setup(t, sessions = { [SESSION]: OWNER_LINES }) {
@@ -57,7 +60,7 @@ test("the classes, the scopes, the outcomes and the shortest quote are the spec'
 
 test('skill-install is granted and checked like the other classes (R25)', (t) => {
   const quote = 'apruebo instalar skills en esta ocasion y en todas las futuras ocasiones'
-  const { configDir, mainRoot } = setup(t, { [SESSION]: [human(quote, '2026-10-09T19:32:31.611Z')] })
+  const { configDir, mainRoot } = setup(t, { [SESSION]: [typed(quote, '2026-10-09T19:32:31.611Z')] })
   assert.equal(autonomy.grant(mainRoot, { class: 'skill-install', quote, session: SESSION }, { configDir }).ok, true)
   assert.equal(autonomy.check(mainRoot, 'skill-install', { configDir }).status, 'verified')
   assert.equal(autonomy.check(mainRoot, 'push', { configDir }), null)
@@ -101,7 +104,7 @@ test("verifyQuote needs 12 characters, the owner's own words, and the session's 
 })
 
 test("grant records a verified quote with the time of the owner's message, and check covers its class", (t) => {
-  const { configDir, mainRoot } = setup(t)
+  const { configDir, mainRoot } = setup(t, { [SESSION]: TYPED_LINES })
   const r = autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: SESSION }, { configDir, now: T0 })
   const expected = { class: 'merge-main', scope: 'repo', quote: MERGE, session: SESSION, time: '2026-10-09T19:32:31.611Z', added: '2026-10-09T20:00:00.000Z' }
   assert.deepEqual(r, { ok: true, grant: expected })
@@ -118,7 +121,7 @@ test('grant writes nothing when the quote is not verified', (t) => {
 })
 
 test('a session-scoped grant covers its own session only', (t) => {
-  const { configDir, mainRoot } = setup(t)
+  const { configDir, mainRoot } = setup(t, { [SESSION]: TYPED_LINES })
   const r = autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: SESSION, scope: 'session' }, { configDir, now: T0 })
   assert.equal(r.grant.scope, 'session')
   assert.equal(autonomy.check(mainRoot, 'merge-main', { configDir }), null)
@@ -127,14 +130,14 @@ test('a session-scoped grant covers its own session only', (t) => {
 })
 
 test('check takes the most recent covering grant', (t) => {
-  const { configDir, mainRoot } = setup(t)
+  const { configDir, mainRoot } = setup(t, { [SESSION]: TYPED_LINES })
   autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: SESSION }, { configDir, now: T0 })
   autonomy.grant(mainRoot, { class: 'merge-main', quote: 'en todas las futuras ocasiones', session: SESSION }, { configDir, now: T0 + HOUR })
   assert.equal(autonomy.check(mainRoot, 'merge-main', { configDir }).added, '2026-10-09T21:00:00.000Z')
 })
 
 test('revoke by default removes only this session\'s session grants of the class (issue 017)', (t) => {
-  const { configDir, mainRoot } = setup(t, { [SESSION]: OWNER_LINES, [OTHER]: [human(MERGE, '2026-10-09T18:00:00.000Z')] })
+  const { configDir, mainRoot } = setup(t, { [SESSION]: TYPED_LINES, [OTHER]: [typed(MERGE, '2026-10-09T18:00:00.000Z')] })
   autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: SESSION }, { configDir, now: T0 })
   autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: SESSION, scope: 'session' }, { configDir, now: T0 })
   autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: OTHER, scope: 'session' }, { configDir, now: T0 })
@@ -158,7 +161,7 @@ test('revoke by default removes only this session\'s session grants of the class
 })
 
 test('revoke with all removes every grant of the class, of both scopes and sessions (issue 017)', (t) => {
-  const { configDir, mainRoot } = setup(t, { [SESSION]: OWNER_LINES, [OTHER]: [human(MERGE, '2026-10-09T18:00:00.000Z')] })
+  const { configDir, mainRoot } = setup(t, { [SESSION]: TYPED_LINES, [OTHER]: [typed(MERGE, '2026-10-09T18:00:00.000Z')] })
   autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: SESSION }, { configDir, now: T0 })
   autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: OTHER, scope: 'session' }, { configDir, now: T0 })
   autonomy.grant(mainRoot, { class: 'push', quote: MERGE, session: SESSION }, { configDir, now: T0 })
@@ -177,7 +180,7 @@ test('revoke needs a verified quote, and records removed 0 when the class had no
 })
 
 test('a grant whose transcript is gone still counts; one whose quote left its transcript does not', (t) => {
-  const { configDir, mainRoot, transcript } = setup(t, { [SESSION]: OWNER_LINES, [OTHER]: [human(MERGE, '2026-10-09T18:00:00.000Z')] })
+  const { configDir, mainRoot, transcript } = setup(t, { [SESSION]: TYPED_LINES, [OTHER]: [typed(MERGE, '2026-10-09T18:00:00.000Z')] })
   autonomy.grant(mainRoot, { class: 'merge-main', quote: MERGE, session: SESSION }, { configDir, now: T0 })
   autonomy.grant(mainRoot, { class: 'push', quote: MERGE, session: OTHER }, { configDir, now: T0 })
   fs.rmSync(transcript(SESSION))
@@ -379,7 +382,7 @@ test('a quote taken from a negated clause is refused, and sin, a plain repeat an
   const SIN = 'Haz push sin preguntarme cuando terminen las pruebas.'
   const NIGHT = 'Trabaja toda la noche sin parar hasta cerrar la lista.'
   const EN = "Please don't run all night on this branch, never push anything."
-  const lines = [NEGATED, SIN, NIGHT, EN, 'ya no fusiones a main sin preguntarme', HOURS].map((text, i) => human(text, `2026-10-09T19:0${i}:00.000Z`))
+  const lines = [NEGATED, SIN, NIGHT, EN, 'ya no fusiones a main sin preguntarme', HOURS].map((text, i) => typed(text, `2026-10-09T19:0${i}:00.000Z`))
   const { configDir, mainRoot } = setup(t, { [SESSION]: lines })
   const denied = { ok: false, reason: "the quote is in a negated clause of the owner's message" }
 

@@ -26,6 +26,7 @@ const WINDOW_KINDS = ['five_hour', 'seven_day']
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'autonomy.json')
 const NO_TRANSCRIPT = 'no transcript for session '
+const NOT_TYPED_REASON = 'this quote is not in words typed in a session with a terminal: record it in a session with a terminal'
 const SOURCE_LABELS = { owner: 'del dueño', default: 'por defecto' }
 
 function assertClass(cls) {
@@ -173,8 +174,9 @@ function occurrenceNegated(text, index, quote) {
   return false
 }
 
-// verifyQuote, with the transcript lines supplied by linesOf(sessionId).
-function verifyWith(sessionId, quote, linesOf, { allowNegation = false } = {}) {
+// verifyQuote, with the transcript lines supplied by linesOf(sessionId). typedOnly searches only the messages typed in a
+// session with a terminal (spec 034); a quote found only in other messages is refused with NOT_TYPED_REASON.
+function verifyWith(sessionId, quote, linesOf, { allowNegation = false, typedOnly = false } = {}) {
   if (Array.from(normalize(quote)).length < MIN_QUOTE) return { ok: false, reason: `the quote must have at least ${MIN_QUOTE} characters` }
   const lines = linesOf(sessionId)
   if (lines === null) return { ok: false, reason: `${NO_TRANSCRIPT}${sessionId}` }
@@ -184,8 +186,13 @@ function verifyWith(sessionId, quote, linesOf, { allowNegation = false } = {}) {
     'gi',
   )
   let seen = false
+  let seenUntyped = false
   for (const message of ownerMessages(lines, { maxChars: Infinity })) {
     if (!normalize(message.text).includes(wanted)) continue
+    if (typedOnly && !message.typed) {
+      seenUntyped = true
+      continue
+    }
     seen = true
     if (allowNegation) return { ok: true, time: message.time }
     // NFC so the pattern and the clause analysis see the same composed words
@@ -202,15 +209,17 @@ function verifyWith(sessionId, quote, linesOf, { allowNegation = false } = {}) {
     }
     if (plain) return { ok: true, time: message.time }
   }
+  if (!seen && seenUntyped) return { ok: false, reason: NOT_TYPED_REASON }
   if (!seen) return { ok: false, reason: `the quote is not in the owner's messages of session ${sessionId}` }
   return { ok: false, reason: NEGATED_REASON }
 }
 
-function verifyQuote(sessionId, quote, { configDir, allowNegation = false } = {}) {
-  return verifyWith(sessionId, quote, (id) => transcriptLines(id, configDir), { allowNegation })
+function verifyQuote(sessionId, quote, { configDir, allowNegation = false, typedOnly = false } = {}) {
+  return verifyWith(sessionId, quote, (id) => transcriptLines(id, configDir), { allowNegation, typedOnly })
 }
 
-// A grant's status, reading each session's transcript at most once per statusReader.
+// A grant's status, reading each session's transcript at most once per statusReader. A quote that is only in
+// messages not typed in a session with a terminal is `not-typed` (spec 034, D3).
 function statusReader(configDir) {
   const cache = new Map()
   const linesOf = (id) => {
@@ -218,8 +227,9 @@ function statusReader(configDir) {
     return cache.get(id)
   }
   return (grant) => {
-    const result = verifyWith(grant.session, grant.quote, linesOf)
+    const result = verifyWith(grant.session, grant.quote, linesOf, { typedOnly: true })
     if (result.ok) return 'verified'
+    if (result.reason === NOT_TYPED_REASON) return 'not-typed'
     return result.reason.startsWith(NO_TRANSCRIPT) ? 'transcript-gone' : 'invalid'
   }
 }
@@ -283,7 +293,8 @@ function grant(mainRoot, { class: cls, quote, session, scope = 'repo' }, { confi
   assertClass(cls)
   assertScope(scope)
   const registry = readGrants(mainRoot)
-  const verified = verifyQuote(session, quote, { configDir })
+  // An authorization is recorded only from words typed in a session with a terminal (spec 034).
+  const verified = verifyQuote(session, quote, { configDir, typedOnly: true })
   if (!verified.ok) return { ok: false, reason: verified.reason }
   const record = { class: cls, scope, quote, session, time: verified.time, added: new Date(now).toISOString() }
   registry.grants.push(record)
@@ -325,7 +336,8 @@ function check(mainRoot, cls, { session = null, configDir } = {}) {
     const covers = g.scope === 'repo' || (g.scope === 'session' && typeof session === 'string' && g.session === session)
     if (!covers) continue
     const status = statusOf(g)
-    if (status !== 'invalid') return { ...g, status }
+    // Invalid and not-typed grants cover nothing; a grant whose transcript is gone is returned as before.
+    if (status === 'verified' || status === 'transcript-gone') return { ...g, status }
   }
   return null
 }
@@ -778,7 +790,8 @@ function recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, noti
 function brakeOff(mainRoot, { quote, session } = {}, { configDir, now = Date.now() } = {}) {
   const open = findOpenRun(mainRoot)
   if (!open) return { ok: false, reason: 'no open run' }
-  const verified = verifyQuote(session, quote, { configDir })
+  // Turning the brake off is recorded only from words typed in a session with a terminal (spec 034).
+  const verified = verifyQuote(session, quote, { configDir, typedOnly: true })
   if (!verified.ok) return { ok: false, reason: verified.reason }
   const { run, paths } = open
   const record = { quote, session, time: verified.time, added: new Date(now).toISOString() }
@@ -818,7 +831,8 @@ function isValidAuthor(author) {
 
 function trustAuthor(dataDir, { author, quote, session, remove = false }, { configDir, now = Date.now() } = {}) {
   if (!isValidAuthor(author)) return { ok: false, reason: `invalid author: ${author}` }
-  const verified = verifyQuote(session, quote, { configDir, allowNegation: remove })
+  // Adding an author takes words typed in a session with a terminal (spec 034); withdrawing one takes any words of the session.
+  const verified = verifyQuote(session, quote, { configDir, allowNegation: remove, typedOnly: !remove })
   if (!verified.ok) return { ok: false, reason: verified.reason }
 
   const file = trustedFile(dataDir)
