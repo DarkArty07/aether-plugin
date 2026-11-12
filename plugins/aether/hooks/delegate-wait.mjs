@@ -55,7 +55,8 @@ async function waitOnce($, root, id, session) {
 // Repeats the wait until the delegate ends, one wait at a time. After each wait that did not end, and after a wait that
 // failed and is about to be retried, it yields { beat: true, waitedMs }, so the caller can yield a heartbeat event (see
 // STALL_MS): a hung wait and its retry could otherwise go past the stall limit with no event. The second failure in a row
-// ends the wait with no beat. It returns { ok, status, text } when the delegate ends, and never throws.
+// ends the wait with no beat. It returns { ok, status, text } when the delegate ends, with reason too when the wait gives
+// one, and never throws.
 export async function* waitSteps($, { root, id, session }) {
   try {
     const started = await $.clock.now()
@@ -71,7 +72,9 @@ export async function* waitSteps($, { root, id, session }) {
       }
       failures = 0
       if (answer.done) {
-        return { ok: answer.ok === true, status: String(answer.status ?? ''), text: answer.text ?? null }
+        // reason is carried only when the wait gives one: `aether-delegate wait` does not always say why it ended.
+        const reason = typeof answer.reason === 'string' && answer.reason !== '' ? { reason: answer.reason } : {}
+        return { ok: answer.ok === true, status: String(answer.status ?? ''), text: answer.text ?? null, ...reason }
       }
       yield { beat: true, waitedMs: (await $.clock.now()) - started }
     }

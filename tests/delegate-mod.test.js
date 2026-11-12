@@ -50,6 +50,12 @@ const collect = async (generator) => {
   while (step.done !== true) { chunks.push(step.value); step = await generator.next() }
   return { chunks, result: step.value }
 }
+// One step of the model as the engine streams it: the text of its answer in block 0, then the stop that ends its response.
+async function* streamed({ answer, stopReason }) {
+  if (answer !== '') yield { kind: 'text', index: 0, text: answer }
+  yield { kind: 'stop', stopReason, usage: null }
+  return { turnId: 't', index: 0, answer, toolUses: [], stopReason, usage: null }
+}
 
 test('an aether agent is not touched and nothing runs', async () => {
   const { $, calls } = make({})
@@ -153,6 +159,8 @@ test('an external delegate that does not deliver is left to the model, at the mo
 
 const READ_ONLY_EXTERNAL = { ...EXTERNAL, edits: false }
 const answersOf = (calls) => calls.runs.filter((r) => r.argv[2] === 'answer')
+// The line a rescued route puts on its answer, for a plan with no pair and an end with no reason (PLAN's args are haiku high).
+const LINE = (detail) => `Aether: the external attempt did not deliver (${detail}); this task ran on Claude haiku high instead.`
 
 test('a read-only external delegate that does not deliver is answered by the model: its answer is recorded for the attempt (R6, issue 83)', async () => {
   const { $, calls } = make({ begin: [{ ...PLAN, external: READ_ONLY_EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: false, status: 'quota', text: null }], answer: [{ recorded: true }] })
@@ -160,10 +168,15 @@ test('a read-only external delegate that does not deliver is answered by the mod
   await delegates.toolCall($, EV, recorder().next, CTX)
   delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
   let asked = 0
-  const model = async function* () { asked += 1; return { answer: 'from the model', stopReason: 'end_turn' } }
-  const { result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  const model = () => { asked += 1; return streamed({ answer: 'from the model', stopReason: 'end_turn' }) }
+  const { chunks, result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
   assert.equal(asked, 1)
-  assert.equal(result.answer, 'from the model')
+  assert.deepEqual(chunks, [
+    { kind: 'text', index: 0, text: 'from the model' },
+    { kind: 'text', index: 1, text: LINE('quota') },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ], 'the line is a text chunk of its own, before the stop')
+  assert.equal(result.answer, `from the model\n\n${LINE('quota')}`)
   const recorded = answersOf(calls)
   assert.equal(recorded.length, 1, 'the answer of the attempt is recorded once')
   assert.deepEqual(recorded[0].argv.slice(recorded[0].argv.indexOf('--task')), ['--task', 't1', '--attempt', '1', '--text', 'from the model'])
@@ -175,12 +188,18 @@ test('the rescue of a read-only external delegate records its answer once, at th
   await delegates.toolCall($, EV, recorder().next, CTX)
   delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
   const replies = [{ answer: '', stopReason: 'tool_use' }, { answer: 'found it', stopReason: 'end_turn' }]
-  const model = async function* () { return replies.shift() }
+  const model = () => streamed(replies.shift())
   const first = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
   assert.equal(first.result.stopReason, 'tool_use')
+  assert.deepEqual(first.chunks, [{ kind: 'stop', stopReason: 'tool_use', usage: null }], 'a step that calls a tool yields no line')
   assert.equal(answersOf(calls).length, 0, 'a step that calls a tool records nothing')
   const second = await collect(delegates.step($, { index: 1, agentId: 'agent-1', turnId: 't' }, model, CTX))
-  assert.equal(second.result.answer, 'found it')
+  assert.deepEqual(second.chunks, [
+    { kind: 'text', index: 0, text: 'found it' },
+    { kind: 'text', index: 1, text: LINE('quota') },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ], 'the line is yielded once, before the stop of the step that ends the turn')
+  assert.equal(second.result.answer, `found it\n\n${LINE('quota')}`)
   const recorded = answersOf(calls)
   assert.equal(recorded.length, 1)
   assert.deepEqual(recorded[0].argv.slice(recorded[0].argv.indexOf('--task')), ['--task', 't1', '--attempt', '1', '--text', 'found it'])
@@ -204,9 +223,14 @@ test('the rescue of an editing external delegate records the end of its attempt 
   const delegates = createDelegates()
   await delegates.toolCall($, EV, recorder().next, CTX)
   delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
-  const model = async function* () { return { answer: 'done, in the worktree', stopReason: 'end_turn' } }
-  const { result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
-  assert.equal(result.answer, 'done, in the worktree')
+  const model = () => streamed({ answer: 'done, in the worktree', stopReason: 'end_turn' })
+  const { chunks, result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
+  assert.deepEqual(chunks, [
+    { kind: 'text', index: 0, text: 'done, in the worktree' },
+    { kind: 'text', index: 1, text: LINE('off') },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ])
+  assert.equal(result.answer, `done, in the worktree\n\n${LINE('off')}`)
   const recorded = answersOf(calls)
   assert.equal(recorded.length, 1)
   assert.deepEqual(recorded[0].argv.slice(recorded[0].argv.indexOf('--task')), ['--task', 't1', '--attempt', '1', '--text', 'done, in the worktree'])
@@ -231,14 +255,40 @@ test('an external delegate that fails after beats shows the beats and then the a
   await delegates.toolCall($, EV, recorder().next, CTX)
   delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
   let asked = 0
-  const model = async function* () { asked += 1; yield { kind: 'text', index: 0, text: 'from the model' }; return { answer: 'from the model' } }
+  const model = () => { asked += 1; return streamed({ answer: 'from the model', stopReason: 'end_turn' }) }
   const { chunks, result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, model, CTX))
   assert.equal(asked, 1)
   assert.deepEqual(chunks, [
     { kind: 'text', index: 0, text: '[Aether: the delegate is still working, 9 min so far]\n' },
     { kind: 'text', index: 0, text: 'from the model' },
+    { kind: 'text', index: 1, text: LINE('no-candidate') },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
   ])
-  assert.equal(result.answer, 'from the model')
+  assert.equal(result.answer, `from the model\n\n${LINE('no-candidate')}`)
+})
+
+test('a rescue line after a heartbeat takes the block after it, when the model writes no text', async () => {
+  const { $ } = make({ begin: [{ ...PLAN, external: EXTERNAL }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: false }, { done: true, ok: false, status: 'off', text: null }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  const { chunks, result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, () => streamed({ answer: '', stopReason: 'end_turn' }), CTX))
+  assert.deepEqual(chunks, [
+    { kind: 'text', index: 0, text: '[Aether: the delegate is still working, 9 min so far]\n' },
+    { kind: 'text', index: 1, text: LINE('off') },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ], 'the heartbeat is block 0, so the line is block 1')
+  assert.equal(result.answer, LINE('off'))
+})
+
+test('the rescue line names the pair the plan holds in plan.external.pair, not a step note (#240)', async () => {
+  const pair = { harness: 'muse', model: 'muse-2', effort: 'high' }
+  const { $ } = make({ begin: [{ ...PLAN, external: { ...EXTERNAL, pair } }], start: [{ started: true, id: 't1', pid: 1 }], wait: [{ done: true, ok: false, status: 'off', reason: 'quota gone', text: null }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  const { result } = await collect(delegates.step($, { index: 0, agentId: 'agent-1', turnId: 't' }, () => streamed({ answer: 'from the model', stopReason: 'end_turn' }), CTX))
+  assert.equal(result.answer, 'from the model\n\nAether: the external attempt on muse muse-2 high did not deliver (off: quota gone); this task ran on Claude haiku high instead.')
 })
 
 test('a read-only delegate on Claude goes through the model untouched, and its last answer is recorded with no model request of the mod (R6)', async () => {

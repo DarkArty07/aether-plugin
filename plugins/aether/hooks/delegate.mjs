@@ -13,7 +13,8 @@
 // delegate is the whole delegate: `aether-delegate start` launches it, waitSteps waits for it, and a text event, a
 // heartbeat, goes out after every wait that did not end, because the engine kills an agent whose step emits nothing for
 // 600 s (Task 17 measured it). The delegate's text is the agent's answer, with no model request. A delegate that fails
-// is left to the model, at the model of the plan, which is already the one of the step. Every later step of an
+// is left to the model, at the model of the plan, which is already the one of the step; the model's step that ends the
+// turn then yields one line naming the attempt that did not deliver, as a text chunk before its stop. Every later step of an
 // `external` agent and every step of an `answerOf` agent goes through the model unchanged, and the last one records
 // its end with `aether-delegate answer`: read-only answers are checked by `verdict` (R6).
 //
@@ -69,22 +70,64 @@ function rewriteOf(plan) {
 
 const notesOf = (plan) => (Array.isArray(plan.notes) ? plan.notes.filter(isText) : [])
 
+// The external pair of an external plan, from plan.external.pair ({ harness, model, effort }, as lib/delegate-task.js
+// writes it). Null when the plan holds none.
+function pairOf(external) {
+  const pair = external.pair
+  return isObject(pair) && isText(pair.harness) && isText(pair.model) && isText(pair.effort)
+    ? { harness: pair.harness, model: pair.model, effort: pair.effort }
+    : null
+}
+
+// The Claude model and effort a plan runs the step on, or null.
+function claudeOf(plan) {
+  const args = plan.args
+  return isObject(args) && isText(args.model) && isText(args.effort) ? { model: args.model, effort: args.effort } : null
+}
+
+// The end of an external attempt that did not deliver: its status and its reason, each one line. A wait that gives no
+// status is "failed"; an ok end with no text is an "empty answer".
+function endOf(done) {
+  if (!isObject(done)) return { status: 'failed', reason: '' }
+  const reason = isText(done.reason) ? done.reason.replace(/\s+/g, ' ').trim() : ''
+  if (done.ok === true) return { status: 'empty answer', reason }
+  return { status: isText(done.status) ? done.status : 'failed', reason }
+}
+
+// The end of an attempt whose start failed or threw, before any wait.
+const START_FAILED = { status: 'start failed', reason: '' }
+
+// The line a rescued attempt puts first on its answer: the external pair that did not deliver, why, and the Claude model
+// and effort the task ran on instead. A part the route does not hold is left out, never guessed.
+function rescueLine(route, end) {
+  const pair = route.pair ? ` on ${route.pair.harness} ${route.pair.model} ${route.pair.effort}` : ''
+  const detail = end.reason !== '' ? `${end.status}: ${end.reason}` : end.status
+  const claude = route.claude ? ` ${route.claude.model} ${route.claude.effort}` : ''
+  return `Aether: the external attempt${pair} did not deliver (${detail}); this task ran on Claude${claude} instead.`
+}
+
 // The delegate of an external harness: the whole first step of its agent. Yields a heartbeat after every wait that did
 // not end, before it waits again, and the delegate's text as the answer when it delivers; any other end is the model's,
-// which records the end of the attempt like any step on Claude (answerOf: { task, attempt }).
-async function* runExternal($, e, next, ctx, external, answerOf) {
+// which records the end of the attempt like any step on Claude (answerOf: { task, attempt }). A failed attempt leaves
+// its line on the route, for the model's step that ends the turn. `seen` is the step's block record (see runAnswering).
+async function* runExternal($, e, next, ctx, route, answerOf, seen) {
+  const external = route.external
   let delivered = null
+  let end = START_FAILED
   try {
     const started = await delegate($, ctx, ['start', '--id', external.id, '--session', ctx.session], START_TIMEOUT_MS)
     if (started.started === true) {
+      end = { status: 'failed', reason: '' }
       const steps = waitSteps($, { root: ctx.root, id: external.id, session: ctx.session })
       for (;;) {
         const step = await steps.next()
         if (step.done) {
-          const end = step.value
-          if (end && end.ok === true && typeof end.text === 'string' && end.text.trim() !== '') delivered = end.text
+          const done = step.value
+          if (done && done.ok === true && typeof done.text === 'string' && done.text.trim() !== '') delivered = done.text
+          else end = endOf(done)
           break
         }
+        seen.top = Math.max(seen.top, 0)
         yield { kind: 'text', index: 0, text: heartbeatText(step.value.waitedMs) }
       }
     }
@@ -92,16 +135,50 @@ async function* runExternal($, e, next, ctx, external, answerOf) {
     ctx.fault?.('delegate.step', 'handler-threw', err)
     delivered = null
   }
-  if (delivered === null) return yield* runAnswering($, e, next, ctx, answerOf)
+  if (delivered === null) {
+    route.rescue = rescueLine(route, end)
+    return yield* runAnswering($, e, next, ctx, answerOf, route, seen)
+  }
   yield { kind: 'text', index: 0, text: delivered }
   yield { kind: 'stop', stopReason: 'end_turn', usage: null }
   return { turnId: e.turnId, index: e.index, answer: delivered, toolUses: [], stopReason: 'end_turn', usage: null }
 }
 
-// One step of a delegate on Claude: the model's, unchanged. When the step ends the agent's turn, its answer
-// is sent for recording. A failed record never changes the step.
-async function* runAnswering($, e, next, ctx, answerOf) {
-  const result = yield* next(e)
+// A stop chunk that ends the agent's turn: the response's stop reason is known and is not a tool call.
+const isEndingStop = (chunk) => isObject(chunk) && chunk.kind === 'stop' && typeof chunk.stopReason === 'string' && chunk.stopReason !== 'tool_use'
+
+// One step of a delegate on Claude: the model's chunks, unchanged, up to the stop. When the step ends the agent's turn,
+// its answer is sent for recording. A failed record never changes the step. On a route that was rescued from an external
+// attempt, the step that ends the turn yields the route's line once, as a text chunk in a content block of its own, just
+// before its stop chunk; the step's answer ends with the same line. The record keeps the model's own answer. `seen` is
+// the step's block record: the highest content block index it has yielded (a heartbeat is block 0), so the line takes
+// the block after it.
+async function* runAnswering($, e, next, ctx, answerOf, route = null, seen = { top: -1 }) {
+  const stream = next(e)
+  let result
+  let line = null
+  let finished = false
+  try {
+    for (;;) {
+      const item = await stream.next()
+      if (item.done) {
+        result = item.value
+        finished = true
+        break
+      }
+      const chunk = item.value
+      if (isObject(chunk) && typeof chunk.index === 'number') seen.top = Math.max(seen.top, chunk.index)
+      if (route !== null && route.rescue !== null && isEndingStop(chunk)) {
+        line = route.rescue
+        route.rescue = null
+        yield { kind: 'text', index: seen.top + 1, text: line }
+      }
+      yield chunk
+    }
+  } finally {
+    // A consumer that stops early closes the model's stream too, as yield* would.
+    if (!finished) await stream.return?.()
+  }
   if (answerOf !== null && isObject(result) && typeof result.stopReason === 'string' && result.stopReason !== 'tool_use' && typeof result.answer === 'string') {
     try {
       await delegate(
@@ -115,7 +192,8 @@ async function* runAnswering($, e, next, ctx, answerOf) {
       // The verdict finds no answer for this attempt and says so; the delegate already answered.
     }
   }
-  return result
+  if (line === null) return result
+  return { ...result, answer: result.answer === '' ? line : `${result.answer}\n\n${line}` }
 }
 
 export function createDelegates() {
@@ -131,7 +209,8 @@ export function createDelegates() {
     const external = isObject(plan.external) && isText(plan.external.id) ? plan.external : null
     const answerOf = isObject(plan.answerOf) && isText(plan.answerOf.task) ? plan.answerOf : null
     if (typeof prompt !== 'string' || !isText(plan.id) || (external === null && answerOf === null)) return null
-    const routed = { id: plan.id, attempt: plan.attempt, external, answerOf }
+    // pair and claude name the attempt for its rescue line; rescue is the line still to put on the route's answer.
+    const routed = { id: plan.id, attempt: plan.attempt, external, answerOf, pair: external === null ? null : pairOf(external), claude: claudeOf(plan), rescue: null }
     const waiting = (byPrompt.get(prompt) ?? []).filter((other) => other.id !== routed.id)
     waiting.push(routed)
     byPrompt.set(prompt, waiting)
@@ -208,9 +287,11 @@ export function createDelegates() {
       if (!routed) return yield* next(e)
       // A rescued external route records its end on the model's last step, as a Claude route does.
       const answerOf = routed.external === null ? routed.answerOf : { task: routed.id, attempt: routed.attempt }
+      // The highest content block this step has yielded, so a rescue line takes the block after it.
+      const seen = { top: -1 }
       // The delegate runs once, and only as the first step of its agent; the route stays for the later steps.
-      if (routed.external !== null && e.index === 0) return yield* runExternal($, e, next, ctx, routed.external, answerOf)
-      return yield* runAnswering($, e, next, ctx, answerOf)
+      if (routed.external !== null && e.index === 0) return yield* runExternal($, e, next, ctx, routed, answerOf, seen)
+      return yield* runAnswering($, e, next, ctx, answerOf, routed, seen)
     },
 
     // Nothing runs in the background any more; the method stays so that its callers do not change.

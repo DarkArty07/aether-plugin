@@ -655,7 +655,8 @@ async function begin(input, deps = {}) {
           alternates,
           timeoutMs: EXTERNAL_LIMIT_MS,
         })
-        external = { id, edits, timeoutMs: EXTERNAL_LIMIT_MS, pin }
+        // The pair names the attempt for the mod's rescue line (its answer says which pair did not deliver).
+        external = { id, edits, timeoutMs: EXTERNAL_LIMIT_MS, pin, pair: { harness: pick.harness, model: pick.model, effort: pick.effort } }
       }
     }
 
