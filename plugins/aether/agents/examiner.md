@@ -22,8 +22,8 @@ The message names:
 1. Read `spec.md`: its criteria (C1, C2…), scenarios and requirements (R1, R2…).
 2. Read `plan.md` for the public interfaces only: the commands, endpoints, files, functions and formats the code will offer. **Never read `tasks.md`**: it holds the tests the swarm sees.
 3. Read the code the interfaces touch, and the project's test setup, so that your tests run with the tools the project already has.
-4. Write the tests under `.aether/exam/` at the repository root. Write the tests before any helper library they use: a round that spends its turns on helpers and ends with no test examines nothing.
-5. Write `.aether/exam/exam.json` as soon as the first test file exists, with that one test, and add each later test to it as you write it. A round that ends early then leaves a valid exam of what it finished, and `aether-exam` refuses a manifest with no tests.
+4. Write the tests under `.aether/exam/` at the repository root. Write the tests before any helper library they use: a round that spends its turns on helpers and ends with no test examines nothing. First write one test per criterion, the shortest that checks it, and keep `.aether/exam/exam.json` up to date after each test so a cut-off run leaves a usable partial exam.
+5. Only then widen the exam, and stop widening early enough to give the answer its schema asks for before the turns run out.
 
 ## The tests
 
