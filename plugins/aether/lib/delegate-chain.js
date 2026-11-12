@@ -2,8 +2,8 @@
 
 // The attempts of one external delegate. The router picks a pair and ranks the others (the `alternates` of the external
 // file, lib/delegate-task.js); a pair that refuses at its start has used nothing, so the next candidate gets the task. Only a
-// start refusal moves on: a call that used tokens, ran out of time, changed files or met a dirty checkout goes back to
-// the mod, which runs the agent on Claude. Each attempt writes its own outcome entry in the delegate log
+// start refusal moves on: a call that used tokens, ran out of time or changed files goes back to the mod, which runs the
+// agent on Claude. Each attempt writes its own outcome entry in the delegate log
 // (lib/delegate-log.js), with the task's id and an attempt that runs on across the task's chains, and, when it failed,
 // the mark of its refusal; a candidate whose quota group has a live mark is not tried. A call that ran out of
 // time writes the slow mark of its pair instead (lib/router-slow.js), and a candidate whose pair holds one is not tried
@@ -135,6 +135,10 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
       detail: result.detail,
       markedUntil: marked,
       attempt: before + attempts.length + 1,
+      // What the copy held (spec 033, D7): null for an attempt that copied nothing.
+      tree: result.tree ?? null,
+      uncommitted: result.uncommitted ?? null,
+      envHeldBack: result.envHeldBack ?? null,
       ...(result.timedOut === true ? { timedOut: true, slowUntil } : {}),
     })
     attempts.push({ harness, model: rung.model, effort: rung.effort, status: result.status, detail: result.detail, rung })
