@@ -37,6 +37,13 @@ test('the swarm skill reads the lanes counts without dry groups', () => {
   assert.ok(!/each wave's `dry` groups/.test(swarm))
 })
 
+test('the ceilings paragraph widens the ceilings with extend instead of reopening (issue 253)', () => {
+  const line = SKILL.split('\n').find((l) => l.startsWith('**Ceilings.**'))
+  assert.ok(line)
+  assert.match(line, /aether-autonomy extend/)
+  assert.match(line, /do not end and reopen/)
+})
+
 test('an unreadable run state is set aside with aether-autonomy quarantine, not with Bash (R26)', () => {
   const line = SKILL.split('\n').find((l) => l.startsWith('**An unreadable run state.**'))
   assert.ok(line)

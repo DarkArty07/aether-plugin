@@ -46,7 +46,7 @@ Una corrida tiene dos topes: 8 horas y US$ 50. Di un número y el Lead lo usa en
 Trabaja por tu cuenta como máximo 3 horas y US$ 20.
 ```
 
-La cifra en dólares cubre el swarm, las llamadas a otros harnesses y los asientos externos del diseño. No suma los turnos del propio Lead, así que el tope de tiempo es la guarda real.
+La cifra en dólares cubre el swarm, las llamadas a otros harnesses y los asientos externos del diseño. No suma los turnos del propio Lead, así que el tope de tiempo es la guarda real. Cuando amplíes los topes en plena corrida con tus palabras, el Lead ejecuta `aether-autonomy extend --hours N --usd N|unlimited --quote "<tus palabras>"` en vez de terminar y reabrir la corrida.
 
 ### 4. Déjalo trabajar
 

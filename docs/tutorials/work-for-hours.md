@@ -46,7 +46,7 @@ A run has two ceilings: 8 hours and US$ 50. Say a number and the Lead uses it in
 Work on your own for at most 3 hours and US$ 20.
 ```
 
-The dollar figure covers the swarm, the calls to other harnesses and the external design seats. It does not add up the Lead's own turns, so the time ceiling is the real guard.
+The dollar figure covers the swarm, the calls to other harnesses and the external design seats. It does not add up the Lead's own turns, so the time ceiling is the real guard. When you widen the ceilings mid-run in your own words, the Lead runs `aether-autonomy extend --hours N --usd N|unlimited --quote "<your words>"` instead of ending and reopening the run.
 
 ### 4. Let it work
 

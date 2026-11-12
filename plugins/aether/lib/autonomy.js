@@ -447,7 +447,7 @@ function diarySkeleton(run) {
     '## Topes',
     '',
     `- Horas: ${hours} (${SOURCE_LABELS[source.hours]})`,
-    `- USD: ${usd} (${SOURCE_LABELS[source.usd]})`,
+    `- USD: ${usd === null ? 'ilimitado' : usd} (${SOURCE_LABELS[source.usd]})`,
     '',
     '## Decisiones',
     '',
@@ -483,6 +483,7 @@ function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { co
     quoteTime: verified.time,
     started: new Date(now).toISOString(),
     ceilings: { hours: h.value, usd: u.value, source: { hours: h.source, usd: u.source } },
+    ceilingChanges: [],
     spend: [],
     brakeOff: null,
     quotaPauses: [],
@@ -497,6 +498,38 @@ function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { co
   writeJsonFile(paths.runFile, run)
   fs.writeFileSync(paths.diary, diarySkeleton(run))
   return { ok: true, run, runFile: paths.runFile, diary: paths.diary }
+}
+
+// Widens the ceilings of the open run without closing it (issue 253): the new
+// values are totals since the run started, and the hours and dollars already
+// spent keep counting. A null usd is unlimited and removes the dollar ceiling.
+// The quote is verified with the same verifyQuote as start; no new plan
+// approval is needed, the owner's own words are the authorization. Every
+// change is appended to run.ceilingChanges with its old and new values.
+function extend(mainRoot, { hours, usd, quote, session } = {}, { configDir, now = Date.now() } = {}) {
+  if (hours === undefined && usd === undefined) throw new Error('extend needs --hours or --usd')
+  if (hours !== undefined && !isPositive(hours)) throw new Error(`invalid ceiling: ${hours}`)
+  if (usd !== undefined && usd !== null && !isPositive(usd)) throw new Error(`invalid ceiling: ${usd}`)
+  const open = findOpenRun(mainRoot)
+  if (!open) return { ok: false, reason: 'no open run' }
+  const verified = verifyQuote(session, quote, { configDir })
+  if (!verified.ok) return { ok: false, reason: verified.reason }
+  const { run, paths } = open
+  if (!Array.isArray(run.ceilingChanges)) run.ceilingChanges = []
+  const from = { hours: run.ceilings.hours, usd: run.ceilings.usd }
+  const to = { hours: hours !== undefined ? hours : from.hours, usd: usd !== undefined ? usd : from.usd }
+  const source = run.ceilings.source || {}
+  run.ceilings = {
+    hours: to.hours,
+    usd: to.usd,
+    source: {
+      hours: hours !== undefined ? 'owner' : (source.hours || 'default'),
+      usd: usd !== undefined ? 'owner' : (source.usd || 'default'),
+    },
+  }
+  run.ceilingChanges.push({ at: new Date(now).toISOString(), quote, quoteTime: verified.time, from, to })
+  writeJsonFile(paths.runFile, run)
+  return { ok: true, run, from, to }
 }
 
 const round2 = (x) => Math.round(x * 100) / 100
@@ -740,7 +773,8 @@ function statusOfRun(run, paths, now, { mainRoot = null, dataDir = runDataDir() 
   let stop = null
   if (quotaPaused) stop = 'quota'
   else if (elapsed >= run.ceilings.hours) stop = 'time'
-  else if (spent >= run.ceilings.usd) stop = 'cost'
+  // A null dollar ceiling is unlimited: the run never stops for cost.
+  else if (run.ceilings.usd !== null && spent >= run.ceilings.usd) stop = 'cost'
   const lastPause = run.quotaPauses.length ? run.quotaPauses[run.quotaPauses.length - 1] : null
   return {
     open: true,
@@ -1022,6 +1056,7 @@ module.exports = {
   list,
   openRun,
   start,
+  extend,
   launchRefusal,
   spend,
   status,

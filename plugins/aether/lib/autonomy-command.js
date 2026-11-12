@@ -9,6 +9,7 @@
 // aether-autonomy check  <class> [--session <id>]
 // aether-autonomy list
 // aether-autonomy start  --quote <text> [--session <id>] [--hours N] [--usd N]
+// aether-autonomy extend --hours N --usd N|unlimited --quote <text> [--session <id>]
 // aether-autonomy spend  <usd> --source <label>
 // aether-autonomy status
 // aether-autonomy end    --outcome done|ceiling|incomplete
@@ -26,7 +27,7 @@ const { ensureExcluded, dataDir } = require('./run.js')
 const autonomy = require('./autonomy.js')
 
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | extend --hours N --usd N|unlimited --quote <text> [--session <id>] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
 
 // The value after a flag, or null when the flag is absent.
 function value(args, flag) {
@@ -77,7 +78,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
   const remove = sub === 'trust' && argv.includes('--remove')
   const rest = argv.slice(1).filter((a) => !((sub === 'revoke' && a === '--all') || (sub === 'trust' && a === '--remove')))
 
-  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'spend', 'status', 'end', 'brake-settings', 'brake-off', 'brake-crossing', 'quota-saved', 'quarantine', 'trust'].includes(sub)) {
+  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'extend', 'spend', 'status', 'end', 'brake-settings', 'brake-off', 'brake-crossing', 'quota-saved', 'quarantine', 'trust'].includes(sub)) {
     throw new Error(USAGE)
   }
 
@@ -163,6 +164,32 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
           runFile: res.runFile,
           diary: res.diary,
           ceilings: res.run.ceilings,
+        },
+      },
+    }
+  }
+
+  if (sub === 'extend') {
+    const quote = value(rest, '--quote')
+    const rawHours = value(rest, '--hours')
+    const rawUsd = value(rest, '--usd')
+    if (!quote || (rawHours === null && rawUsd === null)) throw new Error(USAGE)
+    const hours = rawHours !== null ? parseNumber(rawHours, 'ceiling') : undefined
+    const usd = rawUsd !== null ? (rawUsd === 'unlimited' ? null : parseNumber(rawUsd, 'ceiling')) : undefined
+    const session = getSession(rest, true, env)
+    ensureExcluded(gitCommonDir)
+    const res = autonomy.extend(mainRoot, { hours, usd, quote, session })
+    if (!res.ok) {
+      if (res.reason === 'no open run') return { code: 1, out: { error: res.reason } }
+      return { code: 2, out: { verified: false, reason: res.reason } }
+    }
+    return {
+      code: 0,
+      out: {
+        extended: {
+          id: res.run.id,
+          ceilings: res.run.ceilings,
+          changes: res.run.ceilingChanges,
         },
       },
     }

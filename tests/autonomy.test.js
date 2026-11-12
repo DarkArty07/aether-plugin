@@ -233,6 +233,7 @@ test('start opens a run with the default ceilings and writes the diary skeleton'
     quoteTime: '2026-10-09T19:50:00.000Z',
     started: '2026-10-09T20:00:00.000Z',
     ceilings: { hours: 8, usd: 50, source: { hours: 'default', usd: 'default' } },
+    ceilingChanges: [],
     spend: [],
     brakeOff: null,
     quotaPauses: [],
@@ -937,6 +938,95 @@ test('launchRefusal propagates operational git errors', (t) => {
   }
 })
 
+
+const EXTEND = 'te amplio los limites a dieciseis horas y sin tope de gasto'
+
+function setupExtend(t, lines = [...OWNER_LINES, human(EXTEND, '2026-10-09T22:00:00.000Z')]) {
+  return setup(t, { [SESSION]: lines })
+}
+
+test('extend widens the hours ceiling of the open run, keeping the dollars and its source', (t) => {
+  const { configDir, mainRoot } = setupExtend(t)
+  const started = autonomy.start(mainRoot, { quote: HOURS, session: SESSION }, { configDir, now: T0 })
+  assert.equal(started.ok, true)
+  const r = autonomy.extend(mainRoot, { hours: 16, quote: EXTEND, session: SESSION }, { configDir, now: T0 + HOUR })
+  assert.equal(r.ok, true)
+  assert.deepEqual([r.from, r.to], [{ hours: 8, usd: 50 }, { hours: 16, usd: 50 }])
+  assert.deepEqual(r.run.ceilings, { hours: 16, usd: 50, source: { hours: 'owner', usd: 'default' } })
+  assert.equal(autonomy.status(mainRoot, { now: T0 + HOUR }).hours.ceiling, 16)
+})
+
+test('extend widens the dollar ceiling, and unlimited removes it so the run never stops for cost (issue 253)', (t) => {
+  const { configDir, mainRoot } = setupExtend(t)
+  assert.equal(autonomy.start(mainRoot, { quote: HOURS, session: SESSION }, { configDir, now: T0 }).ok, true)
+  const d = autonomy.extend(mainRoot, { usd: 200, quote: EXTEND, session: SESSION }, { configDir, now: T0 + HOUR })
+  assert.equal(d.ok, true)
+  assert.deepEqual(d.run.ceilings, { hours: 8, usd: 200, source: { hours: 'default', usd: 'owner' } })
+  const u = autonomy.extend(mainRoot, { usd: null, quote: EXTEND, session: SESSION }, { configDir, now: T0 + 2 * HOUR })
+  assert.equal(u.ok, true)
+  assert.deepEqual(u.run.ceilings, { hours: 8, usd: null, source: { hours: 'default', usd: 'owner' } })
+  const st = autonomy.spend(mainRoot, 1000, 'seat/1', { now: T0 + 2 * HOUR })
+  assert.deepEqual([st.usd.spent, st.usd.ceiling, st.stop], [1000, null, null])
+})
+
+test('extend records every change in run.json with its old and new values, the quote and the time (issue 253)', (t) => {
+  const { configDir, mainRoot } = setupExtend(t)
+  const { run } = autonomy.start(mainRoot, { quote: HOURS, session: SESSION }, { configDir, now: T0 })
+  assert.deepEqual(run.ceilingChanges, [])
+  autonomy.extend(mainRoot, { hours: 16, quote: EXTEND, session: SESSION }, { configDir, now: T0 + HOUR })
+  autonomy.extend(mainRoot, { usd: null, quote: EXTEND, session: SESSION }, { configDir, now: T0 + 2 * HOUR })
+  const stored = JSON.parse(fs.readFileSync(autonomy.runPaths(mainRoot, run.id).runFile, 'utf8')).ceilingChanges
+  assert.deepEqual(stored, [
+    { at: '2026-10-09T21:00:00.000Z', quote: EXTEND, quoteTime: '2026-10-09T22:00:00.000Z', from: { hours: 8, usd: 50 }, to: { hours: 16, usd: 50 } },
+    { at: '2026-10-09T22:00:00.000Z', quote: EXTEND, quoteTime: '2026-10-09T22:00:00.000Z', from: { hours: 16, usd: 50 }, to: { hours: 16, usd: null } },
+  ])
+})
+
+test('extend lifts a time or cost stop, and leaves a quota pause alone (issue 253)', (t) => {
+  const { configDir, mainRoot } = setupExtend(t)
+  assert.equal(autonomy.start(mainRoot, { quote: HOURS, session: SESSION, hours: 1, usd: 5 }, { configDir, now: T0 }).ok, true)
+  assert.equal(autonomy.status(mainRoot, { now: T0 + 2 * HOUR }).stop, 'time')
+  assert.equal(autonomy.extend(mainRoot, { hours: 8, quote: EXTEND, session: SESSION }, { configDir, now: T0 + 2 * HOUR }).ok, true)
+  assert.equal(autonomy.status(mainRoot, { now: T0 + 2 * HOUR }).stop, null)
+  autonomy.spend(mainRoot, 5, 'seat/1', { now: T0 + 2 * HOUR })
+  assert.equal(autonomy.status(mainRoot, { now: T0 + 2 * HOUR }).stop, 'cost')
+  assert.equal(autonomy.extend(mainRoot, { usd: null, quote: EXTEND, session: SESSION }, { configDir, now: T0 + 3 * HOUR }).ok, true)
+  assert.equal(autonomy.status(mainRoot, { now: T0 + 3 * HOUR }).stop, null)
+})
+
+test('a quota pause survives extend: the run stays paused for quota, not for the old ceilings', (t) => {
+  const { configDir, mainRoot } = setupExtend(t)
+  assert.equal(autonomy.start(mainRoot, { quote: HOURS, session: SESSION, hours: 1 }, { configDir, now: T0 }).ok, true)
+  const resetsAt = new Date(T0 + 4 * HOUR).toISOString()
+  autonomy.recordCrossing(mainRoot, { kind: 'five_hour', percentUsed: 80, resetsAt, threshold: 80 }, { now: T0 + 1000 })
+  assert.equal(autonomy.status(mainRoot, { now: T0 + 2000 }).stop, 'quota')
+  assert.equal(autonomy.extend(mainRoot, { hours: 16, usd: null, quote: EXTEND, session: SESSION }, { configDir, now: T0 + 3000 }).ok, true)
+  assert.equal(autonomy.status(mainRoot, { now: T0 + 3000 }).stop, 'quota')
+})
+
+test('extend refuses an unverified quote and writes nothing, and refuses with no open run (issue 253)', (t) => {
+  const { configDir, mainRoot } = setupExtend(t)
+  assert.deepEqual(autonomy.extend(mainRoot, { hours: 16, quote: EXTEND, session: SESSION }, { configDir, now: T0 }), {
+    ok: false,
+    reason: 'no open run',
+  })
+  assert.equal(autonomy.start(mainRoot, { quote: HOURS, session: SESSION }, { configDir, now: T0 }).ok, true)
+  const before = fs.readFileSync(autonomy.runPaths(mainRoot, autonomy.openRun(mainRoot).id).runFile, 'utf8')
+  const r = autonomy.extend(mainRoot, { hours: 16, quote: 'trabaja toda la noche sin parar', session: SESSION }, { configDir, now: T0 + HOUR })
+  assert.deepEqual(r, { ok: false, reason: `the quote is not in the owner's messages of session ${SESSION}` })
+  assert.equal(fs.readFileSync(autonomy.runPaths(mainRoot, autonomy.openRun(mainRoot).id).runFile, 'utf8'), before)
+})
+
+test('extend needs a positive number, or unlimited for dollars', (t) => {
+  const { configDir, mainRoot } = setupExtend(t)
+  assert.equal(autonomy.start(mainRoot, { quote: HOURS, session: SESSION }, { configDir, now: T0 }).ok, true)
+  assert.throws(() => autonomy.extend(mainRoot, { quote: EXTEND, session: SESSION }, { configDir, now: T0 }), /extend needs --hours or --usd/)
+  for (const bad of [0, -1, Number.NaN, Infinity, '16']) {
+    assert.throws(() => autonomy.extend(mainRoot, { hours: bad, quote: EXTEND, session: SESSION }, { configDir, now: T0 }), /invalid ceiling/, String(bad))
+    assert.throws(() => autonomy.extend(mainRoot, { usd: bad, quote: EXTEND, session: SESSION }, { configDir, now: T0 }), /invalid ceiling/, String(bad))
+  }
+  assert.equal(autonomy.openRun(mainRoot).ceilings.usd, 50)
+})
 
 test('launchRefusal recognizes non-repository errors in a localized Git environment', (t) => {
   const dataDir = useDataDir(t)
