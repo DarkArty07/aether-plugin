@@ -87,7 +87,7 @@ The route sets design depth; "The three paths" sets who builds.
 | Short design | A bounded change | You write `specs/NNN-<topic>/design.md`; `/aether:design` runs the Judge's rounds on it when it touches a risk that "A short design" of `aether:designing` names; then a delegate task or the swarm builds it |
 | Spec and plan | Architectural work | You write the intent card; `/aether:design` writes and reviews the spec, the plan and the tasks; then they are built on one of "The three paths" |
 
-Before a spec and plan, state better options, scope, estimated cost/time from finalized `runs.jsonl` in the plugin data directory, or say no history exists. If confirmed intent covers the work, proceed.
+Before a spec and plan, state better options, scope, estimate by part (design, exam, units, reviews) from `runs.jsonl` and `aether-report --seats`, or none. If confirmed intent covers the work, proceed.
 
 ## Plans
 
