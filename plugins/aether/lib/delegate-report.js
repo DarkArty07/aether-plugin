@@ -6,7 +6,7 @@
 // Family: delegate.
 
 const run = require('./run.js')
-const { isObject } = require('./common.js')
+const { isObject, isText } = require('./common.js')
 const { isLaunch, readAllEntries } = require('./delegate-log.js')
 const { loadLadder } = require('./ladder.js')
 
@@ -33,12 +33,15 @@ function rowOfTask(id, entries, ladder = loadLadder()) {
   const onClaude = { harness: 'claude', model: claudeModel, effort: latest.effort ?? null }
   let ranOn = onClaude
   let status = 'ok'
+  // The reason of a failed attempt is in its result line (issue 240); an outcome line says none.
+  let reason = null
   if (outcome) {
     status = outcome.status
     if (status === 'ok') ranOn = { harness: outcome.harness, model: outcome.model, effort: outcome.effort }
   } else if (result) {
     status = result.ok === true && result.pair ? 'ok' : result.status || 'failed'
     if (status === 'ok') ranOn = { harness: result.pair.harness, model: result.pair.model, effort: result.pair.effort }
+    if (isText(result.reason)) reason = result.reason
   }
   const external = outcome !== null || result !== null
   const row = {
@@ -48,7 +51,7 @@ function rowOfTask(id, entries, ladder = loadLadder()) {
     description: first.description,
     applied: external ? 'external' : 'rewritten',
     ranOn,
-    fallback: external && status !== 'ok' ? `external ${status}` : null,
+    fallback: external && status !== 'ok' ? `external ${status}${reason === null ? '' : `: ${reason}`}` : null,
     step: latest.step,
     attempts: launches.length,
     unverdicted: isUnverdictedTask(entries),
