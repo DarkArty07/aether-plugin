@@ -233,6 +233,30 @@ test('sweepRun saves the unmerged work of each unit as a patch and retains its b
   assert.deepEqual(r.remaining, { worktrees: [], branches: [unit.branch] })
 })
 
+test('a failing cleanup still leaves the end mark', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  const unit = ensure(repo.dir, args.runId, 'task-1')
+  repo.git('worktree', 'remove', '--force', unit.path)
+  const extra = path.join(repo.dir, 'held')
+  repo.git('worktree', 'add', '--quiet', extra, unit.branch)
+  assert.throws(() => sweepRun(repo.dir, args.runId, { endMark: true }), /branch -D/)
+  const mark = JSON.parse(fs.readFileSync(run.launchEndFile(repo.dir, args.runId), 'utf8'))
+  assert.equal(mark.run, args.runId)
+})
+
+test('loadRunGraph is the exported task-merging loader', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  const { loadRunGraph, loadGraph } = require('../plugins/aether/lib/worktrees.js')
+  run.writeJson(path.join(args.runDir, 'units.json'), { 'task-9': { owns: ['src/t9/**'] } })
+  const graph = loadGraph(repo.dir, args.runId)
+  const merged = loadRunGraph(repo.dir, args.runId)
+  assert.equal(graph.tasks['task-9'], undefined)
+  assert.equal(merged.tasks['task-1'].owns[0], graph.tasks['task-1'].owns[0])
+  assert.deepEqual(merged.tasks['task-9'].owns, ['src/t9/**'])
+})
+
 test('sweepRun keeps a unit whose unmerged work it cannot save', (t) => {
   const repo = makeRepo(t)
   const args = compile(repo, plan([task(1), task(2)]))

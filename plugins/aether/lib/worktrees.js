@@ -16,6 +16,8 @@ const { judge } = require('./baseline.js')
 const common = require('./common.js')
 const { exists, nulEntries, pidAlive: processAlive, sleepSync } = common
 const { stampDue, writeStamp, STAMP_INTERVAL_MS: SWEEP_STALE_INTERVAL_MS } = require('./tree-clean.js')
+const { walkNoFollow } = require('./wt-watch.js')
+const { recordTiming } = require('./run-timings.js')
 
 function loadGraph(mainRoot, runId) {
   run.assertRunId(runId)
@@ -736,7 +738,13 @@ function classifyMarker(mainRoot, graph, runId, taskId) {
 function runSettleTests(mainRoot, graph, runId, taskId, integration, commit, timeoutMs) {
   const maxBuffer = 64 * 1024 * 1024
   const tip = head(integration)
-  const tests = common.runShell(graph.testCommand, { cwd: integration, timeoutMs, maxBuffer })
+  const started = Date.now()
+  let tests
+  try {
+    tests = common.runShell(graph.testCommand, { cwd: integration, timeoutMs, maxBuffer })
+  } finally {
+    recordTiming(run.runDir(mainRoot, runId), 'merge-tests', Date.now() - started)
+  }
   const passed = (extra) => {
     clearUnverifiedMarker(mainRoot, runId, taskId)
     const result = { settled: true, task: taskId, commit, tip }
@@ -774,7 +782,13 @@ function readBaseline(mainRoot, runId) {
 // commit it returns is the marked one, not whatever the worktree's head is afterwards.
 function settleMerge(mainRoot, graph, runId, taskId, integration, before, { timeoutMs, rerun = false, commit = null }) {
   const maxBuffer = 64 * 1024 * 1024
-  const tests = common.runShell(graph.testCommand, { cwd: integration, timeoutMs, maxBuffer })
+  const started = Date.now()
+  let tests
+  try {
+    tests = common.runShell(graph.testCommand, { cwd: integration, timeoutMs, maxBuffer })
+  } finally {
+    recordTiming(run.runDir(mainRoot, runId), 'merge-tests', Date.now() - started)
+  }
   const kept = (extra) => {
     clearUnverifiedMarker(mainRoot, runId, taskId)
     const result = { merged: true, commit: rerun && commit ? commit : head(integration) }
@@ -1273,6 +1287,19 @@ function pendingPatches(mainRoot, runId, patchesDir) {
 function sweepRun(cwd, runId, { finish = false, endMark = false } = {}) {
   run.assertRunId(runId)
   const { mainRoot } = repoPaths(cwd)
+  const runDir = run.runDir(mainRoot, runId)
+  try {
+    return sweepRunBody(mainRoot, runId, { finish })
+  } finally {
+    // A failing cleanup still leaves the mark when the run directory is still there. A sweep that
+    // finished the run deleted that directory, and writing here would recreate it.
+    if (endMark && exists(runDir)) {
+      run.writeJson(run.launchEndFile(mainRoot, runId), { run: runId, at: new Date().toISOString() })
+    }
+  }
+}
+
+function sweepRunBody(mainRoot, runId, { finish = false } = {}) {
   const stopped = stopLaneProcesses(mainRoot, runId)
   const copies = removeLaneCopies(mainRoot, runId)
   const dir = run.worktreesDir(mainRoot, runId)
@@ -1314,12 +1341,6 @@ function sweepRun(cwd, runId, { finish = false, endMark = false } = {}) {
     fs.rmSync(runDir, { recursive: true, force: true })
     finished = true
   }
-  // The flow's cleanup asks for this mark when the launch ends without finishing the run. A sweep
-  // that finished the run deleted its directory, and a stale sweep never asks: writing here would
-  // renew the directory and make later stale sweeps read the run as active.
-  if (endMark && exists(runDir)) {
-    run.writeJson(run.launchEndFile(mainRoot, runId), { run: runId, at: new Date().toISOString() })
-  }
   const result = {
     removedWorktrees,
     removedBranches,
@@ -1340,24 +1361,7 @@ function sweepRun(cwd, runId, { finish = false, endMark = false } = {}) {
 // True when `dir`, or anything inside it, was modified at or after `cutoff` (ms since the epoch).
 // Symlinks are not followed, and the walk stops at the first recent entry.
 function modifiedSince(dir, cutoff) {
-  const pending = [dir]
-  while (pending.length > 0) {
-    const current = pending.pop()
-    let stat
-    try {
-      stat = fs.lstatSync(current)
-    } catch {
-      continue // gone since it was listed
-    }
-    if (stat.mtimeMs >= cutoff) return true
-    if (!stat.isDirectory()) continue
-    try {
-      for (const name of fs.readdirSync(current)) pending.push(path.join(current, name))
-    } catch {
-      // unreadable or gone: nothing more to learn from it
-    }
-  }
-  return false
+  return walkNoFollow(dir, (_current, stat) => stat.mtimeMs >= cutoff)
 }
 
 // The status of the last record of `runId` in runs.jsonl, or null. Lines that are not JSON are skipped.
@@ -1482,6 +1486,7 @@ module.exports = {
   sweepStale,
   SWEEP_STALE_INTERVAL_MS,
   loadGraph,
+  loadRunGraph,
   uncommittedFiles,
   changedFiles,
   unitBase,
