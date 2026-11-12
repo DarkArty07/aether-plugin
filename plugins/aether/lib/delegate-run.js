@@ -235,7 +235,13 @@ async function runEdits(external, { cwd, dataDir }, delegateCommand) {
 
 async function runReadOnly(external, { cwd, dataDir }, runChain) {
   const config = lanes.loadConfig()
-  const chain = await runChain({ cwd, id: external.id, session: external.session ?? null, external, config, dataDir })
+  // The copy is of the tree the brief names with AETHER-TREE: (spec 033, D4), else of the Lead's checkout. A tree that is gone
+  // ends the attempt: the checkout is never copied in its place, because the answer would be about the wrong tree (issue 185).
+  const tree = isText(external.tree) ? external.tree : null
+  if (tree !== null && !fs.existsSync(tree)) {
+    return { result: { ok: false, status: 'failed', text: null, checks: null }, entry: { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null } }
+  }
+  const chain = await runChain({ cwd: tree ?? cwd, id: external.id, session: external.session ?? null, external, config, dataDir })
   const last = Array.isArray(chain.attempts) && chain.attempts.length > 0 ? chain.attempts[chain.attempts.length - 1] : null
   const pair = last ? pairOf(last) : null
   const changed = Array.isArray(chain.changed) ? chain.changed : []
