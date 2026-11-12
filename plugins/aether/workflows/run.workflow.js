@@ -334,8 +334,8 @@ async function capClock({ label, phase, seconds, clock }) {
         label: `${label}: deadline ${k}/${steps}`,
         schema: OPS_SCHEMA,
       })
-      const lines = reply && reply.exitCode === 0 ? String(reply.stdout || '').trim().split('\n') : []
-      paused = JSON.parse(lines[lines.length - 1]).paused
+      const found = reply && reply.exitCode === 0 ? lastJsonObject(reply.stdout) : null
+      paused = found ? found.paused : null
     } catch {
       paused = null
     }
@@ -375,16 +375,29 @@ function opsPrompt(command, { payload = null, long = false } = {}) {
 const MODEL_UNKNOWN_EXIT = -1
 const NOT_RUN = /did not run|didn't run|not run it|refus|cannot run|can't run|won't run|no (corr[ií]|ejecut)/i
 
+// Scans the lines of `text` from the last up; returns the first line that starts with `{` and parses to a plain
+// object, or null when there is none.
+function lastJsonObject(text) {
+  const lines = String(text || '').split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim()
+    if (!line.startsWith('{')) continue
+    try {
+      const value = JSON.parse(line)
+      if (isObject(value)) return value
+    } catch {
+      // Not JSON; keep scanning up.
+    }
+  }
+  return null
+}
+
 async function opsOnce(command, { phase, label, payload = null, long = false }) {
   const reply = await call('ops', 'haiku', 'low', opsPrompt(command, { payload, long }), { phase, label, schema: OPS_SCHEMA })
   if (!reply) return { error: 'the ops agent failed' }
-  const lines = String(reply.stdout || '').trim().split('\n')
-  let out = null
-  try {
-    out = JSON.parse(lines[lines.length - 1])
-  } catch {
-    out = null
-  }
+  // The bins print one JSON line, but the ops agent may add its own note around it (issue #257),
+  // so the reply is read from its last JSON object line.
+  const out = lastJsonObject(reply.stdout)
   // The bins print one JSON line. Anything else is an agent that did not run the command, as a refusal does
   // (issue 004), so the error says that instead of leaving it to be guessed from the text.
   if (!out || typeof out !== 'object') {
@@ -1733,8 +1746,7 @@ async function rescue(unit) {
           label: `${unit.id}: stuck wait ${k}/${steps}`,
           schema: OPS_SCHEMA,
         })
-        const lines = reply && (reply.exitCode === 0 || reply.exitCode === MODEL_UNKNOWN_EXIT) ? String(reply.stdout || '').trim().split('\n') : []
-        tick = JSON.parse(lines[lines.length - 1])
+        tick = reply && (reply.exitCode === 0 || reply.exitCode === MODEL_UNKNOWN_EXIT) ? lastJsonObject(reply.stdout) : null
       } catch {
         tick = null
       }
