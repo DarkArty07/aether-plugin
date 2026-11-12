@@ -126,7 +126,17 @@ function refusedCarryBlock(reason, patch, findings) {
 // The prompt of the pair that writes: the brief, then the paths the charge owns and, when it
 // carries them, its test command and the findings the attempt is to fix.
 function implementerPrompt(briefText, { owns, tests, findings }) {
-  const parts = [briefText, ['## Paths you own', '', 'You may change only these paths:', ...owns.map((entry) => `- ${entry}`)].join('\n')]
+  const parts = [
+    briefText,
+    [
+      '## Paths you own',
+      '',
+      'You may change only these paths:',
+      ...owns.map((entry) => `- ${entry}`),
+      '',
+      'If the tests cannot pass without changing a path outside that list, stop at once and report status `BLOCKED`, naming the path and the test in `question`, instead of working on.',
+    ].join('\n'),
+  ]
   if (tests !== null) parts.push(['## Tests', '', `Run these tests before you finish: \`${tests}\``].join('\n'))
   if (findings !== null) parts.push(['## Findings to fix', '', findings].join('\n'))
   return parts.join('\n\n')
