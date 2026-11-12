@@ -27,6 +27,7 @@ const { runShell } = require('./common.js')
 const baseline = require('./baseline.js')
 const wt = require('./worktrees.js')
 const { loadSwarmConfig } = require('./wt-config.js')
+const { recordTiming } = require('./run-timings.js')
 
 const USAGE =
   'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline]'
@@ -249,7 +250,7 @@ function docWarnings(parsed, root) {
   return warnings
 }
 
-function check(planArg, { cwd = process.cwd(), stdout = process.stdout } = {}) {
+function check(planArg, { cwd = process.cwd(), stdout = process.stdout, env = process.env } = {}) {
   const { planPath, parsed } = load(planArg, stdout)
   const graph = buildGraph(parsed)
   const trace = traceability(parsed, specRequirements(parsed.spec, planPath, cwd))
@@ -260,7 +261,7 @@ function check(planArg, { cwd = process.cwd(), stdout = process.stdout } = {}) {
         errors.push(`Task ${t.number}: Skills lists ${t.skills.length} skills (at most 3).`)
       }
       for (const name of t.skills) {
-        if (!resolveSkill(name, { cwd, home: process.env.HOME || os.homedir() })) {
+        if (!resolveSkill(name, { cwd, home: env.HOME || os.homedir() })) {
           errors.push(`Task ${t.number}: skill "${name}" does not exist.`)
         }
       }
@@ -315,7 +316,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
   const runValue = flagValue(rest, '--run', '--run needs a run id.', stdout)
 
   const repo = repoPaths(cwd)
-  const refusal = autonomy.launchRefusal(cwd, { session: env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_CODE_SESSION_ID || null, dataDir: run.dataDir(env) })
+  const refusal = autonomy.launchRefusal(cwd, { session: env.CLAUDE_CODE_SESSION_ID || null, dataDir: run.dataDir(env) })
   if (refusal) fail([refusal.message], [], stdout)
   const branch = currentBranch(cwd)
   if (!branch) fail(['the integration worktree has a detached HEAD; check out the integration branch first'], [], stdout)
@@ -355,7 +356,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
     const id = `task-${t.number}`
     if (!graph.tasks[id]) continue
     if (t.skills && t.skills.length > 0) {
-      const res = loadSkills(t.skills, { cwd: repo.worktree, home: process.env.HOME || os.homedir() })
+      const res = loadSkills(t.skills, { cwd: repo.worktree, home: env.HOME || os.homedir() })
       if (!res.ok) {
         skillErrors.push(res.error)
       } else {
@@ -365,6 +366,9 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
   }
   if (skillErrors.length > 0) fail(skillErrors, [...parsed.warnings, ...graph.warnings], stdout)
 
+  // A broken swarm config fails here, before briefs, the ladder reset or recordUse write anything.
+  const swarm = loadSwarmConfig()
+
   // A unit named again after its ladder was spent (the task was fixed and reviewed) starts a new ladder.
   if (runValue !== null) {
     for (const id of require('./wt-ladder.js').resetSpent(dir, Object.keys(graph.tasks || {}))) {
@@ -372,7 +376,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
     }
   }
 
-  const enabled = superdelegation.enabled()
+  const enabled = superdelegation.enabled(env)
   if (!rest.includes('--no-lanes') && !enabled.on) {
     process.stderr.write(
       enabled.reason === 'platform'
@@ -386,7 +390,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
   if (!rest.includes('--no-lanes') && enabled.on) {
     const config = lanes.loadConfig(lanes.configPath())
     const { pairs } = loadPairs()
-    const options = { installed: (name, harness) => lanes.commandInstalled(harness.command), enabled: lanes.enabledHarnesses() }
+    const options = { installed: (name, harness) => lanes.commandInstalled(harness.command), enabled: lanes.enabledHarnesses(env) }
     laneArgs = superdelegation.runArgs(config, pairs, options)
     for (const { name, reason } of superdelegation.idleHarnesses(config, pairs, options)) {
       process.stderr.write(`aether-plan: superdelegation: ${name} is enabled but ${reason}\n`)
@@ -406,7 +410,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
     }
   }
   const tasks = {}
-  const dataDir = run.dataDir()
+  const dataDir = run.dataDir(env)
   for (const t of parsed.tasks) {
     const id = `task-${t.number}`
     if (!graph.tasks[id]) continue
@@ -425,7 +429,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
     )
     if (unitSkills.length > 0) {
       recordUse(dataDir, {
-        session: process.env.CLAUDE_CODE_SESSION_ID || null,
+        session: env.CLAUDE_CODE_SESSION_ID || null,
         kind: 'run',
         run: runId,
         task: id,
@@ -457,7 +461,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
     },
     testCommand: parsed.execution.testCommand,
     maxAgents: parsed.execution.maxAgents,
-    stuckWaitSeconds: loadSwarmConfig().stuckWaitSeconds,
+    stuckWaitSeconds: swarm.stuckWaitSeconds,
     waves: graph.waves,
     tasks,
     ...(alreadyMerged ? { alreadyMerged } : {}),
@@ -469,6 +473,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
   const baselineFile = path.join(dir, 'baseline.json')
   if (!rest.includes('--no-baseline') && !fs.existsSync(baselineFile)) {
     const recorded = recordBaseline(repo.worktree, parsed.execution.testCommand)
+    recordTiming(dir, 'baseline', recorded.durationMs)
     run.writeJson(baselineFile, recorded)
     process.stderr.write(`aether-plan: test baseline: ${baselineMessage(recorded)}\n`)
     // A merge runs the same command under the mod's ten-minute limit (issue 002, proposal 5).
@@ -513,11 +518,11 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
   stdout.write(JSON.stringify(args) + '\n')
 }
 
-function main(argv, { cwd = process.cwd(), stdout = process.stdout } = {}) {
+function main(argv, { cwd = process.cwd(), stdout = process.stdout, env = process.env } = {}) {
   const [command, planArg, ...rest] = argv
   try {
-    if (command === 'check') check(planArg, { cwd, stdout })
-    else if (command === 'compile') compile(planArg, rest, { cwd, stdout })
+    if (command === 'check') check(planArg, { cwd, stdout, env })
+    else if (command === 'compile') compile(planArg, rest, { cwd, stdout, env })
     else fail([USAGE], [], stdout)
   } catch (err) {
     fail([err.message], [], stdout)
