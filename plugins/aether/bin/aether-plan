@@ -7,4 +7,4 @@
 const path = require('node:path')
 const { main } = require(path.join(__dirname, '..', 'lib', 'plan-compile.js'))
 
-main(process.argv.slice(2), { cwd: process.cwd(), stdout: process.stdout, env: process.env })
+main(process.argv.slice(2), { cwd: process.cwd(), stdout: process.stdout })
