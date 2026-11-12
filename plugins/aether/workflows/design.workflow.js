@@ -232,7 +232,7 @@ let input
 try {
   input = readArgs(args)
 } catch (err) {
-  return { status: 'failed', step: 'validation', reason: err.message, skill: 'aether:designing' }
+  return { ...failedResult('validation', err.message), skill: 'aether:designing' }
 }
 const { feature, session, repoRoot, mode, binDir } = input
 const SPEC = `${feature}/spec.md`
@@ -626,7 +626,8 @@ function failedPair(reply, value) {
 // that no seat takes it; `writes` is the Writer's --doc (spec or plan). `schema` is the shape of an external answer;
 // the native agent answers with `nativeSchema`, which is the same unless the round is a correction.
 // Resolves to { answer, text, seat, model, value } (seat: 'native' or '<harness> <model>'; model: the one that
-// answered; value: the external round's) or { failed }.
+// answered; value: the external round's) or { failed }. A seat-start the autonomous run refuses
+// returns { failed, refused, stop, run } and does not hand the round to the native agent.
 async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema, phase, author = null, writes = null }) {
   const base = step ? `${doc}: ${seat} ${step}` : `${doc}: ${seat}`
   const record = { document: doc, seat, provider: 'native', id: null, lane: null, note: null }
@@ -649,6 +650,8 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   for (let n = 1; ; n++) {
     const waited = await awaitSeat({ seat, doc, base: n === 1 ? base : `${base} (try ${n})`, flags, exclude: excluded, text, phase })
     if (waited.refused === true) {
+      record.provider = null
+      record.refused = true
       record.note = waited.note
       return { failed: waited.note, refused: true, stop: waited.stop, run: waited.run }
     }
@@ -873,7 +876,11 @@ function examinerMessage() {
 
 // --- steps -----------------------------------------------------------------------------------
 
-const failure = (step, reason, extra = {}) => ({ end: { status: 'failed', failed: { step, reason }, ...(extra.refused ? { step, reason, stop: extra.stop, run: extra.run } : {}) } })
+// Every failed return of the design is { status: 'failed', step, reason }, plus stop and run when the cause is a refusal.
+function failedResult(step, reason, extra = {}) {
+  return { status: 'failed', step, reason, ...(extra.refused ? { stop: extra.stop, run: extra.run } : {}) }
+}
+const failure = (step, reason, extra = {}) => ({ end: failedResult(step, reason, extra) })
 
 // aether-plan check on the tasks, read even when it exits 1: { ok, errors, printed }, or { error } when the command
 // did not run.
@@ -962,19 +969,19 @@ function corrector(doc, path, phase) {
 }
 
 // The Examiner's round on the approved plan, written by `author`, and the exam's storage: { status: 'stored', dir } or
-// { status: 'failed', reason }. A failure here does not undo the approval.
+// failedResult. A failure here does not undo the approval.
 async function examine(author) {
   const round = await seatRound({ seat: 'examiner', doc: 'exam', step: '', text: examinerMessage(), schema: EXAMINER_SCHEMA, phase: 'Exam', author })
   if (round.refused) return failure('examiner', round.failed, round).end
-  if (round.failed) return { status: 'failed', reason: round.failed }
+  if (round.failed) return failedResult('examiner', round.failed)
   if (round.seat !== 'native') {
     // An external Examiner's round stores the exam itself.
-    return typeof round.value.stored === 'string' ? { status: 'stored', dir: round.value.stored } : { status: 'failed', reason: 'the external round stored no exam' }
+    return typeof round.value.stored === 'string' ? { status: 'stored', dir: round.value.stored } : failedResult('exam-store', 'the external round stored no exam')
   }
   const out = await opsTwice(`aether-exam store ${feature}`, { phase: 'Exam', label: 'exam: store' })
-  if (out.error) return { status: 'failed', reason: `aether-exam store failed: ${out.error}` }
+  if (out.error) return failedResult('exam-store', `aether-exam store failed: ${out.error}`)
   const dir = typeof out.dir === 'string' ? out.dir : out.stored
-  return typeof dir === 'string' ? { status: 'stored', dir } : { status: 'failed', reason: `aether-exam store named no directory: ${JSON.stringify(out).slice(0, 300)}` }
+  return typeof dir === 'string' ? { status: 'stored', dir } : failedResult('exam-store', `aether-exam store named no directory: ${JSON.stringify(out).slice(0, 300)}`)
 }
 
 // --- flows -----------------------------------------------------------------------------------
