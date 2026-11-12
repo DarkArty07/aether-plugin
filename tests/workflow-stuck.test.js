@@ -84,6 +84,43 @@ test('a stuck unit raises the alert, the others merge while it waits, and the Le
   for (const call of run.calls.filter((c) => /^ops:stuck/.test(c.kind))) assert.notEqual(parseOpsPrompt(call.prompt), null, call.prompt)
 })
 
+test('R6: a unit that waits does not hold the later waves: task-5 merges before the fix, then task-1 and task-3, with one final review', async (t) => {
+  // Waves [[1,2],[3,4],[5]]: task-3 depends on the stuck task-1, task-5 on task-4, which depends on the free task-2.
+  const args = compile(makeRepo(t), plan([task(1), task(2), task(3, { depends: 'Task 1 — needs it' }), task(4, { depends: 'Task 2 — needs it' }), task(5, { depends: 'Task 4 — needs it' })]))
+  assert.deepEqual(args.waves, [['task-1', 'task-2'], ['task-3', 'task-4'], ['task-5']])
+  const order = []
+  const run = await runWorkflow(args, {
+    stuckWait: 3600,
+    implementer: stuckUnits('task-1'),
+    ops: (call, wt) => {
+      if (call.kind === 'ops:merge') order.push(`merge ${call.unit}`)
+      return wt(call)
+    },
+    deadline: clock((unit, n, seconds) => {
+      if (!order.includes('merge task-5')) return reply(seconds)
+      order.push('fix delivered')
+      return reply(seconds, { state: 'delivered', commit: 'fix1234', reason: 'moved the test into Owns' })
+    }),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(statuses(run), ['task-1 merged', 'task-2 merged', 'task-3 merged', 'task-4 merged', 'task-5 merged'])
+  // task-5 merged while task-1 was still waiting: the fix came only after it.
+  const fix = order.indexOf('fix delivered')
+  assert.ok(fix > order.indexOf('merge task-5'), order.join(', '))
+  assert.ok(order.indexOf('merge task-2') < fix && order.indexOf('merge task-4') < fix, order.join(', '))
+  // Then the fixed unit and its dependent, in that order.
+  assert.ok(fix < order.indexOf('merge task-1') && order.indexOf('merge task-1') < order.indexOf('merge task-3'), order.join(', '))
+  assert.equal(byId(run)['task-1'].fixedByLead.commit, 'fix1234')
+  assert.equal(byId(run)['task-3'].fixedByLead, undefined)
+  assert.equal(byId(run)['task-5'].fixedByLead, undefined)
+  // One final review, after every detached body settled, covering the fix.
+  assert.equal(run.logs.filter((line) => /^final review on /.test(line)).length, 1)
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:diff').length, 1)
+  assert.ok(run.events.indexOf('end ops:merge task-3') < run.events.indexOf('start ops:diff'))
+  assert.equal(run.result.finalReview.status, 'done')
+  assert.equal(run.result.agents.total, run.calls.length)
+})
+
 test('without a fix the wait ends by its time: the unit is blocked as today, its dependent is skipped, the others merged', async (t) => {
   const run = await runWorkflow(four(t), { stuckWait: 240, implementer: stuckUnits('task-1'), deadline: clock((unit, n, seconds) => reply(seconds)) })
   assert.equal(run.error, null, run.error && run.error.stack)

@@ -197,17 +197,32 @@ function payloadOf(prompt) {
   return m ? { path: m[1], text: prompt.slice(m.index + m[0].length + 1) } : null
 }
 
-// The args as the stubs see them. Invalid input is the workflow's to reject, not the harness's.
-function parseLeniently(args) {
+// The args as the stubs see them, with how many JSON string layers were peeled to reach them (0 for an object).
+// Invalid input is the workflow's to reject, not the harness's: a text that is not JSON gives a null value.
+function peelArgs(args) {
   let value = args
+  let layers = 0
   for (let i = 0; i < 2 && typeof value === 'string'; i++) {
     try {
       value = JSON.parse(value)
+      layers++
     } catch {
-      return null
+      return { value: null, layers }
     }
   }
-  return value
+  return { value, layers }
+}
+
+function parseLeniently(args) {
+  return peelArgs(args).value
+}
+
+// The same number of JSON string layers around a value: a string arrives as a string, a doubly encoded one doubly encoded,
+// so the flow decodes the args as the Lead's or the Designer's text reaches it.
+function encodeLayers(value, layers) {
+  let out = value
+  for (let i = 0; i < layers; i++) out = JSON.stringify(out)
+  return out
 }
 
 // Lets the other units' calls start before this one goes on.
@@ -242,9 +257,11 @@ async function runWorkflow(args, overrides = {}, options = {}) {
   const roles = custom ? options.roles : SWARM_ROLES
   // The wait of the stuck units: the scenario's stuckWaitSeconds, or 0 when it gives none, even when
   // aether-plan compile printed another value. Anything that is not an object reaches the flow as it is.
-  const parsed = parseLeniently(args)
+  // The patched object goes back to the flow at the depth the args arrived with, so readArgs decodes the strings it is given.
+  const peeled = peelArgs(args)
+  const parsed = peeled.value
   const flowArgs = !custom && parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-    ? { ...parsed, stuckWaitSeconds: 'stuckWait' in overrides ? overrides.stuckWait : 0 }
+    ? encodeLayers({ ...parsed, stuckWaitSeconds: 'stuckWait' in overrides ? overrides.stuckWait : 0 }, peeled.layers)
     : args
   const state = { args: parseLeniently(flowArgs), merged: new Set(), lanes: {}, ladder: overrides.ladder || options.ladder }
   const defaults = custom ? options.defaults(state) : defaultHandlers(state)

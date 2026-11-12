@@ -243,9 +243,13 @@ let queue = Promise.resolve()
 // stuck unit wait for it while the other units go on (spec 034).
 const done = {}
 const resolveDone = {}
+// The units whose state is final (their done has resolved). A unit whose dependency is not settled yet does not hold
+// its wave: its whole body is pushed into `rescues` and runs on (spec 034 R6).
+const settled = {}
 // The stuck units with their wait in flight, the waits themselves, and whether each unit's ladder was at a
 // clean start when its work began (for the first-try mark of a fix merge).
 const waiting = new Set()
+// The awaited list of the run: the waits of the stuck units and the bodies of the units detached behind them.
 const rescues = []
 const cleanStarts = {}
 for (const id of Object.keys(units)) {
@@ -1769,11 +1773,35 @@ async function rescue(unit) {
     waiting.delete(unit.id)
     if (unit.attempts > 0) await close(unit)
     if (unit.status === 'blocked') blockHint(unit)
-    resolveDone[unit.id]()
+    settle(unit.id)
   }
 }
 
+// Marks a unit's state final: its dependents may go on (spec 034).
+function settle(id) {
+  settled[id] = true
+  resolveDone[id]()
+}
+
+// Awaits every rescue and detached body, including those that a body adds while the wait runs (a detached body
+// may end blocked and start its own wait). Their errors are swallowed as the rescues' always were: a unit body does not throw.
+async function settleRescues() {
+  for (let i = 0; i < rescues.length; i++) await rescues[i].catch(() => {})
+}
+
+// A unit runs in its wave, unless a dependency is not settled yet: a stuck unit waiting for the Lead's fix, or a unit
+// detached behind one. Then its whole body goes to `rescues` and the wave's barrier lets go, so the later waves run
+// while the wait goes on (spec 034 R6). The final review still waits for every body (R9).
 async function runUnit(id) {
+  if (tasks[id].dependsOn.some((d) => units[d] && !settled[d])) {
+    rescues.push(unitBody(id))
+    return
+  }
+  await unitBody(id)
+}
+
+// The body of one unit, from its work to its close. A stuck unit's wait takes over its settle (in rescue).
+async function unitBody(id) {
   const unit = units[id]
   try {
     await work(unit, tasks[id])
@@ -1787,7 +1815,7 @@ async function runUnit(id) {
   }
   if (unit.attempts > 0) await close(unit)
   if (unit.status === 'blocked') blockHint(unit)
-  resolveDone[id]()
+  settle(id)
 }
 
 // Every merged unit the final review covers: this launch's plus the earlier launches' (issue 122).
@@ -2032,9 +2060,9 @@ try {
   for (let i = 0; i < waves.length; i++) {
     await parallel(waves[i].map((id) => () => runUnit(id)))
   }
-  // The waits of the stuck units (spec 034): the final review is decided only with every state final, so one
-  // review covers the fixes too.
-  await Promise.allSettled(rescues)
+  // The waits of the stuck units and the bodies detached behind them (spec 034): the final review is decided only
+  // with every state final, so one review covers the fixes too.
+  await settleRescues()
   // Once per run, when this launch closed it (issues #5 and #33). A launch that leaves a unit blocked,
   // skipped or not run does not pay for the review; the Lead forces it with `review: true`.
   if (input.review === true || launchComplete()) finalReview = await reviewRun(input.review === true)
@@ -2045,7 +2073,7 @@ try {
 } catch (err) {
   error = message(err)
 } finally {
-  await Promise.allSettled(rescues)
+  await settleRescues()
   // The took logs no call waited for: the run returns, and sweeps, only after every one of them ended.
   await Promise.all(tookLogs)
   const command = `aether-wt sweep --run ${runId}`
