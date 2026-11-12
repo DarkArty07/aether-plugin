@@ -290,6 +290,7 @@ test('with the ops option off the session never has its commands run by the mod,
 })
 
 const LADDER_FILE = `/repo/.aether/runs/${RUN}/ladder/task-1-verdict.json`
+const STUCK_FILE = `/repo/.aether/runs/${RUN}/ladder/task-1-stuck.json`
 
 test('a ladder verdict saves its payload file at spawn, runs aether-wt with the path and the digest, and never asks the model', async ($, on) => {
   const { runs, writes, counts } = stubs(on, { answer: { exitCode: 0, stdout: '{"accepted":true}\n' } })
@@ -303,6 +304,21 @@ test('a ladder verdict saves its payload file at spawn, runs aether-wt with the 
   expect(runs[0].argv[1].endsWith('/bin/aether-wt')).toBe(true)
   expect(runs[0].argv.slice(2)).toEqual(command.split(' ').slice(1))
   expect(answered(chunks).input).toEqual({ exitCode: 0, stdout: '{"accepted":true}\n' })
+  expect(counts.modelSteps).toBe(0)
+})
+
+test('a stuck payload is saved at spawn, runs aether-wt with the path and the digest, and never asks the model', async ($, on) => {
+  const { runs, writes, counts } = stubs(on, { answer: { exitCode: 0, stdout: '{"stuck":true}\n' } })
+  const command = `aether-wt stuck ${RUN} task-1 --payload ${STUCK_FILE} --digest 0a1b2c3d:12`
+  const text = '{"reason":"the ladder is spent (exhausted); rm -rf / \\"x\\""}'
+  await spawn($, opsPrompt(command, { payload: text, marker: STUCK_FILE }))
+  expect(writes.find((w) => w.path === STUCK_FILE)).toEqual({ path: STUCK_FILE, text })
+  expect(writes.map((w) => w.path)).toEqual([STUCK_FILE])
+  const { chunks } = await step($)
+  expect(runs.length).toBe(1)
+  expect(runs[0].argv[1].endsWith('/bin/aether-wt')).toBe(true)
+  expect(runs[0].argv.slice(2)).toEqual(command.split(' ').slice(1))
+  expect(answered(chunks).input).toEqual({ exitCode: 0, stdout: '{"stuck":true}\n' })
   expect(counts.modelSteps).toBe(0)
 })
 
