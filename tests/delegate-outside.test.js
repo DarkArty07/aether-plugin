@@ -269,6 +269,52 @@ function assertNotOutside(decision) {
   assert.equal(decision.asked.length, 1, 'the pair is picked as for any task the copy holds')
 }
 
+// ---- issues #243 and #241 ----
+
+test('issue 243: the brief the reader receives has no AETHER-TREE: line, only the sentence that its directory is the copy (D4)', async (t) => {
+  const repo = leadRepo(t)
+  const side = path.join(repo.dir, '.worktrees', 'side')
+  repo.git('worktree', 'add', '-q', '-b', 'side', side)
+  const sideReal = fs.realpathSync(side)
+  const { deps, dataDir, asked } = world(t, repo.dir)
+  const plan = await task.begin(call(briefOf('t-reader', `AETHER-TREE: ${side}\nRead the inventory.`)), deps)
+  assert.equal(plan.kind, 'first')
+  assert.notEqual(plan.external, null, 'the task still goes out on the pair')
+  assert.equal(asked.length, 1)
+  const external = externalOf(dataDir, 't-reader')
+  for (const prompt of [external.task.prompt, fs.readFileSync(path.join(dataDir, 'delegates', 'briefs', `${log.fileKey('s1', 't-reader')}-1.md`), 'utf8')]) {
+    assert.ok(!prompt.split('\n').some((line) => line.trimStart().startsWith('AETHER-TREE:')), 'no AETHER-TREE: line reaches the reader')
+    assert.ok(prompt.includes('Your working directory already is a copy of the tree this task named'), 'the sentence saying its directory is the copy')
+    assert.ok(prompt.includes('Read the inventory.'), 'the work itself is unchanged')
+    assert.equal(task.parseBrief(prompt).tree, null, 'the sentence cannot be parsed back into a tree')
+  }
+  assert.equal(launchOf(dataDir, 't-reader').tree, sideReal, 'the launch line keeps the tree for the system records')
+})
+
+test('issue 241: a brief naming a path in another worktree of the repository is told that AETHER-TREE would let it run on another harness', async (t) => {
+  const repo = leadRepo(t)
+  const side = path.join(repo.dir, '.worktrees', 'side')
+  repo.git('worktree', 'add', '-q', '-b', 'side', side)
+  const sideReal = fs.realpathSync(side)
+  const noted = path.join(sideReal, 'notes.md')
+  fs.writeFileSync(noted, 'side notes\n')
+  const { plan, asked, launch } = await decide(t, `Read ${noted} and say what it holds.`, { cwd: repo })
+  assert.equal(launch.outside, noted)
+  assert.equal(plan.external, null, 'the task still stays on Claude')
+  assert.equal(asked.length, 0, 'no pair is picked')
+  assert.ok(plan.notes.join('\n').includes(`Adding AETHER-TREE: ${sideReal} to the brief would let it run on another harness.`), 'the one-sentence hint names the worktree')
+})
+
+test('issue 241: a brief naming a path outside the repository gets no AETHER-TREE hint: it stays on Claude by design', async (t) => {
+  const repo = leadRepo(t)
+  const outsideFile = path.join(tempDir(t, 'aether-outside-'), 'notes.md')
+  fs.writeFileSync(outsideFile, 'notes\n')
+  const { plan, launch } = await decide(t, `Read ${outsideFile} and say what it holds.`, { cwd: repo })
+  assert.equal(launch.outside, outsideFile)
+  assert.equal(plan.external, null)
+  assert.ok(!plan.notes.join('\n').includes('AETHER-TREE'), 'no hint for a path outside any copy of the repository')
+})
+
 test('an editing task (AETHER-OWNS) is not scanned: its outside path does not keep it from a pair (D5, scope)', async (t) => {
   const repo = leadRepo(t)
   const outsideFile = path.join(tempDir(t, 'aether-outside-'), 'x.md')
