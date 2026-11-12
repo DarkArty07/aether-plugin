@@ -11,7 +11,7 @@
   - Registro: `{ run, task, reason, branch, worktree, head, outside: [archivos fuera de Owns], left: [archivos sin confirmar fuera de Owns], at, state }`, con `state` en `waiting | delivered | declined | ended`, y además `delivered: { commit, reason, at }`, `declined: { reason, at }` o `ended: { outcome, at }`. Una unidad está **atendida** cuando su `state` no es `waiting`.
   - Carga de `stuck`: el JSON `{ "reason": "<texto>" }`, con la huella de `lib/lanes.js` (`digest`).
   - Resultados de `aether-wt` (una línea de JSON): `stuck` → `{ stuck: true, task, state: 'waiting', branch, worktree, head, outside, left }`; `stuck-tick` → `{ paused, state, stop, commit?, reason? }`; `stuck-end` → `{ ended: true, task, outcome }`; `deliver` → `{ delivered: true, task, commit, reason }`; `decline` → `{ declined: true, task, reason }`; `watch` → `{ watch: 'stuck', run, task, reason, branch, worktree, head, outside, left }`, `{ watch: 'ended', run, stuck: [{ task, outcome }], message }` o `{ watch: 'silent', run, message: 'sin señal de la corrida', silentSeconds }`. Un error es `{ error }` con salida 1, como en los demás verbos.
-  - Resultado del flujo: una unidad arreglada en marcha trae `fixedByLead: { commit, reason }` (el commit de fusión) y `status: 'merged'`; ninguna otra unidad gana campos.
+  - Resultado del flujo: una unidad arreglada en marcha trae `fixedByLead: { commit, reason }` (el `commit` es el que el Lead entregó, el del arreglo que pide R10; el commit de fusión queda en `unit.commit`, como en cualquier unidad) y `status: 'merged'`; ninguna otra unidad gana campos.
 - **Mensajes en inglés, tal como están escritos aquí**, porque las pruebas los comparan; las dos frases en español de la vigilancia (`sin señal de la corrida`, `nada se trabó`) son las del spec.
 - **Los verificadores estructurales** `tests/guards-*.test.js`, `tests/dormant-030.test.js` y `tests/layers.test.js` no los edita ninguna tarea; si uno falla por un cambio, el cambio se corrige en el archivo propio.
 - **Fuera de alcance de toda tarea** (spec, «Out of scope»): la escalera, `/aether:design`, que el Lead escriba en la rama de integración mientras el flujo corre, `skills/using-aether` (no se toca ni una línea), la versión, `git push` y la fusión a `main`, y escribir bajo `specs/` o `.specify/`.
@@ -178,9 +178,10 @@ test('a compile of the same run clears the wait records, the heartbeat and the e
 ```js
 const OUTCOMES = ['expired', 'ceiling', 'declined', 'merged', 'rejected']
 
-// Abre la espera. `payload` debe ser exactamente run.stuckPayloadFile(...) (si no: `payload path must be <ruta>`),
+// Abre la espera. Primero se comprueba que la unidad esté en el grafo de la corrida (si no: `task-9 is not in run <id>`) y, después,
+// que `payload` sea exactamente run.stuckPayloadFile(...) (si no: `payload path must be <ruta>`),
 // existir, y su huella (lanes.digest del texto) debe ser `digest` (si no: `digest does not match the payload file`);
-// su JSON trae `reason` (texto no vacío). La unidad debe estar en el grafo de la corrida y no estar ya esperando
+// su JSON trae `reason` (texto no vacío). La unidad no debe estar ya esperando
 // (`task-1 is already waiting for a fix`). Guarda el trabajo con worktrees.salvageUnit (confirma en la rama lo que
 // Owns cubre), y escribe el registro en `waiting`: `outside` son los archivos cambiados de la rama que Owns no
 // cubre, y `left` los que quedaron sin confirmar fuera de Owns; `head` es la punta de la rama de la unidad.
@@ -231,7 +232,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { makeRepo, compile, commitIn } = require('./helpers.js')
+const { makeRepo, compile, commitIn, useDataDir } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const wt = require('../plugins/aether/lib/worktrees.js')
 const run = require('../plugins/aether/lib/run.js')
@@ -287,6 +288,7 @@ test('begin refuses a payload at another path, a wrong digest, an unknown unit a
 })
 
 test('a tick sleeps its seconds, writes the heartbeat and reports the state', async (t) => {
+  useDataDir(t) // the default `stopped` reads the autonomy registry: it must not read the real data directory
   const s = scenario(t)
   begin(s)
   const slept = []
@@ -300,7 +302,7 @@ test('a tick sleeps its seconds, writes the heartbeat and reports the state', as
     await assert.rejects(() => stuck.stuckTick(s.repo.dir, s.args.runId, 'task-1', bad, quick), /--seconds must be a whole number from 1 to 120/)
   }
   assert.equal((await stuck.stuckTick(s.repo.dir, s.args.runId, 'task-1', 5, { sleep: async () => {}, stopped: () => true })).stop, true)
-  // With no open autonomous run, the default says the ceiling was not reached.
+  // With no open autonomous run (the data directory of the test is empty), the default says the ceiling was not reached.
   assert.equal((await stuck.stuckTick(s.repo.dir, s.args.runId, 'task-1', 1, { sleep: async () => {} })).stop, false)
   await assert.rejects(() => stuck.stuckTick(s.repo.dir, s.args.runId, 'task-2', 5, quick), /task-2 has no stuck record/)
 })
@@ -385,20 +387,24 @@ test('a delivery and a declination are refused once the run left its end mark', 
 //  - sleep(ms) y now() se inyectan en las pruebas (por defecto setTimeout y Date.now).
 //  - La corrida debe existir (si no: `run <id> not found`).
 // En cada sondeo, en este orden:
-//  1. Si algún registro de stuckDir tiene state 'waiting' (no atendido), devuelve el de menor número de tarea:
-//     { watch: 'stuck', run, task, reason, branch, worktree, head, outside, left }.
+//  0. Calcula una vez por sondeo `silent`: la escritura más reciente bajo el directorio de la corrida (la fecha de
+//     modificación más nueva de cualquier archivo o carpeta, recursivo, sin seguir enlaces; el latido cuenta) es más
+//     vieja que `silence` segundos.
+//  1. Si algún registro de stuckDir tiene state 'waiting' (no atendido) y no `silent`, devuelve el de menor número de
+//     tarea: { watch: 'stuck', run, task, reason, branch, worktree, head, outside, left }. Un registro `waiting`
+//     de una corrida en silencio es el de un flujo muerto o detenido (nadie lo atenderá: cada pausa de la espera
+//     escribe el latido): no se avisa como trabada, y el paso 3 lo avisa como `silent`.
 //  2. Si existe launchEndFile, devuelve { watch: 'ended', run, stuck: [{ task, outcome }], message }, con `outcome` el
 //     de ended.outcome o, si no lo hay, el state del registro; message es `nada se trabó` sin registros y
 //     `hubo <n> unidades trabadas` (`hubo 1 unidad trabada`) con ellos.
-//  3. Si la escritura más reciente bajo el directorio de la corrida (la fecha de modificación más nueva de cualquier
-//     archivo o carpeta, recursivo, sin seguir enlaces; el latido cuenta) es más vieja que `silence` segundos,
-//     devuelve { watch: 'silent', run, message: 'sin señal de la corrida', silentSeconds }.
+//  3. Si `silent`, devuelve { watch: 'silent', run, message: 'sin señal de la corrida', silentSeconds }, haya o no
+//     un registro `waiting`.
 //  4. Si no, duerme `interval` y sondea otra vez.
 async function watchCommand(cwd, runId, options) {}
 module.exports = { watchCommand }
 ```
 
-`plugins/aether/lib/worktrees.js`: `sweepRun`, cuando no se le pide `finish` (la limpieza del `finally` del flujo), y si el directorio de la corrida existe al terminar, escribe `run.launchEndFile(mainRoot, runId)` con `{ run, at: <ISO> }`. Con `finish` que borra el directorio, no deja nada. Ningún otro comportamiento de `sweepRun` cambia.
+`plugins/aether/lib/worktrees.js`: `sweepRun(cwd, runId, { finish = false, endMark = false } = {})` gana la opción `endMark`. Solo con `endMark: true`, y si el directorio de la corrida existe al terminar, escribe `run.launchEndFile(mainRoot, runId)` con `{ run, at: <ISO> }`; sin la opción no escribe nada, y con `finish` que borra el directorio tampoco deja nada. La opción la pasa únicamente el bin `aether-wt sweep --run` (tarea 4: `endMark` cuando no hay `--finish`), que es lo que ejecuta la limpieza del `finally` del flujo. **`sweepStale` no la pasa** (llama a `sweepRun(cwd, id)` sin opciones, `worktrees.js:1408`), ni la pasa `report.js` (`finish: true`): una pasada obsoleta que conserva el directorio de una corrida (parches, ramas guardadas o retenidas) no escribe en él, porque su prueba de actividad (`modifiedSince`, `worktrees.js:1317-1329`, usada en `:1400`) mira las fechas de los archivos del directorio y una marca nueva haría que esa corrida pareciera activa y que las pasadas siguientes la saltaran. Ningún otro comportamiento de `sweepRun` cambia.
 
 **Tests (write first):**
 
@@ -410,7 +416,7 @@ module.exports = { watchCommand }
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
-const { makeRepo, compile, age } = require('./helpers.js')
+const { makeRepo, compile, age, ageRun, commitIn, useDataDir } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const run = require('../plugins/aether/lib/run.js')
 const wt = require('../plugins/aether/lib/worktrees.js')
@@ -492,19 +498,32 @@ test('a run with no sign of life ends the watch as silent, from the last write a
   const out = await watchCommand(s.repo.dir, s.args.runId, { interval: 0.001, silence: 600, sleep: async () => {} })
   assert.deepEqual([out.watch, out.message], ['silent', 'sin señal de la corrida'])
   assert.ok(out.silentSeconds >= 7200)
-  // A heartbeat is a sign of life: with it the watch goes on, and then the end mark ends it.
+  // A heartbeat is a sign of life: with it the watch goes on, and then the end mark ends it. The watch writes nothing
+  // and polls before it sleeps, so the heartbeat is written before the second watch starts (it also renews the
+  // directory time), as a pause of the wait would have written it.
+  fs.writeFileSync(run.heartbeatFile(s.repo.dir, s.args.runId), '{}\n')
   let polls = 0
   const alive = await watchCommand(s.repo.dir, s.args.runId, {
     interval: 0.001,
     silence: 600,
     sleep: async () => {
       polls++
-      if (polls === 1) fs.writeFileSync(run.heartbeatFile(s.repo.dir, s.args.runId), '{}\n')
       if (polls === 3) fs.writeFileSync(run.launchEndFile(s.repo.dir, s.args.runId), '{}\n')
     },
   })
   assert.equal(alive.watch, 'ended')
   assert.ok(polls >= 3)
+})
+
+test('a unit left waiting by a run that died is reported as silent, not as stuck, once the run is silent past the cap', async (t) => {
+  const s = scenario(t)
+  put(s, 'task-1')
+  age(s.args.runDir, 2)
+  const out = await watchCommand(s.repo.dir, s.args.runId, { interval: 0.001, silence: 600, sleep: async () => {} })
+  assert.deepEqual([out.watch, out.message], ['silent', 'sin señal de la corrida'])
+  // A run that still beats (the record is fresh) alerts the Lead as stuck, as before.
+  put(s, 'task-1')
+  assert.equal((await watchCommand(s.repo.dir, s.args.runId, { interval: 0.001, silence: 600, sleep: async () => {} })).watch, 'stuck')
 })
 
 test('the silence cap comes from swarm.json when the watch is not given one', async (t) => {
@@ -531,22 +550,34 @@ test('a bad option and an unknown run are refused', async (t) => {
   await assert.rejects(() => watchCommand(s.repo.dir, '20261112-000000-ffff', quick), /run 20261112-000000-ffff not found/)
 })
 
-test('the cleanup of a launch (sweep --run) leaves the end mark, and a sweep that finishes the run leaves none', (t) => {
+test('sweepRun leaves the end mark only when it is asked for it, and a sweep that finishes the run leaves none', (t) => {
   const s = scenario(t)
-  assert.equal(fs.existsSync(run.launchEndFile(s.repo.dir, s.args.runId)), false)
   wt.sweepRun(s.repo.dir, s.args.runId)
+  assert.equal(fs.existsSync(run.launchEndFile(s.repo.dir, s.args.runId)), false, 'without the option it writes nothing')
+  wt.sweepRun(s.repo.dir, s.args.runId, { endMark: true })
   const mark = JSON.parse(fs.readFileSync(run.launchEndFile(s.repo.dir, s.args.runId), 'utf8'))
   assert.equal(mark.run, s.args.runId)
   assert.match(mark.at, /^\d{4}-\d\d-\d\dT/)
-  const done = wt.sweepRun(s.repo.dir, s.args.runId, { finish: true })
+  const done = wt.sweepRun(s.repo.dir, s.args.runId, { finish: true, endMark: true })
   assert.equal(done.finished, true)
   assert.equal(fs.existsSync(s.args.runDir), false)
+})
+
+test('a stale sweep that keeps the directory of a run writes no end mark into it, so the run does not look active again', (t) => {
+  useDataDir(t)
+  const s = scenario(t)
+  const unit = wt.ensure(s.repo.dir, s.args.runId, 'task-1')
+  commitIn(s.repo, unit.path, 'src/t1/a.js', 'one\n', 'work that is not merged')
+  ageRun(s.args, 48)
+  assert.deepEqual(wt.sweepStale(s.repo.dir, { hours: 24 }), { swept: [] })
+  assert.equal(fs.existsSync(s.args.runDir), true, 'the unmerged work keeps the run directory')
+  assert.equal(fs.existsSync(run.launchEndFile(s.repo.dir, s.args.runId)), false)
 })
 ```
 
 **Acceptance:**
-- `node --test tests/wt-watch.test.js` y `npm test` pasan, y las pruebas de `sweepRun` que ya existen (`tests/wt-sweep.test.js`, `tests/worktrees-cleanup.test.js`) siguen pasando: si alguna lista el contenido del directorio de la corrida, se actualiza para admitir `launch-end.json`.
-- La vigilancia no escribe nada y no toca ninguna rama; su tope de silencio sale de `swarm.json` cuando no se le da uno.
+- `node --test tests/wt-watch.test.js` y `npm test` pasan. Como `sweepRun` sin la opción `endMark` se comporta igual que hoy, las pruebas que ya existen de `sweepRun` y de la pasada obsoleta siguen pasando sin cambio: `tests/wt-sweep.test.js` y `tests/worktrees-cleanup.test.js` (de esta tarea; ninguna lista el contenido del directorio de la corrida) y las de otras tareas que no se tocan, `tests/layout-lanes.test.js`, `tests/aether-lane.test.js` y `tests/worktrees-merge.test.js`.
+- La vigilancia no escribe nada y no toca ninguna rama; su tope de silencio sale de `swarm.json` cuando no se le da uno. Una pasada obsoleta no deja `launch-end.json`.
 
 ### Task 4: Los seis verbos nuevos de `aether-wt`
 
@@ -568,7 +599,10 @@ aether-wt stuck-end <run> <task> --outcome <expired|ceiling|declined|merged|reje
 aether-wt deliver <run> <task> --commit <sha> --reason <texto>        -> wtStuck.deliverFix(cwd, run, task, { commit, reason })
 aether-wt decline <run> <task> --reason <texto>                       -> wtStuck.declineUnit(cwd, run, task, { reason })
 aether-wt watch <run> [--interval <s>] [--silence <s>]                -> await wtWatch.watchCommand(cwd, run, { interval, silence })
+aether-wt sweep --run <id> [--finish]  (ya existe)                    -> wt.sweepRun(cwd, id, { finish, endMark: !finish })
 ```
+
+El último cambia una línea del verbo `sweep` que ya existe: sin `--finish` (la limpieza del `finally` del flujo), el bin pide la marca de fin de corrida (`endMark`); con `--finish` y en `sweep --stale` no la pide.
 
 Los valores de las banderas pasan a la lib como el texto que son (la lib valida). Dos de los verbos son asíncronos: el bin espera su resultado antes de imprimirlo, y un error sigue saliendo como `{ error }` con salida 1. El texto `USAGE` y el comentario de cabecera nombran los seis verbos nuevos. El bin queda en 160 líneas o menos y sin `fs`.
 
@@ -640,6 +674,18 @@ test('the commands refuse what the libs refuse, with an error line and exit 1', 
   assert.match(wt(s.repo, 'stuck-end', s.args.runId, 'task-1', '--outcome', 'whenever').json.error, /unknown outcome/)
   assert.match(wt(s.repo, 'watch', s.args.runId, '--silence', '0').json.error, /--silence must be a whole number/)
   assert.match(wt(s.repo, 'decline', s.args.runId, 'task-2', '--reason', 'x').json.error, /task-2 is not in run|is not waiting/)
+})
+
+test('sweep --run leaves the end mark that the watch reads, and sweep --run --finish leaves none', (t) => {
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)]))
+  assert.equal(wt(repo, 'sweep', '--run', args.runId).status, 0)
+  assert.equal(fs.existsSync(path.join(args.runDir, 'launch-end.json')), true)
+  const ended = wt(repo, 'watch', args.runId, '--interval', '0.05', '--silence', '600')
+  assert.deepEqual([ended.json.watch, ended.json.message], ['ended', 'nada se trabó'])
+  const other = compile(repo, plan([task(1)]))
+  assert.equal(wt(repo, 'sweep', '--run', other.runId, '--finish').json.finished, true)
+  assert.equal(fs.existsSync(other.runDir), false)
 })
 
 test('the usage line names the six new verbs', (t) => {
@@ -802,7 +848,7 @@ Estructura (nombres libres salvo los que fija el spec; el comportamiento es el c
    - abre la espera con una orden de ops cuya etiqueta es `<unit>: stuck`: `aether-wt stuck <run> <unit> --payload <runDir>/ladder/<unit>-stuck.json --digest <huella>`, con la carga `{"reason": unit.reason}` (el mismo mecanismo que `applyVerdict`, con la ruta citada por `shellArg`); si falla, lo anota con `log()` y la unidad queda bloqueada como hoy;
    - lo dice en la vista de progreso: `log('<unit>: stuck (<reason>); waiting up to <n> s for the Lead\'s fix')`;
    - hace `Math.ceil(stuckWait / CAP_TICK_SECONDS)` pausas, cada una un `agent(opsPrompt('aether-wt stuck-tick <run> <unit> --seconds <s>', { long: true }), { agentType: 'aether:ops', model: 'haiku', effort: 'low', phase: 'Merge', label: '<unit>: stuck wait <k>/<n>', schema: OPS_SCHEMA })` directo (como `capClock`: no pasa por `call()`, no cuenta en el presupuesto); la respuesta se lee de su última línea de JSON. Una pausa cuyo `paused` no es el pedido, o que falla, termina la espera con el resultado `expired` y lo anota;
-   - `state: 'delivered'` en la respuesta: fusiona con `mergeHeld(unit)`, sin pasar por la escalera ni por una segunda espera. Fusionada (o fusionada tras el rerun por el corte), la unidad queda `merged` con `unit.commit = <commit de fusión>`, `unit.fixedByLead = { commit: <ese commit>, reason: <la del Lead> }` y **sin** veredicto `approve` de la escalera; no fusionada, queda `blocked` con `<motivo de siempre>. The Lead's fix was refused: <describeMerge(...)>` y `refusals[unit.id]` puesto como en `work()`; cierra con `stuck-end --outcome merged|rejected`;
+   - `state: 'delivered'` en la respuesta: fusiona con `mergeHeld(unit)`, sin pasar por la escalera ni por una segunda espera. Fusionada (o fusionada tras el rerun por el corte), la unidad queda `merged` con `unit.commit = <commit de fusión>`, `unit.fixedByLead = { commit: <el commit que entregó el Lead, el que trae la respuesta `delivered` de la pausa, no el de fusión>, reason: <la del Lead> }` y **sin** veredicto `approve` de la escalera; no fusionada, queda `blocked` con `<motivo de siempre>. The Lead's fix was refused: <describeMerge(...)>` y `refusals[unit.id]` puesto como en `work()`; cierra con `stuck-end --outcome merged|rejected`;
    - `state: 'declined'`: termina la espera de inmediato; la unidad queda `blocked` con `<motivo de siempre>. The Lead declined to fix it: <motivo del Lead>`; cierra con `stuck-end --outcome declined`;
    - `stop: true`: la unidad queda `blocked` con su motivo de siempre; `stuck-end --outcome ceiling`; pasadas todas las pausas sin entrega: lo mismo con `--outcome expired`;
    - siempre al final: `close(unit)` si `unit.attempts > 0`, `blockHint(unit)` si la unidad quedó `blocked`, y se resuelve `done`.
@@ -889,7 +935,8 @@ test('a stuck unit raises the alert, the others merge while it waits, and the Le
   assert.ok(fix < order.indexOf('merge task-1') && order.indexOf('merge task-1') < order.indexOf('merge task-3'), order.join(', '))
   // The fix is the unit's merge, not a rung of its ladder.
   const units = byId(run)
-  assert.deepEqual(units['task-1'].fixedByLead, { commit: 'merge-task-1', reason: 'moved the test into Owns' })
+  // fixedByLead holds the commit the Lead delivered (R10); the merge commit is the unit's own.
+  assert.deepEqual(units['task-1'].fixedByLead, { commit: 'fix1234', reason: 'moved the test into Owns' })
   assert.equal(units['task-1'].commit, 'merge-task-1')
   for (const id of ['task-2', 'task-3', 'task-4']) assert.equal(units[id].fixedByLead, undefined, id)
   assert.equal(run.calls.filter((c) => c.kind === 'ops:ladder' && c.command.rest.includes('approve') && c.unit === 'task-1').length, 0)
