@@ -722,9 +722,9 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
   const rawTimings = timingsOf(dir)
   const quotaWait = quotaWaitOf(mainRoot, runId, now)
   let timings = null
-  if (!rawTimings.none || quotaWait.count > 0 || quotaWait.ms > 0) {
+  if (!rawTimings.none || quotaWait.count > 0) {
     const byClass = { ...rawTimings.byClass }
-    if (quotaWait.count > 0 || quotaWait.ms > 0) byClass['wait-quota'] = { ...quotaWait }
+    if (quotaWait.count > 0) byClass['wait-quota'] = { ...quotaWait }
     timings = { byClass, totalMs: Object.values(byClass).reduce((sum, item) => sum + item.ms, 0) }
   }
   if (timings) notes.push(`not a model: ${timings.totalMs}ms of ${speed.run.ms}ms`)

@@ -8,8 +8,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { useDataDir, makeRepo, compile, commitIn, runBin } = require('./helpers.js')
-const { WT_BIN } = require('./helpers.js')
+const { useDataDir, tempDir, makeRepo, compile, commitIn, runBin, WT_BIN } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { T0, MIN, finishedRun } = require('./report-fixtures.js')
 const { CLASSES, recordTiming, timingsOf, quotaWaitOf } = require('../plugins/aether/lib/run-timings.js')
@@ -20,7 +19,7 @@ const iso = (ms) => new Date(ms).toISOString()
 
 test('recordTiming appends one line with the class, ms and an ISO date', (t) => {
   useDataDir(t)
-  const { repo, args } = finishedRun(t)
+  const { args } = finishedRun(t)
   recordTiming(args.runDir, 'gate', 1500)
   const lines = fs.readFileSync(path.join(args.runDir, 'timings.jsonl'), 'utf8').trim().split('\n')
   assert.equal(lines.length, 1)
@@ -30,18 +29,32 @@ test('recordTiming appends one line with the class, ms and an ISO date', (t) => 
   assert.equal(entry.at, iso(Date.parse(entry.at)))
 })
 
+test('the recorded classes are gate, merge-tests, baseline and wait-stuck, without wait-quota', () => {
+  assert.deepEqual(CLASSES, ['gate', 'merge-tests', 'baseline', 'wait-stuck'])
+})
+
 test('recordTiming throws on a class it does not record', () => {
   assert.throws(() => recordTiming('/no/such/dir', 'wait-quota', 10), /unknown timing class/)
   assert.throws(() => recordTiming('/no/such/dir', 'model', 10), /unknown timing class/)
 })
 
-test('recordTiming never throws on a failed write', () => {
-  recordTiming('/no/such/dir/aether-timings', 'gate', 10)
+test('recordTiming never throws on a failed write', (t) => {
+  const blocked = path.join(tempDir(t), 'a-file')
+  fs.writeFileSync(blocked, 'in the way\n')
+  recordTiming(path.join(blocked, 'run'), 'gate', 10)
+  assert.equal(fs.readFileSync(blocked, 'utf8'), 'in the way\n')
+})
+
+test('recordTiming writes nothing and does not throw on a duration that is not a number', (t) => {
+  const runDir = tempDir(t)
+  recordTiming(runDir, 'wait-stuck', NaN)
+  recordTiming(runDir, 'wait-stuck', undefined)
+  assert.equal(fs.existsSync(path.join(runDir, 'timings.jsonl')), false)
 })
 
 test('timingsOf totals by class', (t) => {
   useDataDir(t)
-  const { repo, args } = finishedRun(t)
+  const { args } = finishedRun(t)
   recordTiming(args.runDir, 'gate', 1000)
   recordTiming(args.runDir, 'gate', 2000)
   recordTiming(args.runDir, 'baseline', 500)
@@ -53,7 +66,7 @@ test('timingsOf totals by class', (t) => {
 
 test('timingsOf on a missing file or bad lines reports none', (t) => {
   useDataDir(t)
-  const { repo, args } = finishedRun(t)
+  const { args } = finishedRun(t)
   assert.deepEqual(timingsOf(args.runDir), { byClass: {}, totalMs: 0, none: true })
   fs.writeFileSync(path.join(args.runDir, 'timings.jsonl'), 'not json\n{"class":"gate"}\n')
   assert.deepEqual(timingsOf(args.runDir), { byClass: {}, totalMs: 0, none: true })

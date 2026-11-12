@@ -16,11 +16,12 @@ const CLASSES = ['gate', 'merge-tests', 'baseline', 'wait-stuck']
 
 // Appends one line {"class":<klass>,"ms":<integer>,"at":<ISO>} to <runDir>/timings.jsonl
 // (one write per line). Throws on a class not in CLASSES; never throws on a failed write
-// (a timing must not stop a run).
+// (a timing must not stop a run). A duration that is not a finite number, as from a record
+// whose date cannot be read, has nothing to record: it writes nothing.
 function recordTiming(runDir, klass, ms) {
   if (!CLASSES.includes(klass)) throw new Error(`unknown timing class: ${klass}`)
   const rounded = Math.round(ms)
-  if (!Number.isFinite(rounded)) throw new Error(`invalid timing ms: ${ms}`)
+  if (!Number.isFinite(rounded)) return
   try {
     fs.mkdirSync(runDir, { recursive: true })
     fs.appendFileSync(path.join(runDir, 'timings.jsonl'), JSON.stringify({ class: klass, ms: rounded, at: new Date().toISOString() }) + '\n')
