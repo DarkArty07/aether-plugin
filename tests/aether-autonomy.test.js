@@ -12,7 +12,7 @@ const MERGE = 'apruebo merge a main en todas las futuras ocasiones'
 const HOURS = 'trabaja por horas y no cuentes conmigo hasta acabar'
 const REVOKE = 'ya no fusiones a main sin preguntarme'
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | extend --hours N --usd N|unlimited --quote <text> [--session <id>] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
 
 const human = (text, time, extra = {}) =>
   JSON.stringify({ type: 'user', isSidechain: false, origin: { kind: 'human' }, entrypoint: 'sdk-cli', timestamp: time, message: { role: 'user', content: text }, ...extra })
@@ -119,6 +119,42 @@ test("a run starts from the owner's permission, records spend, and ends", (t) =>
   assert.deepEqual(cli(['status']).json, { open: false })
 })
 
+test('extend widens the ceilings of the open run without closing it (issue 253)', (t) => {
+  const { cli } = setup(t)
+  assert.equal(cli(['start', '--quote', HOURS]).status, 0)
+  const id = cli(['status']).json.id
+  const wider = cli(['extend', '--quote', HOURS, '--hours', '16'])
+  assert.equal(wider.status, 0, wider.stdout + wider.stderr)
+  assert.equal(wider.json.extended.id, id)
+  assert.deepEqual(wider.json.extended.ceilings, { hours: 16, usd: 50, source: { hours: 'owner', usd: 'default' } })
+  assert.equal(wider.json.extended.changes.length, 1)
+  assert.deepEqual([wider.json.extended.changes[0].from, wider.json.extended.changes[0].to], [{ hours: 8, usd: 50 }, { hours: 16, usd: 50 }])
+  assert.equal(cli(['status']).json.hours.ceiling, 16)
+  const dollars = cli(['extend', '--quote', HOURS, '--usd', '200'])
+  assert.equal(dollars.status, 0, dollars.stdout + dollars.stderr)
+  assert.deepEqual(dollars.json.extended.ceilings.usd, 200)
+  const free = cli(['extend', '--quote', HOURS, '--usd', 'unlimited'])
+  assert.equal(free.status, 0, free.stdout + free.stderr)
+  assert.deepEqual(free.json.extended.ceilings, { hours: 16, usd: null, source: { hours: 'owner', usd: 'owner' } })
+  assert.equal(free.json.extended.changes.length, 3)
+  const st = cli(['status'])
+  assert.deepEqual([st.json.usd.ceiling, st.json.stop], [null, null])
+  assert.equal(cli(['end', '--outcome', 'done']).status, 0)
+  assert.deepEqual(cli(['status']).json, { open: false })
+})
+
+test('extend refuses a bad quote, no open run, and a bad value (issue 253)', (t) => {
+  const { cli } = setup(t)
+  const none = cli(['extend', '--quote', HOURS, '--hours', '16'])
+  assert.equal(none.status, 1)
+  assert.deepEqual(none.json, { error: 'no open run' })
+  assert.equal(cli(['start', '--quote', HOURS]).status, 0)
+  const bad = cli(['extend', '--quote', 'trabaja toda la noche sin parar', '--hours', '16'])
+  assert.equal(bad.status, 2)
+  assert.deepEqual(bad.json, { verified: false, reason: `the quote is not in the owner's messages of session ${SESSION}` })
+  assert.equal(cli(['status']).json.hours.ceiling, 8)
+})
+
 test('bin refuses an interactive Lead session without an approved plan', (t) => {
   const { repo, cli, config } = setup(t)
   const data = tempDir(t, 'aether-data-')
@@ -172,6 +208,12 @@ test('bad input exits 1 with an error', (t) => {
     [['revoke', '--quote', REVOKE], USAGE],
     [['revoke', '--class', 'merge-main', '--quote'], '--quote needs a value'],
     [['start', '--hours', '8'], USAGE],
+    [['extend'], USAGE],
+    [['extend', '--quote', HOURS], USAGE],
+    [['extend', '--hours', '8'], USAGE],
+    [['extend', '--quote', HOURS, '--hours', 'abc'], 'invalid ceiling: abc'],
+    [['extend', '--quote', HOURS, '--hours', '-3'], 'invalid ceiling: -3'],
+    [['extend', '--quote', HOURS, '--usd', 'limitado'], 'invalid ceiling: limitado'],
     [['start', '--quote', HOURS, '--hours', 'abc'], 'invalid ceiling: abc'],
     [['start', '--quote', HOURS, '--hours', ''], 'invalid ceiling: '],
     [['start', '--quote', HOURS, '--usd', 'xyz'], 'invalid ceiling: xyz'],
