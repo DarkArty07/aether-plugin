@@ -16,6 +16,7 @@ const { readAllLogs, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
 const { judge } = require('./baseline.js')
 const { isSessionId, newestIn } = require('./spend.js')
+const { timingsOf, quotaWaitOf } = require('./run-timings.js')
 const { archiveSpend, noteFailure, clearFailure } = require('./spend-archive.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
@@ -204,7 +205,7 @@ function readResults(dir) {
 // A question the owner must answer: a string that is not blank.
 const isQuestion = (question) => typeof question === 'string' && question.trim() !== ''
 
-// The ladder summary of a run across its launches: first-try approvals, corrections, rises, gate rejections,
+// The ladder summary of a run across its launches: first-try approvals, rungs, rises, gate rejections,
 // filled retries and the units. Null when no unit of any launch brings a ladder block.
 function ladderOf(results) {
   const hasAny = results.some((result) => (result.units || []).some((unit) => unit && unit.ladder && typeof unit.ladder === 'object'))
@@ -280,6 +281,10 @@ function ladderOf(results) {
 // is kept. A later launch whose review ran replaces it. Only a review whose status is `done` counts as a review.
 // `adopted` maps a task to the Lead's record of integrating it by hand (aether-wt adopt). A unit the swarm merged
 // is not counted as adopted; any other counts as integrated, and as the swarm's status no longer.
+// `fixedUnits` lists the units the Lead fixed in flight (their `fixedByLead` commit and reason): the latest
+// launch that names a unit sets its entry, in order of appearance, and a later launch that names the unit
+// without a fix clears it, so a unit fixed on launch 1 and blocked without a fix on launch 2 has no entry.
+// A fixed unit the swarm merged counts as merged (and integrated); its entry also names the widened files.
 function qualityOf(results, adopted = {}) {
   if (results.length === 0) {
     const unknown = ['launches', 'units', 'merged', 'adopted', 'integrated', 'adoptedUnits', 'blocked', 'questions', 'skipped', 'notRun', 'escalated', 'climbed', 'attempts', 'agents', 'findings', 'finalReview']
@@ -297,6 +302,8 @@ function qualityOf(results, adopted = {}) {
         const entry = { id: unit.id, commit: unit.fixedByLead.commit, reason: unit.fixedByLead.reason }
         if (unit.fixedByLead.widened !== undefined) entry.widened = unit.fixedByLead.widened
         fixedUnits.set(unit.id, entry)
+      } else if (unit && unit.id !== undefined) {
+        fixedUnits.delete(unit.id)
       }
       const before = units.get(unit.id)
       const tiers = unit.tiers || []
@@ -709,6 +716,18 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     swarm: usage ? span(inRun.filter((entry) => isAether(usage, entry))) : null,
     session: usage ? span(usage.entries) : null,
   }
+  // The durations around the models (spec 036 R18): the recorded classes with the quota wait
+  // among them. A run with no timings.jsonl and no quota pause that names it reports as today,
+  // with no error and no timings key.
+  const rawTimings = timingsOf(dir)
+  const quotaWait = quotaWaitOf(mainRoot, runId, now)
+  let timings = null
+  if (!rawTimings.none || quotaWait.count > 0 || quotaWait.ms > 0) {
+    const byClass = { ...rawTimings.byClass }
+    if (quotaWait.count > 0 || quotaWait.ms > 0) byClass['wait-quota'] = { ...quotaWait }
+    timings = { byClass, totalMs: Object.values(byClass).reduce((sum, item) => sum + item.ms, 0) }
+  }
+  if (timings) notes.push(`not a model: ${timings.totalMs}ms of ${speed.run.ms}ms`)
   const adopted = readIfThere(path.join(dir, 'adopted.json')) || {}
   const quality = { ...qualityOf(results, adopted), tests: tests ? runTests(graph, dir) : null }
   quality.ladder = ladderOf(results)
@@ -743,6 +762,7 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     speed,
     cost,
     lanes,
+    ...(timings ? { timings } : {}),
     quality,
     radar: radarOf({ speed, cost, lanes, quality }),
     superdelegation: superdelegationOf(env),

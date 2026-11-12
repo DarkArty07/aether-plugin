@@ -76,6 +76,37 @@ test('a launch that ended with a unit fixed in flight is in the spend of an open
   assert.equal(st.usd.spent, cents(figure))
 })
 
+test('a unit fixed on launch 1 and blocked without a fix on launch 2 has no fixedUnits entry (#256 3)', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t, { result: false })
+  const r1 = path.join(args.runDir, 'result-1.json')
+  fs.writeFileSync(
+    r1,
+    JSON.stringify({
+      units: [{ id: 'task-1', status: 'merged', attempts: 1, fixedByLead: { commit: '111111111111', reason: 'fixed task-1 first' } }],
+    }) + '\n',
+  )
+  const r2 = path.join(args.runDir, 'result.json')
+  fs.writeFileSync(
+    r2,
+    JSON.stringify({
+      units: [{ id: 'task-1', status: 'blocked', question: 'Which?', attempts: 1 }],
+    }) + '\n',
+  )
+  const { quality } = report(repo.dir, args.runId, { tests: false })
+  assert.equal('fixedUnits' in quality, false)
+  assert.deepEqual([quality.merged, quality.blocked], [0, 1])
+})
+
+test('the quality comment names fixedUnits, and neither comment says correction (#256 2, #236 5)', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'report.js'), 'utf8')
+  const delegateLog = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'delegate-log.js'), 'utf8')
+  const comment = source.slice(0, source.indexOf('function qualityOf'))
+  assert.match(comment, /fixedUnits/)
+  assert.doesNotMatch(source, /correction/i)
+  assert.doesNotMatch(delegateLog, /correction/i)
+})
+
 test('a later launch replaces the fixedByLead entry of the same unit in order of appearance', (t) => {
   useDataDir(t)
   const { repo, args } = finishedRun(t, { result: false })
