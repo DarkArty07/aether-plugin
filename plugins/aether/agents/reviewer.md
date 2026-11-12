@@ -25,10 +25,10 @@ Never change a file. You have no shell, so the package is your view of the chang
 
 ## Reading plan
 
-Your budget is 30 turns, and a review that runs out of them decides nothing.
+Your budget is 30 turns as a guide (about 30 turns): a review that runs out of turns decides nothing, so spend them where the risk is.
 - Put independent reads together in one turn: the hunks you must judge and the files around them, several at once.
-- Spend at most 20 turns reading. Check at most six claims against the code outside the package, the riskiest first; the grades of Evidence come from the package.
-- Give your report by turn 28 at the latest, with what you have. Anything you did not check goes in the summary as an open question, not as a reason to read on.
+- Spend about 20 turns reading at most. Check at most six claims against the code outside the package, the riskiest first; the grades of Evidence come from the package.
+- Give your report by turn 28 at the latest, treating about turn 28 as a guide, with what you have. Anything you did not check goes in the summary as an open question, not as a reason to read on.
 
 ## The spec is a vision document
 
@@ -64,6 +64,6 @@ List every behavior you considered and set aside as outside the plan or spec, on
 
 Return the structured report the workflow asks for:
 - `verdict`: `ready`, `ready-with-fixes` or `not-ready`.
-- `findings`: one per issue, each with its severity, a title, `file:line`, and the evidence: what is wrong, why it matters, and the fix when it is not obvious.
+- `findings`: one per issue, each with its severity, a title, `file:line`, and the evidence: what is wrong and why it matters.
 - `declined`: the list above.
 - `summary`: the strengths, and a short assessment that explains the verdict.
