@@ -14,7 +14,10 @@ const { task: planTask, plan } = require('./plan-fixtures.js')
 const BIN = path.join(PLUGIN, 'bin', 'aether-delegate')
 const AUTONOMY = path.join(PLUGIN, 'bin', 'aether-autonomy')
 const NATIVE = { lanes: false, harnesses: [], deadlines: { quotaMs: 1 } }
-const OWNS = 'AETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(0)"\n'
+const OWNS = 'AETHER-OWNS: src/**\n'
+// Exits 0 and writes nothing: the approve verdict runs this command in the worktree before the merge, so a command
+// that creates a file would fail the owns check.
+const TASK_TESTS = 'AETHER-TESTS: node -e "process.exit(0)"\n'
 const NO_WORKTREE = 'approve needs the worktree of the attempt (--worktree) or the checks of its result'
 const SESSION = 'sess-approve-1'
 const MERGE_QUOTE = 'apruebo merge a main en todas las futuras ocasiones'
@@ -77,6 +80,8 @@ test('on a feature branch approve gives the verdict, merges the worktree and run
   assert.equal(r.json.approved, true)
   assert.equal(r.json.merged, true)
   assert.equal(r.json.tests, 'passed')
+  assert.equal(r.json.testCommand, 'npm test')
+  assert.equal(r.json.testSource, 'default')
   assert.equal(r.json.branch, 'feature/x')
   assert.notEqual(repo.git('rev-parse', 'HEAD'), before)
   assert.equal(fs.readFileSync(path.join(repo.dir, 'src', 'a.js'), 'utf8'), 'from the delegate\n')
@@ -110,7 +115,26 @@ test('the testCommand of .aether/settings.json replaces npm test', async (t) => 
   const r = approve(repo, dataDir, ['--task', 't1', '--worktree', side])
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.equal(r.json.tests, 'passed')
+  assert.equal(r.json.testCommand, 'echo settings > settings-marker.txt')
+  assert.equal(r.json.testSource, 'settings')
   assert.equal(fs.readFileSync(path.join(repo.dir, 'settings-marker.txt'), 'utf8'), 'settings\n')
+  assert.equal(fs.existsSync(path.join(repo.dir, 'marker.txt')), false, 'npm test did not run')
+})
+
+test("the task's own AETHER-TESTS command runs, ahead of settings.json and npm test", async (t) => {
+  const repo = makeRepo(t)
+  commitPackage(repo, false)
+  fs.mkdirSync(path.join(repo.dir, '.aether'), { recursive: true })
+  fs.writeFileSync(path.join(repo.dir, '.aether', 'settings.json'), JSON.stringify({ testCommand: 'echo settings > settings-marker.txt' }))
+  const { dataDir, deps } = world(t, repo.dir)
+  await task.begin(call(BRIEF('t1', OWNS + TASK_TESTS)), deps)
+  const side = sideWorktree(t, repo, 'src/a.js', 'x\n')
+  const r = approve(repo, dataDir, ['--task', 't1', '--worktree', side])
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.tests, 'passed', JSON.stringify(r.json))
+  assert.equal(r.json.testCommand, 'node -e "process.exit(0)"')
+  assert.equal(r.json.testSource, 'task')
+  assert.equal(fs.existsSync(path.join(repo.dir, 'settings-marker.txt')), false)
   assert.equal(fs.existsSync(path.join(repo.dir, 'marker.txt')), false, 'npm test did not run')
 })
 
