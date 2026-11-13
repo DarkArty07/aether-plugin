@@ -38,8 +38,6 @@ function attemptOf(dataDir, task) {
   return { launch, result }
 }
 
-const editsOf = (launch) => launch.edits === true || (Array.isArray(launch.owns) && launch.owns.length > 0)
-
 // The run and task of an external pair's unit branch, aether/<runId>/<taskId>, or null.
 function unitOf(branch) {
   const match = typeof branch === 'string' ? UNIT_BRANCH.exec(branch) : null
@@ -120,7 +118,8 @@ async function approve(cwd, { task, worktree, ignore = [], env: given = {} } = {
   const branch = gitOrNull(['branch', '--show-current'], cwd)?.stdout ?? ''
   const { launch, result } = typeof task === 'string' ? attemptOf(dataDir, task) : { launch: null }
   if (!launch) return stopped(branch, 'unknown task')
-  if (!editsOf(launch)) return stopped(branch, 'the task did not edit: judge it with aether-delegate verdict')
+  // An editing task is one with AETHER-OWNS, as delegate-task.js reads it.
+  if (launch.edits !== true && !(Array.isArray(launch.owns) && launch.owns.length > 0)) return stopped(branch, 'the task did not edit: judge it with aether-delegate verdict')
   const unit = unitOf(result?.branch)
   const hasWorktree = typeof worktree === 'string' && worktree.trim() !== ''
   if (!unit && !hasWorktree) return stopped(branch, NO_WORKTREE)
