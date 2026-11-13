@@ -19,7 +19,9 @@ const { roleBody, claudeMdSections, WORKDIR_RULE } = require('./lane-calls.js')
 const { priceEntry, loadPrices } = require('./prices.js')
 const { choose, enabled: superdelegationEnabled } = require('./superdelegation.js')
 const pairsTable = require('./pairs.js')
-const { excludeList, harnessViews, latestReadings } = require('./lane-pick.js')
+const { excludeList, latestReadings } = require('./lane-pick.js')
+const quota = require('./lane-quota.js')
+const { pickData } = require('./pick-data.js')
 
 const PLUGIN_BIN = path.join(__dirname, '..', 'bin')
 const SKILLS_DIR = path.join(__dirname, '..', 'skills')
@@ -1260,7 +1262,24 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     const onRead = ({ groups }) => {
       readings[name] = groups
     }
-    Object.assign(harnesses, harnessViews(config, [name], { dataDir, now, latest, onRead }))
+    if (!Object.hasOwn(config.harnesses, name)) continue
+    const settings = config.harnesses[name]
+    const taken = quota.harnessView(name, settings, { reserve: config.reserve, now, dataDir, fresh: false, latest: latest[name] ?? null, onRead, assemble: false })
+    if (taken.installed !== true) {
+      harnesses[name] = { command: taken.command, path: taken.path, installed: false, version: null, groups: {} }
+      continue
+    }
+    const prepared = pickData(config, name, taken.reading, {
+      now, dataDir, lifeMs: quota.lifeMsOf(settings), extraGroups: taken.error === undefined, groupError: taken.error, honorLiftResult: true,
+    })
+    harnesses[name] = {
+      command: taken.command,
+      path: taken.path,
+      installed: true,
+      version: taken.version,
+      ...(taken.error ? { error: taken.error } : {}),
+      groups: prepared.groups,
+    }
   }
   const chosen = chooseSeat({ config, pairs: table, seat, author, harnesses, exclude, offered: (name, model, effort) => offeredByListing(name, model, effort) })
   if (chosen.native) {

@@ -15,10 +15,12 @@ const { sleep: commonSleep } = require('./common.js')
 
 const OUTCOMES = ['expired', 'ceiling', 'declined', 'merged', 'rejected']
 
-function loadTasks(mainRoot, runId) {
-  const graph = worktrees.loadGraph(mainRoot, runId)
-  const units = run.readUnits(run.runDir(mainRoot, runId))
-  return { ...graph, tasks: { ...units, ...(graph.tasks || {}) } }
+// The same shape adoptUnit accepts: a hex id or a branch-like name, never a leading dash.
+const COMMIT_SHAPE = /^[0-9A-Za-z][0-9A-Za-z._/-]*$/
+
+function timeWait(mainRoot, runId, record, endAt) {
+  const ms = Date.parse(endAt) - Date.parse(record.at)
+  require('./run-timings.js').recordTiming(run.runDir(mainRoot, runId), 'wait-stuck', ms)
 }
 
 function readRecord(mainRoot, runId, taskId) {
@@ -35,7 +37,7 @@ function stuckBegin(cwd, runId, taskId, { payload, digest } = {}) {
   run.assertRunId(runId)
   run.assertTaskId(taskId)
   const { mainRoot } = repoPaths(cwd)
-  const tasks = loadTasks(mainRoot, runId).tasks
+  const tasks = worktrees.loadRunGraph(mainRoot, runId).tasks
   if (!tasks[taskId]) throw new Error(`${taskId} is not in run ${runId}`)
   const expected = run.stuckPayloadFile(mainRoot, runId, taskId)
   if (typeof payload !== 'string' || path.resolve(payload) !== path.resolve(expected)) {
@@ -123,9 +125,18 @@ function stuckEnd(cwd, runId, taskId, outcome) {
   if (record.state === 'ended') {
     return { ended: true, task: taskId, outcome: record.ended.outcome, already: true }
   }
+  // A delivered fix is the Lead's answer. expired and ceiling must not rewrite
+  // it; the flow reads state delivered and merges. merged, rejected and
+  // declined still close the record, and they add no second wait timing.
+  if (record.state === 'delivered' && (outcome === 'expired' || outcome === 'ceiling')) {
+    return { ended: false, task: taskId, state: 'delivered' }
+  }
+  const at = new Date().toISOString()
+  const waiting = record.state === 'waiting'
   record.state = 'ended'
-  record.ended = { outcome, at: new Date().toISOString() }
+  record.ended = { outcome, at }
   run.writeJson(run.stuckFile(mainRoot, runId, taskId), record)
+  if (waiting) timeWait(mainRoot, runId, record, at)
   return { ended: true, task: taskId, outcome }
 }
 
@@ -150,13 +161,13 @@ function widenPathError(p) {
 
 // The sorted widen list of one --widen flag, or null when no flag was given. Every failing
 // path rejects the whole delivery, and the record stays waiting: the throw happens before
-// the record is written. Owns comes from loadTasks (the graph plus readUnits, so a unit the
+// the record is written. Owns comes from loadRunGraph (the graph plus readUnits, so a unit the
 // last launch dropped still owns its files), and the merged state from mergedUnits, not
 // unitStatus: a merged unit whose branch was removed reads as not merged from its status.
 function widenList(mainRoot, cwd, runId, taskId, widen) {
   if (widen === undefined) return null
   if (typeof widen !== 'string') throw new Error('invalid widen flag: it takes a comma-separated list of paths')
-  const graph = loadTasks(mainRoot, runId)
+  const graph = worktrees.loadRunGraph(mainRoot, runId)
   const tasks = graph.tasks
   const task = tasks[taskId]
   if (!task) throw new Error(`${taskId} is not in run ${runId}`)
@@ -194,16 +205,19 @@ function deliverFix(cwd, runId, taskId, { commit, reason, widen } = {}) {
   if (fs.existsSync(run.launchEndFile(mainRoot, runId))) throw new Error(`run ${runId} has ended`)
   const record = readWaiting(mainRoot, runId, taskId)
   const want = commit.trim()
-  const resolved = git(['rev-parse', '--verify', '--quiet', `${want}^{commit}`], mainRoot, { allowFail: true })
+  if (!COMMIT_SHAPE.test(want)) throw new Error(`${want} is not a commit: a commit is a hex id or a branch-like name and must not start with -`)
+  const resolved = git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${want}^{commit}`], mainRoot, { allowFail: true })
   if (resolved.status !== 0 || resolved.stdout === '') throw new Error(`${want} is not a commit of this repository`)
   const sha = resolved.stdout
   const branch = run.unitBranch(runId, taskId)
   const tip = git(['rev-parse', '--verify', '--quiet', branch], mainRoot, { allowFail: true })
   if (tip.status !== 0 || tip.stdout !== sha) throw new Error(`the commit must be the tip of ${branch}`)
   const widened = widenList(mainRoot, cwd, runId, taskId, widen)
+  const at = new Date().toISOString()
   record.state = 'delivered'
-  record.delivered = { commit: sha, reason, at: new Date().toISOString(), ...(widened ? { widen: widened } : {}) }
+  record.delivered = { commit: sha, reason, at, ...(widened ? { widen: widened } : {}) }
   run.writeJson(run.stuckFile(mainRoot, runId, taskId), record)
+  timeWait(mainRoot, runId, record, at)
   return { delivered: true, task: taskId, commit: sha, reason, ...(widened ? { widen: widened } : {}) }
 }
 
@@ -214,9 +228,11 @@ function declineUnit(cwd, runId, taskId, { reason } = {}) {
   const { mainRoot } = repoPaths(cwd)
   if (fs.existsSync(run.launchEndFile(mainRoot, runId))) throw new Error(`run ${runId} has ended`)
   const record = readWaiting(mainRoot, runId, taskId)
+  const at = new Date().toISOString()
   record.state = 'declined'
-  record.declined = { reason, at: new Date().toISOString() }
+  record.declined = { reason, at }
   run.writeJson(run.stuckFile(mainRoot, runId, taskId), record)
+  timeWait(mainRoot, runId, record, at)
   return { declined: true, task: taskId, reason }
 }
 
