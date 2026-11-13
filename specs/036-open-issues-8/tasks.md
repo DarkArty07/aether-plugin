@@ -476,7 +476,7 @@ New `lib/delegate-approve.js` exports `approve(cwd, { task, worktree, ignore = [
 
 **Aether:**
 - Area: skills
-- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/autonomous-runs/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `tests/session-start-parts.test.js`, `tests/using-aether-030.test.js`, `tests/autonomous-runs-skill.test.js`, `tests/swarm-stuck-docs.test.js`, `tests/docs-030.test.js`, `tests/delegate-skill.test.js`, `tests/quota-brake-docs.test.js`
+- Owns: `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/autonomous-runs/SKILL.md`, `plugins/aether/skills/swarm/SKILL.md`, `tests/session-start-parts.test.js`, `tests/using-aether-030.test.js`, `tests/autonomous-runs-skill.test.js`, `tests/swarm-stuck-docs.test.js`, `tests/docs-030.test.js`, `tests/delegate-skill.test.js`, `tests/quota-brake-docs.test.js`, `tests/bootstrap-names.test.js`
 - Depends on: Task 8 — it edits `swarm/SKILL.md` first
 - Depends on: Task 18 — R27 describes the Muse reading after the pick-data work
 - Depends on: Task 19 — the quota-brake paragraph names its command
