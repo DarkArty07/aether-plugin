@@ -3,7 +3,7 @@
 // Task 3 (spec 036, #255 R7): the brief the system builds for an editing
 // delegate on another harness never asks for `checkout --detach` (only the
 // Claude prompt and its rescue carry `startSection`), and when the Lead's own
-// prompt asks for it, `begin` says so in a `note` without changing anything.
+// prompt asks for it, `begin` says so in `plan.notes` without changing anything.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -29,6 +29,7 @@ function world(t, { settings = NATIVE, pick = null, cwd = null, quota = [] } = {
 const call = (prompt, extra = {}) => ({ session: 's1', event: { subagent_type: 'general-purpose', description: 'd', prompt, ...extra } })
 const BRIEF = (id, more = '') => `AETHER-TASK: ${id}\n${more}Do the work.`
 const briefPathOf = (dataDir, id, attempt = 1) => path.join(dataDir, 'delegates', 'briefs', `${log.fileKey('s1', id)}-${attempt}.md`)
+const detachNotes = (plan) => (plan.notes || []).filter((note) => String(note).includes('checkout --detach'))
 
 test('the brief of an editing external pair asks for no checkout --detach and names no worktree start (R7, R8)', async (t) => {
   const repo = makeRepo(t)
@@ -38,7 +39,8 @@ test('the brief of an editing external pair asks for no checkout --detach and na
   const brief = fs.readFileSync(briefPathOf(dataDir, 'e1'), 'utf8')
   assert.equal(brief.includes('checkout --detach'), false, 'the system does not ask the other harness for checkout --detach')
   assert.equal(brief.includes('Where your worktree starts'), false, 'startSection stays on the Claude prompt and its rescue')
-  assert.equal('note' in plan, false, 'a clean prompt carries no note')
+  assert.deepEqual(detachNotes(plan), [], 'a prompt without the line carries no detach note')
+  assert.equal('note' in plan, false, 'the note is not a separate field')
 })
 
 test('the Claude prompt of an editing task keeps Where your worktree starts and the base commit (R7, R8)', async (t) => {
@@ -49,7 +51,8 @@ test('the Claude prompt of an editing task keeps Where your worktree starts and 
   assert.equal(plan.external, null, 'no pair: the delegate runs on Claude')
   assert.ok(plan.args.prompt.includes('Where your worktree starts'))
   assert.ok(plan.args.prompt.includes(base), 'the prompt names the recorded base')
-  assert.equal('note' in plan, false, 'a clean prompt carries no note')
+  assert.deepEqual(detachNotes(plan), [], 'a Claude prompt carries no detach note')
+  assert.equal('note' in plan, false, 'the note is not a separate field')
 })
 
 test('a Lead prompt that asks for checkout --detach gets a note and the brief is left as written (R7)', async (t) => {
@@ -59,7 +62,8 @@ test('a Lead prompt that asks for checkout --detach gets a note and the brief is
   const { deps, dataDir } = world(t, { settings: EXTERNAL, pick: GROK, cwd: repo.dir })
   const plan = await task.begin(call(BRIEF('e3', `AETHER-OWNS: src/**\n${leadLine}\n`)), deps)
   assert.ok(plan.external, 'the attempt runs on the external pair')
-  assert.equal(plan.note, NOTE)
+  assert.ok(plan.notes.includes(NOTE), 'the Lead is told in plan.notes')
+  assert.equal('note' in plan, false, 'the note is not a separate field')
   const brief = fs.readFileSync(briefPathOf(dataDir, 'e3'), 'utf8')
   assert.ok(brief.includes(leadLine), 'the brief keeps the Lead line unchanged')
 })
@@ -70,6 +74,7 @@ test('a Claude delegate with that prompt gets no note (R7)', async (t) => {
   const { deps } = world(t, { cwd: repo.dir })
   const plan = await task.begin(call(BRIEF('e4', `AETHER-OWNS: src/**\nRun git checkout --detach ${sha} first.\n`)), deps)
   assert.equal(plan.external, null, 'no pair: the delegate runs on Claude')
+  assert.deepEqual(detachNotes(plan), [], 'Claude gets no detach note')
   assert.equal('note' in plan, false)
   assert.ok(plan.args.prompt.includes('checkout --detach'), 'the Claude prompt still carries its own start section')
 })
