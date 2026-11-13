@@ -259,3 +259,104 @@ test('a wait that is not a whole number of seconds from 0 is refused', async (t)
   const run = await runWorkflow(four(t), { stuckWait: -1 })
   assert.match(String(run.error && run.error.message), /stuckWaitSeconds/)
 })
+
+const linesMatching = (run, pattern) => run.logs.filter((line) => pattern.test(line))
+const oneRung = (() => {
+  const ladder = require('../plugins/aether/config/ladder.json')
+  return { ...ladder, rungs: [ladder.rungs[0]] }
+})()
+
+test('#256 22: a stuck-end that answers state delivered merges the unit instead of expiring it', async (t) => {
+  const run = await runWorkflow(four(t), {
+    stuckWait: 120,
+    implementer: stuckUnits('task-1'),
+    ops: (call, wt) => {
+      if (call.kind === 'ops:stuck-end' && call.command.rest.at(-1) === 'expired') {
+        return { ended: false, task: 'task-1', state: 'delivered', commit: 'fix1234', reason: 'arrived between the tick and the end' }
+      }
+      return wt(call)
+    },
+    deadline: clock((unit, n, seconds) => reply(seconds)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(byId(run)['task-1'].status, 'merged')
+  assert.deepEqual(byId(run)['task-1'].fixedByLead, { commit: 'fix1234', reason: 'arrived between the tick and the end' })
+  const ends = run.calls.filter((c) => c.kind === 'ops:stuck-end' && c.unit === 'task-1').map((c) => c.command.rest.at(-1))
+  assert.deepEqual(ends, ['expired', 'merged'])
+  assert.equal(run.calls.filter((c) => c.kind === 'ops:merge' && c.unit === 'task-1').length, 1)
+})
+
+test('#256 23: a unit rescued through a fix is not a first try', async (t) => {
+  // One rung: the spent ladder is an exhausted verdict, not a rise, so nothing else clears firstTry.
+  const run = await runWorkflow(four(t), {
+    stuckWait: 120,
+    ladder: oneRung,
+    implementer: stuckUnits('task-1'),
+    deadline: clock((unit, n, seconds) => reply(seconds, { state: 'delivered', commit: 'fix1234', reason: 'moved the test into Owns' })),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const unit = byId(run)['task-1']
+  assert.equal(unit.status, 'merged')
+  assert.equal(unit.fixedByLead.commit, 'fix1234')
+  assert.deepEqual(unit.ladder.rises, { failed: 0, infeasible: 0 })
+  assert.equal(unit.ladder.firstTry, false)
+})
+
+test('#256 24: a throw from the rescue merge still sends stuck-end and logs', async (t) => {
+  // files is a string, so describeMerge's list() throws inside mergeHeld, before stuck-end.
+  const run = await runWorkflow(four(t), {
+    stuckWait: 120,
+    implementer: stuckUnits('task-1'),
+    ops: (call, wt) => (call.kind === 'ops:merge' && call.unit === 'task-1'
+      ? { merged: false, reason: 'ownership', files: 'tests/other.test.js', detail: '' }
+      : wt(call)),
+    deadline: clock((unit, n, seconds) => reply(seconds, { state: 'delivered', commit: 'fix1234', reason: 'tried' })),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(byId(run)['task-1'].status, 'blocked')
+  assert.equal(endOf(run, 'task-1').command.rest.at(-1), 'rejected')
+  assert.equal(linesMatching(run, /task-1: the rescue failed:/).length, 1, run.logs.join('\n'))
+})
+
+test('#256 25: expiry, ceiling, declined and refused each add one owner-visible log line', async (t) => {
+  const expired = await runWorkflow(four(t), {
+    stuckWait: 120,
+    implementer: stuckUnits('task-1'),
+    deadline: clock((unit, n, seconds) => reply(seconds)),
+  })
+  assert.equal(expired.error, null, expired.error && expired.error.stack)
+  assert.deepEqual(linesMatching(expired, /^task-1: the stuck wait expired$/), ['task-1: the stuck wait expired'])
+
+  const ceiling = await runWorkflow(four(t), {
+    stuckWait: 3600,
+    implementer: stuckUnits('task-1'),
+    deadline: clock((unit, n, seconds) => reply(seconds, { stop: true })),
+  })
+  assert.equal(ceiling.error, null, ceiling.error && ceiling.error.stack)
+  assert.deepEqual(linesMatching(ceiling, /^task-1: the time ceiling ended the stuck wait$/), ['task-1: the time ceiling ended the stuck wait'])
+
+  const declined = await runWorkflow(four(t), {
+    stuckWait: 3600,
+    implementer: stuckUnits('task-1'),
+    deadline: clock((unit, n, seconds) => reply(seconds, { state: 'declined', reason: 'the plan puts the test outside Owns' })),
+  })
+  assert.equal(declined.error, null, declined.error && declined.error.stack)
+  assert.deepEqual(linesMatching(declined, /^task-1: the Lead declined to fix it:/), ['task-1: the Lead declined to fix it: the plan puts the test outside Owns'])
+
+  const refused = await runWorkflow(four(t), {
+    stuckWait: 120,
+    implementer: stuckUnits('task-1'),
+    ops: (call, wt) => (call.kind === 'ops:merge' && call.unit === 'task-1' ? { merged: false, reason: 'ownership', files: ['tests/other.test.js'], detail: '' } : wt(call)),
+    deadline: clock((unit, n, seconds) => reply(seconds, { state: 'delivered', commit: 'bad1234', reason: 'tried' })),
+  })
+  assert.equal(refused.error, null, refused.error && refused.error.stack)
+  assert.equal(linesMatching(refused, /^task-1: the Lead's fix was refused:/).length, 1, refused.logs.join('\n'))
+})
+
+test('#256 26: a stuck wait with no clock still records its tick', async (t) => {
+  const run = await runWorkflow(four(t), { stuckWait: 120, implementer: stuckUnits('task-1') })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(byId(run)['task-1'].status, 'blocked')
+  assert.deepEqual(ticksOf(run, 'task-1').map((tick) => tick.seconds), [120])
+  assert.equal(endOf(run, 'task-1').command.rest.at(-1), 'expired')
+})
