@@ -268,20 +268,29 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     const ids = named.length ? namedRuns(named) : inFlightRuns(mainRoot, open.started)
     ensureExcluded(gitCommonDir)
     const settings = autonomy.brakeSettings(mainRoot, { session, dataDir: env.AETHER_DATA_DIR || dataDir(env) })
-    const mayPush = settings.push === true && Boolean(autonomy.check(mainRoot, 'push', { session }))
+    const pushOn = settings.push === true
+    const mayPush = pushOn && Boolean(autonomy.check(mainRoot, 'push', { session }))
     const saved = []
     const pushed = []
+    const failures = []
     let recorded = false
     for (const id of ids) {
-      const child = spawnSync(process.execPath, [WT_BIN, 'save', id], { cwd, encoding: 'utf8', env })
-      if (child.status !== 0) {
-        const detail = `${child.stdout || ''}${child.stderr || ''}`.trim()
-        throw new Error(detail || `aether-wt save ${id} failed`)
+      let body
+      try {
+        const child = spawnSync(process.execPath, [WT_BIN, 'save', id], { cwd, encoding: 'utf8', env })
+        if (child.status !== 0 || child.error) {
+          const detail = `${child.stdout || ''}${child.stderr || ''}${child.error ? child.error.message : ''}`.trim()
+          failures.push({ run: id, error: detail || `aether-wt save ${id} failed` })
+          continue
+        }
+        const file = path.join(runDir(mainRoot, id), 'saved.json')
+        body = JSON.parse(fs.readFileSync(file, 'utf8'))
+        if (autonomy.recordSaved(mainRoot, body).recorded) recorded = true
+        saved.push(id)
+      } catch (err) {
+        failures.push({ run: id, error: err.message })
+        continue
       }
-      const file = path.join(runDir(mainRoot, id), 'saved.json')
-      const body = JSON.parse(fs.readFileSync(file, 'utf8'))
-      if (autonomy.recordSaved(mainRoot, body).recorded) recorded = true
-      saved.push(id)
       if (!mayPush) continue
       for (const unit of body.units || []) {
         if (!unit || unit.merged || typeof unit.branch !== 'string' || unit.branch === '' || !unit.head) continue
@@ -290,14 +299,18 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
           encoding: 'utf8',
           env: { ...env, GIT_TERMINAL_PROMPT: '0' },
         })
-        if (push.status !== 0) {
-          const detail = `${push.stderr || ''}${push.stdout || ''}`.trim()
-          throw new Error(detail || `git push origin ${unit.branch} failed`)
+        if (push.status !== 0 || push.error) {
+          const detail = `${push.stderr || ''}${push.stdout || ''}${push.error ? push.error.message : ''}`.trim()
+          failures.push({ run: id, branch: unit.branch, error: detail || `git push origin ${unit.branch} failed` })
+          continue
         }
         pushed.push(unit.branch)
       }
     }
-    return { code: 0, out: { saved, recorded, pushed } }
+    const out = { saved, recorded, pushed }
+    if (pushOn && !mayPush) out.notPushed = 'push needs a grant'
+    if (failures.length) out.failures = failures
+    return { code: failures.length ? 1 : 0, out }
   }
 }
 

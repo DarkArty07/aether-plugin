@@ -59,7 +59,7 @@ export function notifyFor(crossing, threshold) {
 
 // The plugin's own message that stops the run's work at a crossing (never submitted as the owner's words).
 export function brakePromptFor({ percentUsed, threshold, resetsAt, run, resumeAt }) {
-  return `Aether quota brake: the five_hour window is at ${percentUsed}% (threshold ${threshold}%) and resets at ${resetsAt}. Autonomous run ${run} is now paused by the quota brake until ${resumeAt}. Stop every running workflow, delegate task and lane call of this run now (TaskStop, aether-lane stop), save each swarm run in flight with aether-wt save <run> and record it with aether-autonomy quota-saved --from <the saved.json it printed>, and start nothing new. Do not end the run: it resumes by itself after the reset.`
+  return `Aether quota brake: the five_hour window is at ${percentUsed}% (threshold ${threshold}%) and resets at ${resetsAt}. Autonomous run ${run} is now paused by the quota brake until ${resumeAt}. Stop every running workflow, delegate task and lane call of this run now (TaskStop, aether-lane stop), then run aether-autonomy quota-brake: it saves each in-flight swarm, records the pause and pushes when its permission covers it. Start nothing new. Do not end the run: it resumes by itself after the reset.`
 }
 
 // The plugin's own message that wakes the Lead when the window has reset.
