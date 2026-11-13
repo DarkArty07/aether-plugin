@@ -128,6 +128,28 @@ test('a stuck wait records one wait-stuck timing when it is delivered, declined 
   assert.equal(timingsOf(kept.args.runDir).length, 1)
 })
 
+test('stuck-end on a delivered record returns the commit, the reason and the widened files', (t) => {
+  const s = waiting(t)
+  commitIn(s.repo, s.unit.path, 'docs/extra.md', 'note\n', 'the file outside Owns')
+  const tip = s.repo.git('-C', s.unit.path, 'rev-parse', 'HEAD')
+  const delivered = wt(s.repo, 'deliver', s.args.runId, 'task-1', '--commit', tip, '--reason', 'the test lives outside Owns', '--widen', 'docs/extra.md')
+  assert.equal(delivered.status, 0, delivered.stdout + delivered.stderr)
+  const before = fs.readFileSync(run.stuckFile(s.repo.dir, s.args.runId, 'task-1'), 'utf8')
+  const ended = wt(s.repo, 'stuck-end', s.args.runId, 'task-1', '--outcome', 'expired')
+  assert.equal(ended.status, 0, ended.stdout + ended.stderr)
+  assert.deepEqual(ended.json, {
+    ended: false,
+    task: 'task-1',
+    state: 'delivered',
+    commit: tip,
+    reason: 'the test lives outside Owns',
+    widen: ['docs/extra.md'],
+  })
+  assert.equal(fs.readFileSync(run.stuckFile(s.repo.dir, s.args.runId, 'task-1'), 'utf8'), before)
+  const ceiling = wt(s.repo, 'stuck-end', s.args.runId, 'task-1', '--outcome', 'ceiling')
+  assert.deepEqual(ceiling.json, ended.json)
+})
+
 test('the commands refuse what the libs refuse, with an error line and exit 1', (t) => {
   const s = waiting(t)
   const noUnit = wt(s.repo, 'deliver', s.args.runId, 'task-1', '--commit', s.tip)

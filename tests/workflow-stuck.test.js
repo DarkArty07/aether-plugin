@@ -272,7 +272,7 @@ test('#256 22: a stuck-end that answers state delivered merges the unit instead 
     implementer: stuckUnits('task-1'),
     ops: (call, wt) => {
       if (call.kind === 'ops:stuck-end' && call.command.rest.at(-1) === 'expired') {
-        return { ended: false, task: 'task-1', state: 'delivered', commit: 'fix1234', reason: 'arrived between the tick and the end' }
+        return { ended: false, task: 'task-1', state: 'delivered', commit: 'fix1234', reason: 'arrived between the tick and the end', widen: ['tests/other.test.js'] }
       }
       return wt(call)
     },
@@ -280,7 +280,7 @@ test('#256 22: a stuck-end that answers state delivered merges the unit instead 
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   assert.equal(byId(run)['task-1'].status, 'merged')
-  assert.deepEqual(byId(run)['task-1'].fixedByLead, { commit: 'fix1234', reason: 'arrived between the tick and the end' })
+  assert.deepEqual(byId(run)['task-1'].fixedByLead, { commit: 'fix1234', reason: 'arrived between the tick and the end', widened: ['tests/other.test.js'] })
   const ends = run.calls.filter((c) => c.kind === 'ops:stuck-end' && c.unit === 'task-1').map((c) => c.command.rest.at(-1))
   assert.deepEqual(ends, ['expired', 'merged'])
   assert.equal(run.calls.filter((c) => c.kind === 'ops:merge' && c.unit === 'task-1').length, 1)

@@ -129,7 +129,10 @@ function stuckEnd(cwd, runId, taskId, outcome) {
   // it; the flow reads state delivered and merges. merged, rejected and
   // declined still close the record, and they add no second wait timing.
   if (record.state === 'delivered' && (outcome === 'expired' || outcome === 'ceiling')) {
-    return { ended: false, task: taskId, state: 'delivered' }
+    const delivered = record.delivered || {}
+    const out = { ended: false, task: taskId, state: 'delivered', commit: delivered.commit, reason: delivered.reason }
+    if (Array.isArray(delivered.widen)) out.widen = [...delivered.widen]
+    return out
   }
   const at = new Date().toISOString()
   const waiting = record.state === 'waiting'
