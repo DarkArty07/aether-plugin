@@ -475,6 +475,8 @@ function judge(cwd, info, before, parsed, { quotaAfter, quotaRead }, reserve, st
     const { mainRoot } = repoPaths(cwd)
     const branch = run.unitBranch(runId, task)
     const reattached = work.reattachDetached(run.unitWorktree(mainRoot, runId, task), branch)
+    // reattachDetached puts the worktree back on the branch tip when it rejects, so the next pair
+    // starts from the branch. The off-branch commit stays named in the reason and the branch is not moved.
     if (reattached.rejected) return { status: 'failed', detail: reattached.reason }
     const owns = work.checkOwns(cwd, runId, task)
     if (!owns.ok) return { status: 'violation', files: owns.files, detail: 'changes outside Owns' }

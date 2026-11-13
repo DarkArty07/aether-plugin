@@ -455,23 +455,35 @@ function checkUnitUnchanged(cwd, runId, taskId, before) {
 // worktree: path; branch: the unit's branch. HEAD attached to `branch`: { moved: false }.
 // HEAD detached, ahead of the branch and the branch is its ancestor: runs `git branch -f <branch> HEAD`, then
 //   `git checkout <branch>` in the worktree (uncommitted files stay in the working tree), returns { moved: true, head: <sha> }.
-// HEAD detached and not a descendant of the branch (and not equal to it): returns
+// HEAD detached and not a descendant of the branch (and not equal to it): the branch is not moved.
+//   The worktree is checked out on the branch tip again (a forced checkout, so a dirty tree cannot
+//   keep the next attempt off the branch). The off-branch commit stays reachable by the sha in
 //   { rejected: true, reason: 'HEAD <sha7> is detached and does not descend from <branch> (<sha7>); its commit is not on the unit branch' }.
 function reattachDetached(worktree, branch) {
-  if (git(['branch', '--show-current'], worktree).stdout === branch) return { moved: false }
+  const onBranch = () => git(['rev-parse', '--abbrev-ref', 'HEAD'], worktree).stdout === branch
+  // Every return leaves the worktree on `branch`. A forced checkout is only used when a plain one
+  // did not, or when the attempt is rejected: the accepted path keeps uncommitted files.
+  // git() throws on a non-zero status unless allowFail is set. A plain checkout refuses an unmerged
+  // index (and local changes it would overwrite); that refusal must reach the forced checkout.
+  const checkoutBranch = () => git(['checkout', branch], worktree, { allowFail: true })
+  const settle = (result) => {
+    if (!onBranch()) git(['checkout', '-f', branch], worktree)
+    return result
+  }
+  if (onBranch()) return { moved: false }
   const headSha = git(['rev-parse', 'HEAD'], worktree).stdout
   const branchSha = git(['rev-parse', branch], worktree).stdout
   if (headSha === branchSha) {
-    git(['checkout', branch], worktree)
-    return { moved: false }
+    checkoutBranch()
+    return settle({ moved: false })
   }
   if (git(['merge-base', '--is-ancestor', branch, headSha], worktree, { allowFail: true }).status === 0) {
     git(['branch', '-f', branch, headSha], worktree)
-    git(['checkout', branch], worktree)
-    return { moved: true, head: git(['rev-parse', branch], worktree).stdout }
+    checkoutBranch()
+    return settle({ moved: true, head: git(['rev-parse', branch], worktree).stdout })
   }
   const short = (sha) => sha.slice(0, 7)
-  return { rejected: true, reason: `HEAD ${short(headSha)} is detached and does not descend from ${branch} (${short(branchSha)}); its commit is not on the unit branch` }
+  return settle({ rejected: true, reason: `HEAD ${short(headSha)} is detached and does not descend from ${branch} (${short(branchSha)}); its commit is not on the unit branch` })
 }
 
 // Commits what the external agent left in the unit worktree, then packages the unit for review.
