@@ -163,7 +163,12 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
     }
 
     const updates = {}
-    if (typeof figures.intelligence === 'number') record(row, updates, 'intelligence', figures.intelligence)
+    if (typeof figures.intelligence === 'number') {
+      record(row, updates, 'intelligence', figures.intelligence)
+      // checked dates the intelligence. A page that gave none must not mark the old figure as freshly checked.
+      row.checked = today
+      updates.checked = today
+    }
     // A cost of null stays null: it is the owner's decision (Muse), or the page has no cost.
     if (typeof figures.costPerTaskUsd === 'number' && typeof row.costPerTaskUsd === 'number') {
       record(row, updates, 'costPerTaskUsd', figures.costPerTaskUsd)
@@ -172,10 +177,6 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
       for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) {
         record(row, updates, field, figures[field])
       }
-    }
-    row.checked = today
-    updates.checked = today
-    if (hasCode) {
       row.codeChecked = today
       updates.codeChecked = today
     }
