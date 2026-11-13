@@ -12,9 +12,11 @@
 // aether-delegate renew --harness <agy|codex|grok|muse>
 // aether-delegate approve --task <id> [--worktree <path>] [--ignore <glob>]
 //
-// The delegate tasks of the Lead on the ladder. begin, verdict, authorize, start, run, wait, answer and renew are lib/delegate-*.js
-// and lib/router-renewal.js: start and run use the current directory, and only approve merges (the verdict, into the current branch, then the tests).
-// None of them pushes. Each prints one JSON line and exits 0, except a wrong use or an error of its own, which prints { "error": <message> } and exits 1.
+// The delegate tasks of the Lead on the ladder. begin says how the attempt the mod caught runs; verdict records the Lead's judgment of the last attempt, which is the only one that counts, and says what the next launch is; authorize
+// records the owner's words that place a task, or the session, above the first rung (with an optional --effort the owner's words name; a refusal prints its error and exits 0); start runs run in its own process and returns at once, run
+// does the attempt on an external pair, and wait polls for its result for up to n seconds (540 at most); answer records the end of a delegate on Claude: its answer when it was read-only, an end marker when it edited; renew takes a new
+// quota reading of agy, codex, grok or muse and saves it for the pair choice; approve gives an editing task the approve verdict, merges it into the current branch (main or master only with a merge-main grant) and runs the project's
+// tests. start, run and approve use the current directory; only approve merges, and none pushes. Each prints one JSON line and exits 0; a wrong use or its own error prints { "error": <message> } and exits 1.
 
 const path = require('node:path')
 const lib = (name) => require(path.join(__dirname, '..', 'lib', name))
@@ -125,9 +127,7 @@ async function answerCommand(flags, dataDir) {
   return lib('delegate-run.js').recordAnswer({ task: flags.task, attempt, text: flags.text ?? '', session: flags.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null, dataDir })
 }
 
-async function approveCommand(flags) {
-  return lib('delegate-approve.js').approve(process.cwd(), { task: flags.task, worktree: flags.worktree, ignore: flags.ignore ?? [], env: process.env })
-}
+const approveCommand = async (flags) => lib('delegate-approve.js').approve(process.cwd(), { task: flags.task, worktree: flags.worktree, ignore: flags.ignore ?? [], env: process.env })
 
 async function renewCommand(flags, dataDir) {
   const renewal = lib('router-renewal.js')
