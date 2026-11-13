@@ -176,6 +176,10 @@ test('the newest mtime of the run directory is unchanged across a wait, and the 
   const s = scenario(t)
   const { newestWriteMs } = require('../plugins/aether/lib/wt-watch.js')
   const before = newestWriteMs(s.args.runDir)
+  // compile may already have recorded the baseline's duration (spec 036 R18): the wait adds nothing to it.
+  const timingsFile = path.join(s.args.runDir, 'timings.jsonl')
+  const timingsOf = () => (fs.existsSync(timingsFile) ? fs.readFileSync(timingsFile, 'utf8') : null)
+  const timingsBefore = timingsOf()
   let polls = 0
   const out = await watchCommand(s.repo.dir, s.args.runId, {
     ...BIG,
@@ -186,7 +190,7 @@ test('the newest mtime of the run directory is unchanged across a wait, and the 
     },
   })
   assert.equal(out.watch, 'ended')
-  assert.equal(fs.existsSync(path.join(s.args.runDir, 'timings.jsonl')), false)
+  assert.equal(timingsOf(), timingsBefore)
 })
 
 test('a quiet run whose unit worktree is being written is not silent', async (t) => {

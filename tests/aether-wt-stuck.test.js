@@ -84,7 +84,8 @@ test('stuck-tick stops through the default path when the autonomous time ceiling
 function timingsOf(runDir) {
   const file = path.join(runDir, 'timings.jsonl')
   if (!fs.existsSync(file)) return []
-  return fs.readFileSync(file, 'utf8').split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line))
+  // compile records the baseline's duration first (spec 036 R18); the waits are what these tests count.
+  return fs.readFileSync(file, 'utf8').split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line)).filter((line) => line.class !== 'baseline')
 }
 
 function pinAt(repo, runId, taskId) {

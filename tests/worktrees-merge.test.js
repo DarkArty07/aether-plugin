@@ -23,7 +23,8 @@ test('a merge writes one merge-tests line, and a watch wait leaves no timings.js
   const { repo, args, unit } = setup(t)
   commitIn(repo, unit.path, 'src/t1/a.js', 'one\n', 'add a')
   assert.equal(merge(repo.dir, args.runId, 'task-1').merged, true)
-  const lines = fs.readFileSync(path.join(args.runDir, 'timings.jsonl'), 'utf8').trim().split('\n')
+  // compile records the baseline's duration first (spec 036 R18); the merge adds one merge-tests line.
+  const lines = fs.readFileSync(path.join(args.runDir, 'timings.jsonl'), 'utf8').trim().split('\n').filter((line) => JSON.parse(line).class !== 'baseline')
   assert.equal(lines.length, 1)
   const entry = JSON.parse(lines[0])
   assert.equal(entry.class, 'merge-tests')
@@ -35,6 +36,9 @@ test('a merge writes one merge-tests line, and a watch wait leaves no timings.js
   const { watchCommand } = require('../plugins/aether/lib/wt-watch.js')
   const { newestWriteMs } = require('../plugins/aether/lib/wt-watch.js')
   const before = newestWriteMs(quietArgs.runDir)
+  const timingsFile = path.join(quietArgs.runDir, 'timings.jsonl')
+  const timingsOf = () => (fs.existsSync(timingsFile) ? fs.readFileSync(timingsFile, 'utf8') : null)
+  const timingsBefore = timingsOf()
   let polls = 0
   await watchCommand(quiet.dir, quietArgs.runId, {
     interval: 0.001,
@@ -45,7 +49,7 @@ test('a merge writes one merge-tests line, and a watch wait leaves no timings.js
       if (polls === 2) fs.writeFileSync(run.launchEndFile(quiet.dir, quietArgs.runId), '{}\n')
     },
   })
-  assert.equal(fs.existsSync(path.join(quietArgs.runDir, 'timings.jsonl')), false)
+  assert.equal(timingsOf(), timingsBefore)
 })
 
 test('merge brings an owned, tested unit into the integration branch', (t) => {
