@@ -722,8 +722,9 @@ async function begin(input, deps = {}) {
       notes.push(notice)
     }
     notes.push(stepNote(id, step, attempt, launchKind, args, pick))
-    const detached = edits && pick !== null && prompt.includes('checkout --detach')
-    return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: external === null ? { task: id, attempt } : null, ...(detached ? { note: DETACHED_NOTE } : {}) })
+    // Spec 036 R7: the mod relays plan.notes, so the detach warning lives there, and the brief stays as the Lead wrote it.
+    if (edits && pick !== null && prompt.includes('checkout --detach')) notes.push(DETACHED_NOTE)
+    return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: external === null ? { task: id, attempt } : null })
   } catch (err) {
     return emptyPlan({ id: isId(id) ? id : null, error: messageOf(err) })
   }
