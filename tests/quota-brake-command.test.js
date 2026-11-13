@@ -135,9 +135,37 @@ test('with push on, a push grant sends the saved branch, and without the grant n
   const no = refused.cli(['quota-brake'])
   assert.equal(no.status, 0, no.stdout + no.stderr)
   assert.deepEqual(no.json.pushed, [])
+  assert.equal(no.json.notPushed, 'push needs a grant')
   assert.equal(no.json.saved.length, 1)
   const absent = spawnSync('git', ['--git-dir', refused.bare, 'rev-parse', '--verify', `refs/heads/aether/${held.runId}/task-1`], { encoding: 'utf8' })
   assert.notEqual(absent.status, 0)
+})
+
+test('a failed save or push is reported next to its run and the later runs still finish', (t) => {
+  const { repo, cli, pause } = setup(t, { push: true, grant: true })
+  const first = inFlight(repo)
+  const second = inFlight(repo)
+  pause()
+  const missing = '20260101-000000-abcd'
+  const savedThenFailed = cli(['quota-brake', '--run', first.runId, '--run', missing, '--run', second.runId])
+  assert.equal(savedThenFailed.status, 1, savedThenFailed.stdout + savedThenFailed.stderr)
+  assert.deepEqual(savedThenFailed.json.saved, [first.runId, second.runId])
+  assert.equal(savedThenFailed.json.recorded, true)
+  assert.equal(savedThenFailed.json.failures.length, 1)
+  assert.equal(savedThenFailed.json.failures[0].run, missing)
+  assert.match(savedThenFailed.json.failures[0].error, /./)
+  assert.equal(fs.existsSync(savedFile(repo, second.runId)), true)
+
+  fs.rmSync(savedFile(repo, first.runId))
+  fs.rmSync(savedFile(repo, second.runId))
+  repo.git('remote', 'set-url', 'origin', path.join(repo.dir, 'missing-origin.git'))
+  const pushed = cli(['quota-brake', '--run', first.runId, '--run', second.runId])
+  assert.equal(pushed.status, 1, pushed.stdout + pushed.stderr)
+  assert.deepEqual(pushed.json.saved.sort(), [first.runId, second.runId].sort())
+  assert.deepEqual(pushed.json.pushed, [])
+  assert.equal(pushed.json.failures.length, 2)
+  assert.deepEqual(pushed.json.failures.map((f) => f.run).sort(), [first.runId, second.runId].sort())
+  assert.ok(pushed.json.failures.every((f) => f.branch === `aether/${f.run}/task-1` && f.error))
 })
 
 test('with no open run quota-brake prints the empty result', (t) => {
