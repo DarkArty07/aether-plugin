@@ -317,3 +317,29 @@ test('the file still exports the key helpers that scripts/build-models-index.js 
   for (const name of ['keyFrom', 'keyFile', 'envFileFor']) assert.equal(typeof copy[name], 'function', name)
   assert.deepEqual([typeof copy.KEY, typeof copy.main], ['string', 'function'])
 })
+
+test('a page with no intelligenceIndex leaves that row\'s checked as it was, while a page with one stamps today', async (t) => {
+  const dir = tempDir(t, 'aether-refresh-no-intelligence-')
+  const files = { pairs: path.join(dir, 'pairs.json'), ladder: path.join(dir, 'ladder.json') }
+  const bare = row('claude/a@high', { intelligence: 20, costPerTaskUsd: 0.1, code: 10, codeCostPerTaskUsd: 0.1, codeMinutesPerTask: 5, checked: '2026-10-30', codeChecked: '2026-11-10' })
+  const dated = row('claude/a@xhigh', { intelligence: 30, costPerTaskUsd: 0.2, code: 12, codeCostPerTaskUsd: 0.2, codeMinutesPerTask: 6, checked: '2026-10-01', codeChecked: '2026-11-01' })
+  const lines = [bare, dated].map((r) => `    ${spaced(r)}`)
+  fs.writeFileSync(files.pairs, `{\n  "fetchedAt": "2026-10-19",\n  "pairs": [\n${lines.join(',\n')}\n  ]\n}\n`)
+  fs.writeFileSync(files.ladder, `${JSON.stringify(LADDER, null, 2)}\n`)
+  const noIndexBlock = block('claude-a-high', fig(21, 0.11, 0.11, 0.12, 330)).replace(/"intelligenceIndex":[^,]+,/, '')
+  const noIndex = page(noIndexBlock)
+  const withIndex = page(block('claude-a-xhigh', fig(31, 0.21, 0.22, 0.22, 500)))
+  assert.equal(/"intelligenceIndex":/.test(noIndex.replace(/\\"/g, '"')), false, 'the fixture page has no intelligenceIndex')
+  assert.equal(/"intelligenceIndex":31[,}]/.test(withIndex.replace(/\\"/g, '"')), true, 'the other fixture page carries a numeric intelligenceIndex')
+  const fetch = async (url) => {
+    const slug = url.split('/').pop()
+    const html = slug === 'claude-a-high' ? noIndex : slug === 'claude-a-xhigh' ? withIndex : ''
+    return html ? { ok: true, status: 200, text: async () => html } : { ok: false, status: 404, text: async () => '' }
+  }
+  const out = await run(files, fetch, ['--write'])
+  assert.equal(out.exitCode, 0, out.stdout)
+  const [left, stamped] = rowsOf(files)
+  // No intelligence on the page: the old intelligence and its checked date stay. Code figures still land, so codeChecked moves.
+  assert.deepEqual([left.intelligence, left.checked, left.code, left.codeCostPerTaskUsd, left.codeMinutesPerTask, left.codeChecked], [20, '2026-10-30', 11, 0.12, 5.5, '2026-11-12'])
+  assert.deepEqual([stamped.intelligence, stamped.checked, stamped.code, stamped.codeChecked], [31, '2026-11-12', 22, '2026-11-12'])
+})

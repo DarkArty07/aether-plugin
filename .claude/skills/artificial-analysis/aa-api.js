@@ -37,7 +37,9 @@ function ownBlock(html, slug) {
     for (const m of segment.matchAll(/\{"slug":"([^"]+)","score":(-?[\d.]+),"outputTokensPerTask":(-?[\d.]+),"costPerTask":(-?[\d.e-]+),"timePerTask":(-?[\d.]+)\}/g)) {
       evals[m[1]] = { score: +m[2], outputTokens: Math.round(+m[3]), costUsd: +m[4], seconds: +m[5] }
     }
-    const intelligence = /"scalars":\{"intelligenceIndex":(-?[\d.e-]+|null)/.exec(segment)
+    // Anywhere in the model's segment, whatever scalar key comes first. The same read as aa-extract.js:
+    // a number followed by `,` or `}`. `null` and a missing key stay null.
+    const intelligence = /"intelligenceIndex":(-?[\d.]+(?:e-?\d+)?)[,}]/.exec(segment)
     const cost = /"intelligenceIndexCostPerTask":\{"cost":\{"total":(-?[\d.e-]+|null)/.exec(segment)
     return { evals, intelligence: finiteOrNull(intelligence ? +intelligence[1] : NaN), costPerTaskUsd: finiteOrNull(cost ? +cost[1] : NaN) }
   }
