@@ -142,6 +142,7 @@ test('after the last rung nothing opens a sixth step: the task is exhausted (C5,
   assert.deepEqual([last.next.kind, last.next.step], ['exhausted', null])
   const plan = await task.begin(call(BRIEF('t1')), deps)
   assert.deepEqual([plan.args.model, plan.args.effort, plan.external], ['haiku', 'low', null])
+  assert.equal(plan.deny, undefined, 'an exhausted task still gets the Haiku plan, with no deny')
   assert.match(plan.args.prompt, /exhausted/)
   assert.equal((await task.verdict({ task: 't1', verdict: 'fix', findings: [F(6)] }, deps)).ok, false)
 })
@@ -191,6 +192,10 @@ test('approve is refused when an objective check fails: a file outside Owns, an 
   const approved = await task.verdict({ task: 'green', verdict: 'approve', worktree: good.dir }, world4.deps)
   assert.equal(approved.ok, true)
   assert.equal(entries(world4.dataDir, 'green').at(-1).verdict, 'approved')
+  const closed = await task.begin(call(BRIEF('green', owns)), world4.deps)
+  assert.deepEqual([closed.args.model, closed.args.effort], ['haiku', 'low'])
+  assert.equal(closed.deny, undefined, 'an approved task still gets the Haiku plan, with no deny')
+  assert.match(closed.args.prompt, /approved/)
 })
 
 test('a task that edits is launched with isolation worktree, whoever takes the attempt; a read-only one is not (R13, S9)', async (t) => {
@@ -654,12 +659,25 @@ test('begin refuses to launch a delegate in a Lead session when an open autonomo
   const withinCeilings = await ask('sess-1', 't-active', t0 + 1000)
   assert.equal(withinCeilings.kind, 'first')
 
+  const refusedLaunch = (plan, id) => entries(dataDir, id).find((e) => e.kind === 'launch' && e.launchKind === 'refused')
+  const assertAutonomyDeny = (plan, id, stop, outcome) => {
+    assert.equal(typeof plan.deny, 'string')
+    assert.match(plan.deny, new RegExp(`Aether delegate task ${id} was not launched:.*Nothing was started`))
+    assert.match(plan.deny, new RegExp(`aether-autonomy end --outcome ${outcome}`))
+    assert.equal(plan.stop, stop)
+    assert.equal(plan.run, stop === 'cost' ? startedCost.run.id : started.run.id)
+    assert.equal(plan.args, null)
+    assert.equal(plan.notes.join('\n').includes('was not launched'), false)
+    const launch = refusedLaunch(plan, id)
+    assert.equal(launch.effort, null)
+    assert.equal(launch.ignored, false)
+    assert.equal(launch.requested, null)
+  }
+
   // Time stop in Lead session
   const byTime = await ask('sess-1', 't-time', t0 + 3605 * 1000)
   assert.equal(byTime.kind, 'refused')
-  assert.equal(byTime.stop, 'time')
-  assert.equal(byTime.run, started.run.id)
-  assert.match(byTime.notes.join('\n'), /aether-autonomy end --outcome ceiling/)
+  assertAutonomyDeny(byTime, 't-time', 'time', 'ceiling')
 
   // The same refusal from a linked worktree
   const fromLinked = await ask('sess-1', 't-linked', t0 + 3605 * 1000, linked)
@@ -680,9 +698,7 @@ test('begin refuses to launch a delegate in a Lead session when an open autonomo
   )
   const byQuota = await ask('sess-1', 't-quota', t0 + 2000)
   assert.equal(byQuota.kind, 'refused')
-  assert.equal(byQuota.stop, 'quota')
-  assert.equal(byQuota.run, started.run.id)
-  assert.match(byQuota.notes.join('\n'), /aether-autonomy end --outcome incomplete/)
+  assertAutonomyDeny(byQuota, 't-quota', 'quota', 'incomplete')
 
   // Cost stop in Lead session (in a fresh run with 10h ceiling)
   autonomy.end(repo.dir, 'incomplete', { now: t0 + 3000 })
@@ -695,9 +711,7 @@ test('begin refuses to launch a delegate in a Lead session when an open autonomo
   autonomy.spend(repo.dir, 5, 'u1', { now: t0 + 5000 })
   const byCost = await ask('sess-1', 't-cost', t0 + 6000)
   assert.equal(byCost.kind, 'refused')
-  assert.equal(byCost.stop, 'cost')
-  assert.equal(byCost.run, startedCost.run.id)
-  assert.match(byCost.notes.join('\n'), /aether-autonomy end --outcome ceiling/)
+  assertAutonomyDeny(byCost, 't-cost', 'cost', 'ceiling')
 })
 
 test('an attempt that edits and runs on Claude names its end like a read-only one; one on an external pair does not (spec 031, C1)', async (t) => {

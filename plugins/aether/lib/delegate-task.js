@@ -317,14 +317,18 @@ function refusedText(id, status) {
   return `Aether delegate task ${id} is exhausted: every step of the ladder was tried, and there is no other step. Do not do any work. Answer only that the task is exhausted, and that the Lead must defer it or take it to the owner's list.`
 }
 
+function logRefusedLaunch(r, ctx, { effort, requested, ignored }) {
+  log.appendEntry(r.dataDir, {
+    kind: 'launch', time: r.now(), session: ctx.session, task: ctx.id, step: null, attempt: ctx.attempt, launchKind: 'refused',
+    effort, edits: ctx.edits, owns: ctx.brief.owns, tests: ctx.brief.tests, description: ctx.description,
+    requested, ignored, pin: null, base: null, dirty: null,
+  })
+}
+
 function refusedLaunchPlan(r, ctx, prompt, note) {
   const args = { ...REFUSED_ARGS, prompt }
   const { requested, ignored } = requestedOf(ctx.event, args)
-  log.appendEntry(r.dataDir, {
-    kind: 'launch', time: r.now(), session: ctx.session, task: ctx.id, step: null, attempt: ctx.attempt, launchKind: 'refused',
-    effort: args.effort, edits: ctx.edits, owns: ctx.brief.owns, tests: ctx.brief.tests, description: ctx.description,
-    requested, ignored, pin: null, base: null, dirty: null,
-  })
+  logRefusedLaunch(r, ctx, { effort: args.effort, requested, ignored })
   const notes = [...ctx.notes, note]
   return emptyPlan({ id: ctx.id, kind: 'refused', attempt: ctx.attempt, args, notes })
 }
@@ -348,8 +352,12 @@ function treeRefusedPlan(r, ctx, error) {
 }
 
 function autonomyRefusedPlan(r, ctx, refusal) {
-  const prompt = `Aether delegate task ${ctx.id} was not launched: ${refusal.message}. Do not do any work. Tell the Lead why the launch was refused.`
-  return { ...refusedLaunchPlan(r, ctx, prompt, prompt), stop: refusal.stop, run: refusal.id }
+  const deny = `Aether delegate task ${ctx.id} was not launched: ${refusal.message}. Nothing was started.`
+  const model = isText(ctx.event.model) ? ctx.event.model : null
+  const effort = isText(ctx.event.effort) ? ctx.event.effort : null
+  const requested = model || effort ? { model, effort } : null
+  logRefusedLaunch(r, ctx, { effort: null, requested, ignored: false })
+  return emptyPlan({ id: ctx.id, kind: 'refused', attempt: ctx.attempt, notes: [...ctx.notes], stop: refusal.stop, run: refusal.id, deny })
 }
 
 // A new task with the owned paths and the tests of a task of the same session that did not end approved.

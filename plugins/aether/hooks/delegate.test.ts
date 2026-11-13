@@ -100,6 +100,44 @@ test('an Agent call the Lead made is rewritten with the plan model and effort, a
   expect(writes[0].path.startsWith('/home/u/aether-data/delegates/in/')).toBe(true)
 })
 
+test('a plan whose deny is text returns exactly that deny and does not call the tool', async ($, on) => {
+  const text = 'Aether delegate task t1 was not launched: paused. Nothing was started.'
+  const { toolCalls } = stubs(on, { verbs: { begin: [{ ...PLAN, args: null, deny: text, stop: 'quota', run: 'r1' }] } })
+  const out = await call($, 'AETHER-TASK: t1\nFix it.')
+  expect(out).toEqual({ deny: text })
+  expect(toolCalls.length).toBe(0)
+})
+
+test('a deny that is empty or not a string, or no deny, still rewrites, calls next and remembers the call', async ($, on) => {
+  const remembered = { ...PLAN, answerOf: { task: 't1', attempt: 1 } }
+  const { runs, toolCalls, counts } = stubs(on, {
+    verbs: {
+      begin: [{ ...remembered, deny: '' }, { ...remembered, deny: 0 }, remembered],
+      answer: [{ recorded: true }, { recorded: true }, { recorded: true }],
+    },
+    replies: [
+      { answer: 'empty deny', stopReason: 'end_turn' },
+      { answer: 'number deny', stopReason: 'end_turn' },
+      { answer: 'no deny', stopReason: 'end_turn' },
+    ],
+  })
+  const prompts = ['AETHER-TASK: t1\nempty', 'AETHER-TASK: t1\nnumber', 'AETHER-TASK: t1\nnone']
+  for (const prompt of prompts) {
+    const out = await call($, prompt)
+    expect(out.result).toEqual({ context: ['earlier'] })
+    expect([toolCalls.at(-1).model, toolCalls.at(-1).effort]).toEqual(['haiku', 'high'])
+  }
+  expect(toolCalls.length).toBe(3)
+  for (const prompt of prompts) {
+    const spawned = await spawn($, prompt)
+    const stepped = await step($, { index: 0, agentId: spawned.agentId })
+    expect(stepped.result.stopReason).toBe('end_turn')
+  }
+  expect(counts.modelSteps).toBe(3)
+  const answered = runs.filter((r) => r.argv[2] === 'answer')
+  expect(answered.map((r) => r.argv[r.argv.indexOf('--text') + 1])).toEqual(['empty deny', 'number deny', 'no deny'])
+})
+
 test('an aether:judge call is not touched and process.run is not invoked', async ($, on) => {
   const { runs, writes, toolCalls } = stubs(on)
   const event = { tool: 'Agent', subagent_type: 'aether:judge', description: 'judge it', prompt: 'Judge this.', model: 'opus', effort: 'max' }
