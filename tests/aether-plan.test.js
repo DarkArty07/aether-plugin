@@ -466,3 +466,104 @@ test('compile builds a group of tasks as one unit: one brief with every member a
   assert.equal(only.status, 0, only.stdout + only.stderr)
   assert.deepEqual(Object.keys(only.json.tasks), ['task-1'])
 })
+
+test('aether-plan compile refuses in a Lead session when an open autonomous run hit time, cost, or quota stop, and leaves non-Lead sessions unchanged', (t) => {
+  const autonomy = require('../plugins/aether/lib/autonomy.js')
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-plan-data-')
+  const configDir = tempDir(t, 'aether-plan-cfg-')
+  const projDir = path.join(configDir, 'projects', 'proj-plan')
+  fs.mkdirSync(projDir, { recursive: true })
+  const t0 = Date.now() - 2 * 3600 * 1000
+  fs.writeFileSync(
+    path.join(projDir, 'sess-p.jsonl'),
+    JSON.stringify({
+      type: 'user',
+      isSidechain: false,
+      origin: { kind: 'human' },
+      entrypoint: 'sdk-cli',
+      timestamp: new Date(t0).toISOString(),
+      message: { role: 'user', content: 'work unattended for 1 hour' },
+    }) + '\n'
+  )
+  markSession(dataDir, 'sess-p', 1000, { repo: repo.dir, claude: null })
+
+  const tasksFile = writePlan(repo.dir, plan([task(1), task(2)]))
+  // A marked Lead without an autonomous run still compiles normally.
+  const resWithoutRun = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
+    AETHER_DATA_DIR: dataDir,
+    CLAUDE_CODE_SESSION_ID: 'sess-p',
+  })
+  assert.equal(resWithoutRun.status, 0)
+  assert.ok(resWithoutRun.json.runId)
+
+  const started = autonomy.start(
+    repo.dir,
+    { quote: 'work unattended for 1 hour', session: 'sess-p', hours: 1, usd: 5 },
+    { configDir, dataDir, now: t0 }
+  )
+  assert.equal(started.ok, true)
+
+  // Time stop in Lead session
+  const resTime = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
+    AETHER_DATA_DIR: dataDir,
+    CLAUDE_CODE_SESSION_ID: 'sess-p',
+  })
+  assert.notEqual(resTime.status, 0)
+  assert.match(resTime.json.errors[0], new RegExp(started.run.id))
+  assert.match(resTime.json.errors[0], /aether-autonomy end --outcome ceiling/)
+
+  // Non-Lead session compiles normally (C7)
+  const resPlain = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
+    AETHER_DATA_DIR: dataDir,
+    CLAUDE_CODE_SESSION_ID: 'plain-session',
+  })
+  assert.equal(resPlain.status, 0)
+
+  // Quota and cost stops in Lead session
+  autonomy.end(repo.dir, 'ceiling', { now: Date.now() - 1000 })
+  const started2 = autonomy.start(
+    repo.dir,
+    { quote: 'work unattended for 1 hour', session: 'sess-p', hours: 10, usd: 5 },
+    { configDir, dataDir, now: Date.now() }
+  )
+  assert.equal(started2.ok, true)
+  // An open run with no stop also allows compilation.
+  assert.equal(autonomy.status(repo.dir).stop, null)
+  const resWithinCeilings = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
+    AETHER_DATA_DIR: dataDir,
+    CLAUDE_CODE_SESSION_ID: 'sess-p',
+  })
+  assert.equal(resWithinCeilings.status, 0)
+  assert.ok(resWithinCeilings.json.runId)
+
+  const resetsAt = new Date(Date.now() + 3600 * 1000).toISOString()
+  autonomy.recordCrossing(
+    repo.dir,
+    { kind: 'five_hour', percentUsed: 80, resetsAt, threshold: 80 },
+    { now: Date.now(), dataDir }
+  )
+  const resQuota = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
+    AETHER_DATA_DIR: dataDir,
+    CLAUDE_CODE_SESSION_ID: 'sess-p',
+  })
+  assert.notEqual(resQuota.status, 0)
+  assert.match(resQuota.json.errors[0], /aether-autonomy end --outcome incomplete/)
+
+  autonomy.end(repo.dir, 'incomplete', { now: Date.now() })
+  const started3 = autonomy.start(
+    repo.dir,
+    { quote: 'work unattended for 1 hour', session: 'sess-p', hours: 10, usd: 5 },
+    { configDir, dataDir, now: Date.now() }
+  )
+  assert.equal(started3.ok, true)
+  autonomy.spend(repo.dir, 5, 'u1', { now: Date.now() })
+  const resCost = runBin(PLAN_BIN, ['compile', tasksFile, '--no-lanes'], repo.dir, {
+    AETHER_DATA_DIR: dataDir,
+    CLAUDE_CODE_SESSION_ID: 'sess-p',
+  })
+  assert.notEqual(resCost.status, 0)
+  assert.match(resCost.json.errors[0], new RegExp(started3.run.id))
+  assert.match(resCost.json.errors[0], /aether-autonomy end --outcome ceiling/)
+})
