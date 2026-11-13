@@ -10,6 +10,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { tempDir, makeRepo, runBin, commitIn } = require('./helpers.js')
 const fx = require('./lane-fixtures.js')
 const work = require('../plugins/aether/lib/lane-work.js')
@@ -196,6 +197,36 @@ test('a detached commit ahead of the unit branch moves the branch, and the resul
   assert.equal(repo.git('show', `${json.branch}:src/t1/new.js`), 'hello')
 })
 
+// Detaches the unit worktree and leaves an unresolved merge in the index. A plain `git checkout` of
+// the unit branch fails on that index. With `ahead`, one more commit is made on the detached HEAD
+// first, so that commit descends from the branch; otherwise HEAD stays at the branch tip.
+function detachUnmerged(repo, unit, branch, { ahead = false } = {}) {
+  fs.writeFileSync(path.join(unit, 'conflict.txt'), 'branch\n')
+  repo.git('-C', unit, 'add', 'conflict.txt')
+  repo.git('-C', unit, 'commit', '-q', '-m', 'branch side')
+  const tip = repo.git('rev-parse', branch)
+  repo.git('-C', unit, 'checkout', '-q', '-b', 'other', `${branch}~1`)
+  fs.writeFileSync(path.join(unit, 'conflict.txt'), 'other\n')
+  repo.git('-C', unit, 'add', 'conflict.txt')
+  repo.git('-C', unit, 'commit', '-q', '-m', 'other side')
+  repo.git('-C', unit, 'checkout', '-q', '--detach', tip)
+  if (ahead) {
+    fs.mkdirSync(path.join(unit, 'src', 't1'), { recursive: true })
+    fs.writeFileSync(path.join(unit, 'src', 't1', 'kept.js'), 'kept\n')
+    repo.git('-C', unit, 'add', 'src/t1/kept.js')
+    repo.git('-C', unit, 'commit', '-q', '-m', 'detached work')
+  }
+  const head = repo.git('-C', unit, 'rev-parse', 'HEAD')
+  const merge = spawnSync('git', ['merge', '--no-commit', '--no-ff', 'other'], { cwd: unit, encoding: 'utf8' })
+  assert.notEqual(merge.status, 0, merge.stdout + merge.stderr)
+  assert.notEqual(repo.git('-C', unit, 'ls-files', '-u'), '', 'the index is unmerged')
+  assert.equal(repo.git('-C', unit, 'rev-parse', 'HEAD'), head, 'the conflict does not move HEAD')
+  const plain = spawnSync('git', ['checkout', branch], { cwd: unit, encoding: 'utf8' })
+  assert.notEqual(plain.status, 0, `a plain checkout of the branch fails:\n${plain.stderr}`)
+  assert.equal(repo.git('-C', unit, 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD', 'the failed checkout leaves HEAD detached')
+  return { tip, head }
+}
+
 // A commit on the base's other line: forked from the integration tip's parent, committed, and back
 // on the integration branch. The unit branch (made from the integration tip) is not its ancestor.
 function siblingCommit(repo, integration) {
@@ -228,6 +259,96 @@ test('a detached commit off the other line rejects the attempt with a reason nam
   }
   assert.equal(fs.existsSync(packageOf(repo, args.runId)), false, 'the reviewer package is not built')
   assert.equal(repo.git('rev-parse', args.integration.branch), before, 'the merge is not run')
+  const unit = path.join(repo.dir, '.aether', 'worktrees', args.runId, 'task-1')
+  assert.equal(attachedBranch(repo, unit), branch, 'the worktree is back on the unit branch')
+  assert.equal(repo.git('-C', unit, 'rev-parse', 'HEAD'), branchTip, 'the worktree is at the branch tip, not the off-branch commit')
+})
+
+// The next pair and the native fallback reuse this worktree. A rejected detached commit must not
+// stay checked out, and a later commit on the branch must be the one the package names.
+test('a rejected detached attempt leaves the worktree on the branch, and the next commit lands on it (swarm path)', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  commitIn(repo, repo.dir, 'setup.txt', 'setup\n', 'setup')
+  const sibling = siblingCommit(repo, args.integration.branch)
+  const before = repo.git('rev-parse', args.integration.branch)
+  const witness = path.join(tempDir(t, 'aether-witness-'), 'witness.jsonl')
+  const env = fx.laneEnv(t, { command: detachCommand(t, { mode: 'sibling', sibling, witness, files: { committed: [['src/t1/off.js', 'off\n']], uncommitted: [] } }) })
+  const message = ['You are implementing task-1: Task 1 title.', '## Paths you own', '', 'You may change only these paths:', '- src/t1/**', '', `FAKE-AGY: answer ${IMPL_DONE}`].join('\n')
+  const digest = fx.writePrompt(args, IMPLEMENT, message)
+  const branch = run.unitBranch(args.runId, 'task-1')
+  const started = fx.lane(args, 'start', [IMPLEMENT, '--role', 'implementer', '--task', 'task-1', '--model', 'gemini-3.8-flash', '--effort', 'xhigh', '--digest', digest], env)
+  assert.deepEqual(started.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'flash' }, started.stdout + started.stderr)
+  const rejected = fx.waitDone(args, IMPLEMENT, env)
+  assert.equal(rejected.status, 'failed', JSON.stringify(rejected))
+  const branchTip = branchOf(repo, branch)
+  assert.equal(branchTip, before, 'the unit branch did not move onto the off-branch commit')
+  const detached = witnessHead(witness)
+  assert.ok(rejected.detail.includes(detached.slice(0, 7)), rejected.detail)
+  const unit = path.join(repo.dir, '.aether', 'worktrees', args.runId, 'task-1')
+  assert.equal(attachedBranch(repo, unit), branch)
+  assert.equal(repo.git('-C', unit, 'rev-parse', 'HEAD'), branchTip)
+
+  const second = 'task-1-2-implement'
+  const env2 = fx.laneEnv(t, { command: detachCommand(t, { mode: 'attached', witness, files: { committed: [['src/t1/on.js', 'on\n']], uncommitted: [] } }) })
+  const digest2 = fx.writePrompt(args, second, message)
+  const started2 = fx.lane(args, 'start', [second, '--role', 'implementer', '--task', 'task-1', '--model', 'gemini-3.8-flash', '--effort', 'xhigh', '--digest', digest2], env2)
+  assert.deepEqual(started2.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'flash' }, started2.stdout + started2.stderr)
+  const done = fx.waitDone(args, second, env2)
+  assert.equal(done.status, 'ok', JSON.stringify(done))
+  const head = branchOf(repo, branch)
+  assert.equal(done.result.head, head, 'the result names the commit the branch is at')
+  assert.equal(repo.git('rev-parse', `${branch}~1`), branchTip, 'the new commit is on top of the old tip')
+  assert.notEqual(head, detached, 'the branch was not moved onto the rejected commit')
+  assert.equal(attachedBranch(repo, unit), branch)
+  assert.equal(repo.git('-C', unit, 'rev-parse', 'HEAD'), head)
+  assert.ok(fs.readFileSync(packageOf(repo, args.runId), 'utf8').includes('src/t1/on.js'), 'the package lists the commit on the branch')
+  assert.equal(repo.git('show', `${branch}:src/t1/on.js`), 'on')
+})
+
+// A plain checkout throws out of git() on an unmerged index, so the forced checkout must still run.
+// The branch tip does not move: HEAD was already that commit, only detached.
+test('an unresolved merge while detached at the branch tip puts the worktree back on that tip', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const unit = work.prepareImplementer(repo.dir, args.runId, 'task-1').workdir
+  const branch = run.unitBranch(args.runId, 'task-1')
+  const { tip } = detachUnmerged(repo, unit, branch)
+
+  const result = work.reattachDetached(unit, branch)
+  assert.deepEqual(result, { moved: false })
+  assert.equal(attachedBranch(repo, unit), branch, 'the worktree is back on the unit branch')
+  assert.equal(repo.git('-C', unit, 'rev-parse', 'HEAD'), tip, 'the worktree is at the old tip')
+  assert.equal(repo.git('rev-parse', branch), tip, 'the branch tip did not move')
+  assert.equal(repo.git('-C', unit, 'ls-files', '-u'), '', 'the unmerged index is gone')
+  assert.equal(repo.git('-C', unit, 'status', '--porcelain'), '', 'the forced checkout leaves a clean tree')
+  assert.equal(fs.readFileSync(path.join(unit, 'conflict.txt'), 'utf8'), 'branch\n')
+
+  fs.mkdirSync(path.join(unit, 'src', 't1'), { recursive: true })
+  fs.writeFileSync(path.join(unit, 'src', 't1', 'next.js'), 'next\n')
+  repo.git('-C', unit, 'add', 'src/t1/next.js')
+  repo.git('-C', unit, 'commit', '-q', '-m', 'next attempt')
+  assert.equal(repo.git('rev-parse', `${branch}~1`), tip, 'the next commit is on top of the old tip')
+  assert.equal(attachedBranch(repo, unit), branch)
+  assert.equal(repo.git('-C', unit, 'rev-parse', 'HEAD'), repo.git('rev-parse', branch))
+})
+
+// The same refusal on a descendant: the branch still moves to that commit, and the worktree follows it.
+test('an unresolved merge on a detached descendant still checks the worktree out on the branch', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const unit = work.prepareImplementer(repo.dir, args.runId, 'task-1').workdir
+  const branch = run.unitBranch(args.runId, 'task-1')
+  const { tip, head } = detachUnmerged(repo, unit, branch, { ahead: true })
+  assert.notEqual(head, tip)
+
+  const result = work.reattachDetached(unit, branch)
+  assert.deepEqual(result, { moved: true, head })
+  assert.equal(attachedBranch(repo, unit), branch)
+  assert.equal(repo.git('-C', unit, 'rev-parse', 'HEAD'), head)
+  assert.equal(repo.git('rev-parse', branch), head, 'the branch moved to the detached commit')
+  assert.equal(repo.git('rev-parse', `${branch}~1`), tip)
+  assert.equal(repo.git('show', `${branch}:src/t1/kept.js`), 'kept')
+  assert.equal(repo.git('-C', unit, 'ls-files', '-u'), '', 'the unmerged index is gone')
+  assert.equal(repo.git('-C', unit, 'status', '--porcelain'), '', 'the forced checkout leaves a clean tree')
+  assert.equal(fs.readFileSync(path.join(unit, 'conflict.txt'), 'utf8'), 'branch\n')
 })
 
 test('a detached commit off the other line rejects the attempt with a reason naming the cause (delegate path)', (t) => {
