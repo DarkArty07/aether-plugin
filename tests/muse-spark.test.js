@@ -73,7 +73,16 @@ test('(e) the low, medium and high rows are the owner-estimated points re-estima
   const sparkPairs = pairs.filter((p) => p.harness === 'muse' && p.model === 'muse-spark-1.3')
   const estimated = Object.fromEntries(sparkPairs.filter((p) => ['low', 'medium', 'high'].includes(p.effort)).map((p) => [p.effort, p]))
   assert.deepEqual(Object.keys(estimated).sort(), ['high', 'low', 'medium'])
-  assert.deepEqual([estimated.low.intelligence, estimated.medium.intelligence, estimated.high.intelligence], [17.8, 22.5, 28.7])
+  // R9 and R10: the estimate keeps estimateOf and estimateDistance. Its intelligence is the
+  // reference row plus that distance, so a refresh of the Claude scale moves it and this pin holds.
+  const byId = Object.fromEntries(pairs.map((pair) => [pair.id, pair]))
+  for (const effort of ['low', 'medium', 'high']) {
+    const pair = estimated[effort]
+    assert.equal(pair.estimateOf, `claude/haiku@${effort}`, effort)
+    assert.equal(typeof pair.estimateDistance, 'number', effort)
+    const ref = byId[pair.estimateOf]
+    assert.equal(pair.intelligence, Math.round((ref.intelligence + pair.estimateDistance) * 10) / 10, effort)
+  }
   assert.deepEqual([estimated.low.costPerTaskUsd, estimated.medium.costPerTaskUsd, estimated.high.costPerTaskUsd], [0.232, 0.534, 0.824])
   for (const [effort, pair] of Object.entries(estimated)) {
     assert.deepEqual([pair.harness, pair.model, pair.family, pair.group], ['muse', 'muse-spark-1.3', 'muse-spark-1.3', 'muse'], effort)

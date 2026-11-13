@@ -28,6 +28,15 @@ test('pairFiguresOf reads the intelligence, the cost and the code figures of the
   assert.equal(pairFiguresOf(html, 'claude-missing-5-5'), null)
 })
 
+test('pairFiguresOf reads intelligenceIndex wherever it sits in the scalars, not only as the first key', () => {
+  const html = page(block('claude-opus-5-5-high', OWN))
+  const text = html.replace(/\\"/g, '"')
+  assert.equal(/"scalars":\{"intelligenceIndex":/.test(text), false, 'the fixture must put other scalar keys first, as a real page does')
+  assert.equal(pairFiguresOf(html, 'claude-opus-5-5-high').intelligence, 51.8)
+  const missing = page(block('claude-opus-5-5-high', OWN).replace(`"intelligenceIndex":${OWN.intelligence}`, '"intelligenceIndex":null'))
+  assert.equal(pairFiguresOf(missing, 'claude-opus-5-5-high').intelligence, null)
+})
+
 test('#236 4: the page reader exports no cli (only the file\'s own main guard uses it)', () => {
   assert.equal(require('../.claude/skills/artificial-analysis/aa-api.js').cli, undefined)
 })
