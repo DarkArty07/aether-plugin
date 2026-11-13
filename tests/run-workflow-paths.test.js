@@ -330,3 +330,64 @@ test('in a repository without spaces, applyVerdict leaves --payload bare so the 
     assert.equal(parsed.args[parsed.args.indexOf('--payload') + 1], expectedFile)
   }
 })
+
+test('#256 27: in a repository with spaces in its path, the stuck open quotes --payload', async (t) => {
+  const repo = makeRepo(t, { prefix: 'aether test ' })
+  assert.ok(repo.dir.includes(' '), `repo path must contain a space: ${repo.dir}`)
+  const args = compile(repo, plan([task(1)]))
+  args.stuckWaitSeconds = 120
+  let stuckPrompt = ''
+
+  const agent = async (prompt, opts = {}) => {
+    const role = (opts.agentType || '').replace(/^aether:/, '')
+    if (role === 'implementer') return null
+    if (role === 'supervisor') return { verdict: 'approve', findings: [], ruling: 'Approve.', guidance: '', question: '' }
+    if (role === 'reviewer') return { verdict: 'ready', findings: [], declined: [], summary: 'Ready.' }
+    if (role !== 'ops') return null
+
+    const line = prompt.split('\n')[2] || ''
+    const tokens = shellSplit(line)
+    const verbAt = tokens.findIndex((token) => token === 'aether-wt' || token === 'aether-lane')
+    const verb = verbAt === -1 ? '' : tokens[verbAt + 1]
+
+    if (verb === 'stuck') {
+      stuckPrompt = prompt
+      return { exitCode: 0, stdout: `${JSON.stringify({ stuck: true, task: 'task-1', state: 'waiting' })}\n` }
+    }
+    if (verb === 'stuck-tick') {
+      const seconds = Number(tokens[tokens.indexOf('--seconds') + 1])
+      return { exitCode: 0, stdout: `${JSON.stringify({ paused: seconds, state: 'waiting', stop: false })}\n` }
+    }
+    if (verb === 'stuck-end') return { exitCode: 0, stdout: `${JSON.stringify({ ended: true, task: 'task-1', outcome: tokens.at(-1) })}\n` }
+    if (verb === 'ladder' && tokens.includes('--verdict')) {
+      const payloadData = payloadOf(prompt)
+      if (payloadData) {
+        fs.mkdirSync(path.dirname(payloadData.path), { recursive: true })
+        fs.writeFileSync(payloadData.path, payloadData.text, 'utf8')
+      }
+      const flag = (name) => tokens[tokens.indexOf(name) + 1]
+      const ans = ladderCommand(args.repoRoot, args.runId, 'task-1', {
+        verdict: flag('--verdict'),
+        payload: flag('--payload'),
+        digest: flag('--digest'),
+      })
+      return { exitCode: 0, stdout: `${JSON.stringify(ans)}\n` }
+    }
+    if (verb === 'ladder') return { exitCode: 0, stdout: `${JSON.stringify(ladderCommand(args.repoRoot, args.runId, 'task-1'))}\n` }
+    if (verb === 'remove') return { exitCode: 0, stdout: `${JSON.stringify({ removed: true, patch: null })}\n` }
+    if (verb === 'sweep') return { exitCode: 0, stdout: `${JSON.stringify({ removedWorktrees: [], removedBranches: [], remaining: { worktrees: [], branches: [] } })}\n` }
+    if (verb === 'diff') return { exitCode: 0, stdout: `${JSON.stringify({ path: 'final.diff', base: args.integration.base, head: 'f1a1' })}\n` }
+    return { exitCode: 0, stdout: `${JSON.stringify({})}\n` }
+  }
+
+  const workflow = loadWorkflow()
+  await workflow(agent, (thunks) => Promise.all(thunks.map((fn) => fn())), () => {}, () => {}, () => {}, args, Date, Math, undefined, undefined)
+
+  assert.ok(stuckPrompt, 'the stuck wait opened')
+  const stuckLine = stuckPrompt.split('\n')[2] || ''
+  const tokens = shellSplit(stuckLine)
+  const payloadPath = tokens[tokens.indexOf('--payload') + 1]
+  assert.ok(payloadPath.includes(' '), payloadPath)
+  assert.ok(stuckLine.includes(`--payload '${payloadPath}'`), `the spaced payload must be quoted in the stuck command: ${stuckLine}`)
+  assert.equal(payloadPath, payloadOf(stuckPrompt).path)
+})

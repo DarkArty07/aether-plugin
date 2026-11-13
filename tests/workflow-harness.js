@@ -283,6 +283,9 @@ async function runWorkflow(args, overrides = {}, options = {}) {
       const seconds = Number(/--seconds (\d+)/.exec(prompt)[1])
       const stuck = STUCK_TICK.test(opts.label || '')
       if (!overrides.deadline) {
+        // Record the tick before returning. A stuck wait with no clock still leaves a tick,
+        // so an empty `ticks` means the wait did not run (#256 26).
+        if (stuck) ticks.push({ label: opts.label, seconds, prompt })
         if (stuck) return stuckWaiting(seconds)
         return new Promise(() => {})
       }

@@ -1317,7 +1317,8 @@ async function mergeHeld(unit, task, { wasCleanStart, rescue: forRescue }) {
   })
   const take = async (commit) => {
     unit.commit = commit
-    unit.ladder.firstTry = isFirstTry(unit, wasCleanStart)
+    // A rescue is the Lead's fix, not a first try, even when the ladder never climbed (spec 036, #256 23).
+    unit.ladder.firstTry = forRescue ? false : isFirstTry(unit, wasCleanStart)
     // A fix the Lead delivered merges without a rung of the ladder: no approval verdict (spec 034).
     if (!forRescue) await approved(unit)
     return { done: 'merged' }
@@ -1717,6 +1718,7 @@ async function rescue(unit) {
   const end = async (outcome) => {
     const out = await ops(`aether-wt stuck-end ${runId} ${unit.id} --outcome ${outcome}`, { phase: 'Merge', label: `${unit.id}: stuck end` })
     if (out.error) log(`${unit.id}: stuck-end ${outcome} failed: ${out.error}`)
+    return out
   }
   try {
     waiting.add(unit.id)
@@ -1762,6 +1764,25 @@ async function rescue(unit) {
       }
     }
     if (!fate) fate = { kind: 'expired' }
+    // stuck-end on a record the Lead already delivered answers state delivered and does not
+    // expire it (spec 036, #256 22). The flow then merges, as it does for a delivered tick.
+    if (fate.kind !== 'delivered') {
+      const closed = await end(fate.kind)
+      if (closed && closed.state === 'delivered') {
+        fate = { kind: 'delivered', commit: closed.commit, reason: closed.reason, widen: closed.widen }
+      } else if (fate.kind === 'declined') {
+        const lead = typeof fate.reason === 'string' && fate.reason !== '' ? fate.reason : 'no reason given'
+        unit.reason = `${before}${/[.!?]$/.test(before) ? '' : '.'} The Lead declined to fix it: ${lead}`
+        log(`${unit.id}: the Lead declined to fix it: ${lead}`)
+        return
+      } else if (fate.kind === 'ceiling') {
+        log(`${unit.id}: the time ceiling ended the stuck wait`)
+        return
+      } else {
+        log(`${unit.id}: the stuck wait expired`)
+        return
+      }
+    }
     if (fate.kind === 'delivered') {
       const held2 = await mergeHeld(unit, tasks[unit.id], { wasCleanStart: cleanStarts[unit.id], rescue: true })
       if (held2.done === 'merged') {
@@ -1771,17 +1792,20 @@ async function rescue(unit) {
         await end('merged')
         return
       }
-      unit.reason = `${before}${/[.!?]$/.test(before) ? '' : '.'} The Lead's fix was refused: ${describeMerge(held2.out)}`
+      const refused = describeMerge(held2.out)
+      unit.reason = `${before}${/[.!?]$/.test(before) ? '' : '.'} The Lead's fix was refused: ${refused}`
+      log(`${unit.id}: the Lead's fix was refused: ${refused}`)
       await end('rejected')
       return
     }
-    if (fate.kind === 'declined') {
-      const lead = typeof fate.reason === 'string' && fate.reason !== '' ? fate.reason : 'no reason given'
-      unit.reason = `${before}${/[.!?]$/.test(before) ? '' : '.'} The Lead declined to fix it: ${lead}`
-      await end('declined')
-      return
+  } catch (err) {
+    // mergeHeld, or the reason built from its result, can throw. The wait still ends (spec 036, #256 24).
+    log(`${unit.id}: the rescue failed: ${message(err)}`)
+    try {
+      await end('rejected')
+    } catch (endErr) {
+      log(`${unit.id}: stuck-end rejected failed: ${message(endErr)}`)
     }
-    await end(fate.kind)
   } finally {
     waiting.delete(unit.id)
     if (unit.attempts > 0) await close(unit)
