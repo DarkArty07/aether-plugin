@@ -100,6 +100,31 @@ test('Models and Designing keep their permanent rules and load their detailed sk
   ]) assert.ok(designing.includes(rule), rule)
 })
 
+test('The verdict names aether-delegate approve for an edit, and the rules say once that reading Muse\'s quota costs a real call (R27, R29)', () => {
+  const verdict = text.slice(text.indexOf('**The verdict.**'), text.indexOf('**Climbing.**'))
+  assert.ok(verdict.includes('aether-delegate approve --task <id>'))
+  assert.match(verdict, /aether-delegate verdict --task <id> --verdict/)
+  const muse = text.match(/Reading Muse's quota costs a real call\./g) || []
+  assert.equal(muse.length, 1)
+})
+
+test('a read-only delegate is approved with the plain verdict, which still names approve (R29)', () => {
+  const verdict = text.slice(text.indexOf('**The verdict.**'), text.indexOf('**Climbing.**'))
+  const other = verdict.slice(verdict.indexOf('For the other cases'))
+  assert.match(other, /`aether-delegate verdict --task <id> --verdict approve\|fix\|infeasible`/)
+  assert.match(other, /A read-only delegate did not edit, so `aether-delegate approve` refuses it and `approve` on that line closes it/)
+  assert.match(other, /`fix` and `infeasible` stay on that line for an edit too/)
+})
+
+test('an unlisted effort takes that model\'s first step, and a placement is reported on Asequible', () => {
+  const place = text.slice(text.indexOf("**The owner's placement.**"), text.indexOf('\n## Models'))
+  assert.match(place, /unlisted efforts take the model's first step at that effort, climbing from there/)
+  assert.match(place, /at the recorded effort when the words name one, climbing from there/)
+  assert.match(place, /Never invent quotes or raise a model for your own reason \(`infeasible` still rises one step\)/)
+  assert.match(place, /Report these on Asequible/)
+  assert.doesNotMatch(place, /Unlisted efforts start there/)
+})
+
 test('the delegate rules cover every #204 case and its consequence (R10)', () => {
   const ladder = section('The delegate ladder')
   for (const rule of [

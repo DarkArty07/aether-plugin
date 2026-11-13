@@ -43,7 +43,7 @@ Compile also runs the plan's test command once, in the integration worktree, and
 
 ## 3. Launch
 
-In an autonomous run, `aether-plan compile` refuses a launch when the run is stopped or paused. Start nothing new and act as the `aether:autonomous-runs` skill says: for `time` or `cost`, let running work finish or save it as patches, finish any merge, then run `aether-autonomy end --outcome ceiling` and give the brief. For `quota`, follow its quota brake: stop running work, save each in-flight swarm with `aether-wt save <runId>`, record `aether-autonomy quota-saved`, wait for the reset and leave the run open. Use `aether-autonomy end` only for a `time` or `cost` stop or to close an old run another session left open.
+In an autonomous run, `aether-plan compile` refuses a launch when the run is stopped or paused. Start nothing new and act as the `aether:autonomous-runs` skill says: for `time` or `cost`, let running work finish or save it as patches, finish any merge, then run `aether-autonomy end --outcome ceiling` and give the brief. For `quota`, follow its quota brake: stop running work, run `aether-autonomy quota-brake`, wait for the reset and leave the run open. Use `aether-autonomy end` only for a `time` or `cost` stop or to close an old run another session left open.
 
 Run the `aether:run` workflow with that JSON as its args, unchanged. The run works in the background, and the progress view shows its phases.
 

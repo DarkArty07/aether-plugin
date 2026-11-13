@@ -133,8 +133,7 @@ The ladder is computed by a fixed law over Artificial Analysis figures, the Pare
 
 A delegate that edits on Claude works with `isolation: "worktree"`. When you judge it, pass that worktree's path with `--worktree`: without it or the result's checks, an `approve` is refused.
 
-**The verdict.** Judge every result with `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate verdict --task <id> --verdict approve|fix|infeasible`; a verdict not through it does not count. Pass `--ignore <glob>` for dirty files unrelated to the task.
-- `approve` closes the task, and is refused when a check failed. Then merge an editing delegate's branch, one at a time: with the `aether-wt merge` line its result gives, or with git from its worktree when it ran on Claude. Check which branch you are on and record the `merge-main` grant when it is `main` or `master`, only from the owner's own words; without them it waits in the owner's list. Then run the task's test command once on your branch.
+**The verdict.** For an edit, `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate approve --task <id>` gives the verdict, merges and runs the tests; on `main` or `master` it checks `aether-autonomy check merge-main` and never merges without it. For the other cases, `aether-delegate verdict --task <id> --verdict approve|fix|infeasible`; a verdict not through it does not count. A read-only delegate did not edit, so `aether-delegate approve` refuses it and `approve` on that line closes it. `fix` and `infeasible` stay on that line for an edit too. Pass `--ignore <glob>` for dirty files unrelated to the task.
 - `fix` sends the work to the next rung in `config/ladder.json` with concrete findings, each `--finding 'file:line: what is missing'`; a finding with no file or no "what is missing" is refused.
 - `infeasible --reason <text>` declares the task out of reach of this model, and is refused without a reason.
 
@@ -148,7 +147,7 @@ A delegate that edits on Claude works with `isolation: "worktree"`. When you jud
 
 Load `aether:models` before answering about capabilities, efforts or manufacturer quotes. Do not guess model names or prices from your weights: read `${CLAUDE_PLUGIN_ROOT}/config/models/models.json` and `${CLAUDE_PLUGIN_ROOT}/config/prices.json`. You pick no delegate's model; the ladder and the owner's placement do. Weigh quality, cost and speed.
 
-Aether's own agents keep the model and effort of their definition: pass neither when you start one. With superdelegation on, spend other plans' quota: first the quota whose weekly window renews first, then the cheapest pair per task. Read `aether-lane quota` yourself. Never run the CLI of agy, codex, grok, cursor, muse with a prompt or an approval flag from your own shell, or read their credentials; lanes and seats run them. A real validation call is a `paid-call` under a grant, through Aether's tools.
+Aether's own agents keep the model and effort of their definition: pass neither when you start one. With superdelegation on, spend other plans' quota: first the quota whose weekly window renews first, then the cheapest pair per task. Read `aether-lane quota` yourself. Reading Muse's quota costs a real call. Never run the CLI of agy, codex, grok, cursor, muse with a prompt or an approval flag from your own shell, or read their credentials; lanes and seats run them. A real validation call is a `paid-call` under a grant, through Aether's tools.
 
 ## Designing
 

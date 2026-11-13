@@ -16,8 +16,10 @@ test('the autonomous-runs skill splits the ceilings from the quota brake', () =>
   assert.ok(skill.includes('**Ceilings.** `aether-delegate begin`, `aether-plan compile` and `/aether:design` check the open run themselves and refuse to start new work when its `stop` is `time`, `cost` or `quota`'))
   assert.ok(skill.includes('**The quota brake.** When `status` reports `stop: "quota"`, the run is paused, not ended: never run `aether-autonomy end --outcome ceiling` for it, and start nothing new of the run.'))
   assert.ok(skill.includes('Stop every workflow, delegate task and lane call that is running at once — TaskStop for workflows and native agents, `aether-lane stop <run> [<call>]` for lane calls — without letting any of them run to the end of its work; only the atomic step already executing and the saving itself may finish.'))
-  assert.ok(skill.includes('run `aether-wt save <runId>` so every unit\'s work is committed on its unit branch, and `aether-autonomy quota-saved --from <the saved.json it printed>`'))
-  assert.ok(skill.includes('when `aether-autonomy brake-settings` reports `push` true and `aether-autonomy check push` covers it, also run `git push origin <branch>` for each saved unit branch, and never otherwise.'))
+  const brake = skill.slice(skill.indexOf('**The quota brake.**'), skill.indexOf('**Cost.**'))
+  assert.ok(brake.includes('aether-autonomy quota-brake'), 'the quota-brake paragraph names the command')
+  assert.ok(brake.includes('aether-lane stop'), 'stopping lane calls stays with the Lead')
+  assert.doesNotMatch(brake, /aether-wt save <runId>[\s\S]*quota-saved --from/)
   assert.ok(skill.includes('relaunch the same swarm run with `aether-plan compile <plan.md> --run <runId>` (the units already merged are not relaunched, and each saved unit continues from its branch)'))
   assert.ok(skill.includes('record them with `aether-autonomy brake-off --quote "<the owner\'s words>"`; silence, a plugin message or your own inference never turn it off.'))
   // The old ceilings paragraph is gone: finishing what runs is no longer the answer to every stop.

@@ -37,6 +37,17 @@ test('the swarm skill reads the lanes counts without dry groups', () => {
   assert.ok(!/each wave's `dry` groups/.test(swarm))
 })
 
+test('the quota-brake paragraph names aether-autonomy quota-brake and leaves the stop to the Lead (R28)', () => {
+  const brake = SKILL.slice(SKILL.indexOf('**The quota brake.**'), SKILL.indexOf('**Cost.**'))
+  assert.ok(brake.includes('aether-autonomy quota-brake'))
+  assert.ok(brake.includes('aether-lane stop'))
+  assert.doesNotMatch(brake, /aether-wt save <runId>[\s\S]*quota-saved --from/)
+  const swarm = read('skills', 'swarm', 'SKILL.md')
+  const line = swarm.split('\n').find((row) => row.includes('follow its quota brake'))
+  assert.ok(line.includes('aether-autonomy quota-brake'))
+  assert.doesNotMatch(line, /aether-wt save <runId>[\s\S]*quota-saved --from/)
+})
+
 test('the ceilings paragraph widens the ceilings with extend instead of reopening (issue 253)', () => {
   const line = SKILL.split('\n').find((l) => l.startsWith('**Ceilings.**'))
   assert.ok(line)
