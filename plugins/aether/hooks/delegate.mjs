@@ -243,6 +243,7 @@ export function createDelegates() {
         plan = null
       }
       if (plan === null) return next(e)
+      if (typeof plan.deny === 'string' && plan.deny !== '') return { deny: plan.deny }
       const rewrite = rewriteOf(plan)
       const call = rewrite ? { ...e, ...rewrite } : e
       const routed = remember(call.prompt, plan)
