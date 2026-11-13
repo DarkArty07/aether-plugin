@@ -8,7 +8,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { useDataDir, tempDir, makeRepo, compile, commitIn, runBin, WT_BIN } = require('./helpers.js')
+const { useDataDir, tempDir, makeRepo, compile, commitIn, runBin, WT_BIN, PLUGIN } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { T0, MIN, finishedRun } = require('./report-fixtures.js')
 const { CLASSES, recordTiming, timingsOf, quotaWaitOf } = require('../plugins/aether/lib/run-timings.js')
@@ -22,8 +22,9 @@ test('recordTiming appends one line with the class, ms and an ISO date', (t) => 
   const { args } = finishedRun(t)
   recordTiming(args.runDir, 'gate', 1500)
   const lines = fs.readFileSync(path.join(args.runDir, 'timings.jsonl'), 'utf8').trim().split('\n')
-  assert.equal(lines.length, 1)
-  const entry = JSON.parse(lines[0])
+  const gates = lines.map((line) => JSON.parse(line)).filter((entry) => entry.class === 'gate')
+  assert.equal(gates.length, 1)
+  const entry = gates[0]
   assert.equal(entry.class, 'gate')
   assert.equal(entry.ms, 1500)
   assert.equal(entry.at, iso(Date.parse(entry.at)))
@@ -55,18 +56,22 @@ test('recordTiming writes nothing and does not throw on a duration that is not a
 test('timingsOf totals by class', (t) => {
   useDataDir(t)
   const { args } = finishedRun(t)
+  const before = timingsOf(args.runDir)
   recordTiming(args.runDir, 'gate', 1000)
   recordTiming(args.runDir, 'gate', 2000)
   recordTiming(args.runDir, 'baseline', 500)
-  assert.deepEqual(timingsOf(args.runDir), {
-    byClass: { gate: { count: 2, ms: 3000 }, baseline: { count: 1, ms: 500 } },
-    totalMs: 3500,
-  })
+  const timings = timingsOf(args.runDir)
+  assert.deepEqual(timings.byClass.gate, { count: 2, ms: 3000 })
+  assert.equal(timings.byClass.baseline.count, before.byClass.baseline.count + 1)
+  assert.equal(timings.byClass.baseline.ms, before.byClass.baseline.ms + 500)
+  assert.equal(timings.totalMs, before.totalMs + 3500)
 })
 
 test('timingsOf on a missing file or bad lines reports none', (t) => {
   useDataDir(t)
-  const { args } = finishedRun(t)
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)], { execution: ['- Test command: `true`'] }), ['--no-baseline'])
+  assert.equal(fs.existsSync(path.join(args.runDir, 'timings.jsonl')), false)
   assert.deepEqual(timingsOf(args.runDir), { byClass: {}, totalMs: 0, none: true })
   fs.writeFileSync(path.join(args.runDir, 'timings.jsonl'), 'not json\n{"class":"gate"}\n')
   assert.deepEqual(timingsOf(args.runDir), { byClass: {}, totalMs: 0, none: true })
@@ -75,20 +80,25 @@ test('timingsOf on a missing file or bad lines reports none', (t) => {
 test('the report of a fixture run with a timings file shows each class and the total', (t) => {
   useDataDir(t)
   const { repo, args } = finishedRun(t)
+  const before = timingsOf(args.runDir)
   recordTiming(args.runDir, 'gate', 1000)
   recordTiming(args.runDir, 'gate', 2000)
   recordTiming(args.runDir, 'baseline', 500)
   const r = report(repo.dir, args.runId, { tests: false })
-  assert.deepEqual(r.timings, {
-    byClass: { gate: { count: 2, ms: 3000 }, baseline: { count: 1, ms: 500 } },
-    totalMs: 3500,
-  })
-  assert.ok(r.notes.includes('not a model: 3500ms of 1800000ms'), r.notes.join('\n'))
+  assert.deepEqual(r.timings.byClass.gate, { count: 2, ms: 3000 })
+  assert.equal(r.timings.byClass.baseline.count, before.byClass.baseline.count + 1)
+  assert.equal(r.timings.byClass.baseline.ms, before.byClass.baseline.ms + 500)
+  assert.equal(r.timings.totalMs, before.totalMs + 3500)
+  assert.ok(r.notes.includes(`not a model: ${r.timings.totalMs}ms of 1800000ms`), r.notes.join('\n'))
 })
 
 test('a fixture run without the file reports as before, with no timings key', (t) => {
   useDataDir(t)
-  const { repo, args } = finishedRun(t)
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1), task(2)], { execution: ['- Test command: `true`'] }), ['--no-baseline'])
+  const resultFile = path.join(args.runDir, 'result.json')
+  fs.writeFileSync(resultFile, JSON.stringify({ runId: args.runId, units: [] }) + '\n')
+  fs.utimesSync(resultFile, new Date(T0 + 30 * MIN), new Date(T0 + 30 * MIN))
   const before = report(repo.dir, args.runId, { tests: false })
   assert.equal('timings' in before, false)
   assert.equal(before.notes.some((note) => note.startsWith('not a model:')), false)
@@ -102,7 +112,7 @@ function gateUnit(t) {
   const repo = makeRepo(t)
   const check = "if (require('fs').existsSync('src/t1/bad.js')) { console.log('not ok 1 - tests/new.test.js'); process.exit(1) }\nconsole.log('# pass 12')\n"
   commitIn(repo, repo.dir, 'check.js', check, 'add the check')
-  const args = compile(repo, plan([task(1), task(2)], { execution: ['- Test command: `node check.js`'] }), ['--no-baseline'])
+  const args = compile(repo, plan([task(1), task(2)], { execution: ['- Test command: `node check.js`'] }))
   const created = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
   return { repo, args, wt: created.path }
 }
@@ -113,8 +123,9 @@ test('a gate pass writes one gate line', (t) => {
   const g = gateCommand(u.repo.dir, u.args.runId, 'task-1')
   assert.equal(g.pass, true)
   const lines = fs.readFileSync(path.join(u.args.runDir, 'timings.jsonl'), 'utf8').trim().split('\n')
-  assert.equal(lines.length, 1)
-  const entry = JSON.parse(lines[0])
+  const gates = lines.map((line) => JSON.parse(line)).filter((entry) => entry.class === 'gate')
+  assert.equal(gates.length, 1)
+  const entry = gates[0]
   assert.equal(entry.class, 'gate')
   assert.ok(Number.isInteger(entry.ms) && entry.ms >= 0, `ms is ${entry.ms}`)
 })
@@ -150,12 +161,32 @@ test('quotaWaitOf counts a pause with a later resumeAt only up to now', (t) => {
   assert.deepEqual(quotaWaitOf(repo.dir, args.runId, T0 + 10 * MIN), { count: 1, ms: 10 * MIN })
 })
 
+test('a finished run merged through aether-wt shows baseline and merge-tests', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  const created = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir)
+  assert.equal(created.status, 0, created.stdout)
+  commitIn(repo, created.json.path, 'src/t1/a.js', 'one\n', 'add a')
+  const merged = runBin(WT_BIN, ['merge', args.runId, 'task-1'], repo.dir)
+  assert.equal(merged.status, 0, merged.stdout)
+  assert.equal(merged.json.merged, true)
+  const reportBin = path.join(PLUGIN, 'bin', 'aether-report')
+  const r = runBin(reportBin, ['--run', args.runId, '--no-tests'], repo.dir)
+  assert.equal(r.status, 0, r.stdout)
+  const byClass = r.json.timings.byClass
+  assert.equal(byClass.baseline.count, 1)
+  assert.ok(Number.isInteger(byClass.baseline.ms) && byClass.baseline.ms >= 0, `baseline ms is ${byClass.baseline.ms}`)
+  assert.equal(byClass['merge-tests'].count, 1)
+  assert.ok(Number.isInteger(byClass['merge-tests'].ms) && byClass['merge-tests'].ms >= 0, `merge-tests ms is ${byClass['merge-tests'].ms}`)
+})
+
 test('the report of a quota-waited run shows a wait-quota entry', (t) => {
   useDataDir(t)
   const { repo, args } = finishedRun(t)
   autonomyRun(repo.dir, [pause(args.runId, T0, T0 + 5 * MIN)])
   const r = report(repo.dir, args.runId, { tests: false })
   assert.deepEqual(r.timings.byClass['wait-quota'], { count: 1, ms: 5 * MIN })
-  assert.equal(r.timings.totalMs, 5 * MIN)
-  assert.ok(r.notes.includes('not a model: 300000ms of 1800000ms'), r.notes.join('\n'))
+  assert.equal(r.timings.byClass.baseline.count, 1)
+  assert.equal(r.timings.totalMs, 5 * MIN + r.timings.byClass.baseline.ms)
+  assert.ok(r.notes.includes(`not a model: ${r.timings.totalMs}ms of 1800000ms`), r.notes.join('\n'))
 })
