@@ -239,7 +239,7 @@ test('the sources of the bootstrap and the swarm skill name no path of this repo
   }
 })
 
-test('the bootstrap sends every delegate through Agent, judges it with aether-delegate verdict, merges an editing one by hand, and stays under 34000 bytes', () => {
+test('the bootstrap sends every delegate through Agent, judges an edit with aether-delegate approve, and stays under 34000 bytes', () => {
   const text = USING_SOURCE
   for (const needed of [
     '**Delegates go through `Agent`:**',
@@ -247,9 +247,9 @@ test('the bootstrap sends every delegate through Agent, judges it with aether-de
     'runs it on Claude, at the step\'s model, only when none can',
     'You yourself stay on Claude either way',
     'Pass neither `model` nor `effort`',
-    'the `aether-wt merge` line its result gives',
-    'record the `merge-main` grant when it is `main` or `master`',
-    'run the task\'s test command once on your branch',
+    'aether-delegate approve --task <id>',
+    'aether-autonomy check merge-main',
+    'never merges without it',
     'do not read the whole diff when they are enough',
     'Launch the next attempt, a rise, with the same id',
     'with a reason, to a verdict only to throw that work away',

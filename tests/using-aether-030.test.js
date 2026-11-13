@@ -100,6 +100,14 @@ test('Models and Designing keep their permanent rules and load their detailed sk
   ]) assert.ok(designing.includes(rule), rule)
 })
 
+test('The verdict names aether-delegate approve for an edit, and the rules say once that reading Muse\'s quota costs a real call (R27, R29)', () => {
+  const verdict = text.slice(text.indexOf('**The verdict.**'), text.indexOf('**Climbing.**'))
+  assert.ok(verdict.includes('aether-delegate approve --task <id>'))
+  assert.match(verdict, /aether-delegate verdict --task <id> --verdict/)
+  const muse = text.match(/Reading Muse's quota costs a real call\./g) || []
+  assert.equal(muse.length, 1)
+})
+
 test('the delegate rules cover every #204 case and its consequence (R10)', () => {
   const ladder = section('The delegate ladder')
   for (const rule of [

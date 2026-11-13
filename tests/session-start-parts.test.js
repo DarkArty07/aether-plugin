@@ -183,6 +183,23 @@ test('a part command with a part that does not exist, or a bad argument, prints 
   }
 })
 
+// Measured from the 0.41.0 source (git show 6b31c62), prepared as source() does, with the installed folder
+// '/' + 'i'.repeat(63): the length of each part.slice, without the heading. A checkout path changes out.length
+// (issue #230), so the base is these three numbers, not a measurement of this tree.
+const BASE = [8549, 8533, 6666]
+
+test('R32: each part slice is no longer than the 0.41.0 base, the three together are shorter, and each whole output stays within 9,800', () => {
+  assert.deepEqual(BASE, [8549, 8533, 6666])
+  const installed = '/' + 'i'.repeat(63)
+  const parts = splitParts(source(installed), installed)
+  assert.equal(parts.length, BASE.length)
+  for (const [i, part] of parts.entries()) assert.ok(part.slice.length <= BASE[i], `part ${i + 1} slice is ${part.slice.length}, base ${BASE[i]}`)
+  const sum = parts.reduce((total, part) => total + part.slice.length, 0)
+  const baseSum = BASE.reduce((total, n) => total + n, 0)
+  assert.ok(sum < baseSum, `the three slices add to ${sum}, the base to ${baseSum}`)
+  for (const [i, part] of bootstrapParts(PLUGIN).entries()) assert.ok(part.output.length <= 9800, `part ${i + 1} prints ${part.output.length} characters`)
+})
+
 test('bootstrap splits into at most 3 order-independent parts within 25,000 total injected chars', () => {
   const parts = bootstrapParts(PLUGIN)
   assert.ok(parts.length >= 1 && parts.length <= 3, `expected 1..3 parts, got ${parts.length}`)
