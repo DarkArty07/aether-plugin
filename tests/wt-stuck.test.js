@@ -218,7 +218,7 @@ test('stuckEnd on a delivered record leaves it delivered', (t) => {
   stuck.deliverFix(s.repo.dir, s.args.runId, 'task-1', { commit, reason: 'moved the test into Owns' })
   const before = record(s)
   const out = stuck.stuckEnd(s.repo.dir, s.args.runId, 'task-1', 'expired')
-  assert.equal(out.state, 'delivered')
+  assert.deepEqual(out, { ended: false, task: 'task-1', state: 'delivered', commit, reason: 'moved the test into Owns' })
   const after = record(s)
   assert.equal(after.state, 'delivered')
   assert.equal(after.ended, undefined)
