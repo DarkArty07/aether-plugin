@@ -45,15 +45,24 @@ function unitOf(branch) {
   return { runId: match[1], taskId: match[2] }
 }
 
-// The project's test command: testCommand of SETTINGS_FILE in the main checkout's .aether directory, otherwise npm test.
-function testCommand(cwd) {
+// testCommand of SETTINGS_FILE in the main checkout's .aether directory, or null when it names none.
+function settingsTestCommand(cwd) {
   try {
     const parsed = JSON.parse(fs.readFileSync(path.join(run.aetherDir(repoPaths(cwd).mainRoot), SETTINGS_FILE), 'utf8'))
     if (typeof parsed.testCommand === 'string' && parsed.testCommand.trim() !== '') return parsed.testCommand.trim()
   } catch {
-    // No settings file, or one without testCommand: the default command.
+    // No settings file, or one without testCommand.
   }
-  return 'npm test'
+  return null
+}
+
+// The command approve runs, and where it came from. The launch records the task's AETHER-TESTS line as tests.
+// Only a task with none falls back to settings, then to npm test.
+function resolveTestCommand(cwd, launch) {
+  if (typeof launch?.tests === 'string' && launch.tests.trim() !== '') return { command: launch.tests.trim(), source: 'task' }
+  const fromSettings = settingsTestCommand(cwd)
+  if (fromSettings) return { command: fromSettings, source: 'settings' }
+  return { command: 'npm test', source: 'default' }
 }
 
 // The last JSON line a bin of this plugin printed, or null.
@@ -136,8 +145,9 @@ async function approve(cwd, { task, worktree, ignore = [], env: given = {} } = {
   const landed = currentBranch(cwd)
   if (!merged.ok) return { approved: true, merged: false, reason: merged.reason, branch: landed }
 
-  const passed = runShell(testCommand(cwd), { cwd, env }).status === 0
-  const out = { approved: true, merged: true, tests: passed ? 'passed' : 'failed', branch: landed }
+  const chosen = resolveTestCommand(cwd, launch)
+  const passed = runShell(chosen.command, { cwd, env }).status === 0
+  const out = { approved: true, merged: true, tests: passed ? 'passed' : 'failed', testCommand: chosen.command, testSource: chosen.source, branch: landed }
   if (!passed) out.reason = 'the tests failed; the merge was kept'
   return out
 }
