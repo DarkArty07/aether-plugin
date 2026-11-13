@@ -772,7 +772,7 @@ test('the messages carry data: the rules of the implementer and the final review
   assert.ok(body('implementer').includes('Read the brief first.') && body('implementer').includes('by about turn 45 of a 60-turn budget'))
   const review = run.calls.find((c) => c.role === 'reviewer').prompt
   assert.equal(review.includes('Reading plan'), false)
-  assert.ok(body('reviewer').includes('## Reading plan') && body('reviewer').includes('Give your report by turn 28 at the latest'))
+  assert.ok(body('reviewer').includes('## Reading plan') && body('reviewer').includes('Give your report by about turn 28'))
   const second = run.calls.filter((c) => c.role === 'supervisor' && c.unit === 'task-1')[1].prompt
   assert.ok(second.includes('\n## Earlier attempts\n- Attempt 1 on haiku high'))
   const area = second.split(/\n## Earlier rulings in area [^\n]*\n/)[1] ?? ''

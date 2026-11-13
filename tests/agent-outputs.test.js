@@ -128,6 +128,7 @@ test('turn budgets read as guidance, never as a limit (R16)', () => {
     assert.ok(/about|guide/i.test(line), `${name}.md budget reads as guidance: ${line.trim()}`)
     assert.ok(!/\blimit\b/i.test(line), `${name}.md budget never says limit: ${line.trim()}`)
     assert.ok(!/\bhard\b/i.test(line), `${name}.md budget never says hard: ${line.trim()}`)
+    assert.ok(!/at the latest/i.test(line), `${name}.md budget never says at the latest: ${line.trim()}`)
   }
   // The turn-28 line of the Judge and the reviewer reads as guidance too.
   for (const [name, text] of [['judge', budgets.judge], ['reviewer', budgets.reviewer]]) {
@@ -136,6 +137,15 @@ test('turn budgets read as guidance, never as a limit (R16)', () => {
     assert.ok(/about|guide/i.test(line), `${name}.md turn-28 line reads as guidance: ${line.trim()}`)
     assert.ok(!/\blimit\b/i.test(line), `${name}.md turn-28 line never says limit: ${line.trim()}`)
     assert.ok(!/\bhard\b/i.test(line), `${name}.md turn-28 line never says hard: ${line.trim()}`)
+    assert.ok(!/at the latest/i.test(line), `${name}.md turn-28 line never says at the latest: ${line.trim()}`)
+  }
+  // Every turn-budget line in the three files, not only the first match above.
+  for (const [name, text] of Object.entries(budgets)) {
+    for (const line of lines(text)) {
+      if (/\bturns?\b/i.test(line)) {
+        assert.ok(!/at the latest/i.test(line), `${name}.md turn budget says "at the latest": ${line.trim()}`)
+      }
+    }
   }
   // No budget contradicts the time limit on another harness (lib/seats.js):
   // none of the three files caps the other harness by turns.
