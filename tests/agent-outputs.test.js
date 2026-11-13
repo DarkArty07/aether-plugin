@@ -12,9 +12,7 @@ const schemas = require('../plugins/aether/lib/lane-schemas.js')
 
 const agent = (name) => fs.readFileSync(path.join(PLUGIN, 'agents', `${name}.md`), 'utf8')
 const tasksSkill = () => fs.readFileSync(path.join(PLUGIN, 'skills', 'tasks', 'SKILL.md'), 'utf8')
-const designWorkflow = () => fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
-
-// Each row is one of the five unread outputs of evidence/issue-215.md:
+// Each row is one unread output of evidence/issue-215.md that no schema field receives:
 // the agent file that asked for it, the phrases that asked, and why no
 // schema field receives it.
 const UNREAD = [
@@ -28,14 +26,6 @@ const UNREAD = [
       assert.ok(!items.required.includes('grade'))
       // The grade words may stay only as an internal check that is not reported.
       assert.ok(agent('supervisor').includes('Do not report those grades'), 'supervisor grades are not an output')
-    },
-  },
-  {
-    file: 'supervisor',
-    phrases: ['Its Head line must match the commit the implementer reported', 'or its Head does not match'],
-    reason: 'the run workflow never compares the package Head with the reported commit',
-    check: () => {
-      assert.ok(!Object.keys(schemas.SUPERVISOR_SCHEMA.properties).some((k) => /head|commit/i.test(k)))
     },
   },
   {
@@ -57,25 +47,31 @@ const UNREAD = [
       assert.ok(!Object.keys(items.properties).includes('fix'))
     },
   },
-  {
-    file: 'writer',
-    phrases: [
-      '`spec`: the path of `spec.md`',
-      '`plan`: the path of `plan.md`',
-      '`tasks`: the path of `tasks.md`',
-      '`document`: the path of the corrected document',
-      '`check`: what `aether-plan check` printed',
-    ],
-    reason: 'the design workflow uses its fixed paths and runs its own check',
-    check: () => {
-      const text = designWorkflow()
-      assert.ok(text.includes('const SPEC = `${feature}/spec.md`'))
-      assert.ok(text.includes('const PLAN = `${feature}/plan.md`'))
-      assert.ok(text.includes('const TASKS = `${feature}/tasks.md`'))
-      assert.ok(text.includes('async function planCheck()'))
-    },
-  },
 ]
+
+test('writer.md names every field the Writer schemas require', () => {
+  const text = agent('writer')
+  const required = [
+    ...schemas.WRITER_SCHEMA.required,
+    ...schemas.SPEC_WRITER_SCHEMA.required,
+    ...schemas.REVISION_SCHEMA.required,
+  ]
+  for (const field of required) {
+    assert.ok(text.includes('`' + field + '`'), `writer.md names \`${field}\``)
+  }
+})
+
+test('supervisor.md compares the package Head with the implementer commit', () => {
+  const text = agent('supervisor')
+  assert.ok(
+    text.includes('Its Head line must match the commit the implementer reported'),
+    'supervisor.md asks to match the package Head to the reported commit',
+  )
+  assert.ok(
+    text.includes('or its Head does not match'),
+    'supervisor.md treats a Head mismatch as unpackaged work',
+  )
+})
 
 test('no agent text asks for an output that no schema field receives (R14, R17)', () => {
   for (const row of UNREAD) {
