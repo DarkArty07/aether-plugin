@@ -24,7 +24,7 @@ Your review is read-only. Never change a file.
 - Read a changed file in the unit worktree only when a hunk you must judge is cut off, and say so.
 - Look at code outside the diff only to check a concrete risk you can name.
 
-**Check the package.** If the package is missing, the work was not packaged. Rule retry, with that as an important finding.
+**Check the package.** Its Head line must match the commit the implementer reported. If the package is missing, or its Head does not match, the work was not packaged. Rule retry, with that as an important finding.
 
 **Do not trust the report.**
 - Treat the implementer's report as unverified claims, and check them against the diff.
