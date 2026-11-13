@@ -41,7 +41,8 @@ test('the Claude rows carry intelligence, cost and code figures, and one date wh
     for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) assert.equal(typeof pair[field], 'number', `${pair.id} ${field}`)
     assert.equal(typeof pair.codeChecked, 'string', pair.id)
     assert.ok(pair.codeChecked.length > 0, pair.id)
-    if (Object.hasOwn(pair, 'checked')) assert.equal(pair.checked, pair.codeChecked, `${pair.id}: one date`)
+    // A page without intelligence keeps the old checked while its code figures advance codeChecked (spec 036 R9): each date is checked on its own.
+    if (Object.hasOwn(pair, 'checked')) assert.match(pair.checked, /^\d{4}-\d{2}-\d{2}$/, `${pair.id}: checked`)
   }
 })
 
@@ -69,7 +70,7 @@ test('rows with a page may carry refreshed figures and one date; estimated rows 
     assert.deepEqual(present, codeFields, pair.id)
     for (const field of codeFields) assert.equal(typeof pair[field], 'number', `${pair.id} ${field}`)
     if (Object.hasOwn(pair, 'codeChecked')) assert.equal(typeof pair.codeChecked, 'string', pair.id)
-    if (Object.hasOwn(pair, 'checked') && Object.hasOwn(pair, 'codeChecked')) assert.equal(pair.checked, pair.codeChecked, pair.id)
+    if (Object.hasOwn(pair, 'checked')) assert.match(pair.checked, /^\d{4}-\d{2}-\d{2}$/, `${pair.id}: checked`)
   }
 })
 
