@@ -232,23 +232,28 @@ function formatProjectSkills(skills) {
   return lines.join('\n')
 }
 
-function normalizedWords(text) {
+function foldToken(text) {
   return String(text || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean)
+}
+
+function foldedWords(text) {
+  return foldToken(text).split(/[^a-z0-9]+/).filter(Boolean)
 }
 
 function skillMatchesBrief(skill, words, raw) {
   const name = String(skill.name || '').toLowerCase()
   if (!name) return false
   if (words.has(name) || raw.includes(name)) return true
-  const parts = name.split('-').filter((part) => part.length >= 4)
+  const parts = name
+    .split('-')
+    .filter((part) => part.length >= 4)
+    .map((part) => foldToken(part))
   if (parts.length > 0 && parts.every((part) => words.has(part))) return true
   const significant = new Set()
-  for (const word of [...normalizedWords(skill.name), ...normalizedWords(skill.description)]) {
+  for (const word of [...foldedWords(skill.name), ...foldedWords(skill.description)]) {
     if (word.length >= 4) significant.add(word)
   }
   let hits = 0
@@ -261,7 +266,7 @@ function skillMatchesBrief(skill, words, raw) {
 function matchDelegateSkills(cwd, { prompt = '', description = '', owns = [] } = {}) {
   const owned = Array.isArray(owns) ? owns.join(' ') : ''
   const raw = `${prompt}\n${description}\n${owned}`.toLowerCase()
-  const words = new Set(normalizedWords(raw))
+  const words = new Set(foldedWords(raw))
   return listProjectSkills(cwd)
     .filter((skill) => skillMatchesBrief(skill, words, raw))
     .map((skill) => skill.name)

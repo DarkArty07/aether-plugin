@@ -131,3 +131,76 @@ test('listProjectSkills, formatProjectSkills and matchDelegateSkills discover an
     [],
   )
 })
+
+test('listProjectSkills prefers .agents over .claude and falls back to the directory name', (t) => {
+  const dir = tempDir(t, 'aether-proj-list-')
+  assert.deepEqual(sb.listProjectSkills(dir), [])
+  skill(dir, 'shared-skill', { body: 1, description: 'Desde agents' })
+  skill(dir, 'shared-skill', { body: 1, description: 'Desde claude', where: '.claude/skills' })
+  skill(dir, 'solo-claude', { body: 1, description: 'Solo en claude', where: '.claude/skills' })
+  const fallback = path.join(dir, '.agents', 'skills', 'folder-name')
+  fs.mkdirSync(fallback, { recursive: true })
+  fs.writeFileSync(path.join(fallback, 'SKILL.md'), '---\ndescription: Sin nombre en el frente\n---\nbody\n')
+  fs.writeFileSync(path.join(dir, '.agents', 'skills', 'not-a-skill.txt'), 'nope\n')
+  fs.mkdirSync(path.join(dir, '.agents', 'skills', 'empty-dir'), { recursive: true })
+
+  assert.deepEqual(sb.listProjectSkills(dir), [
+    { name: 'folder-name', description: 'Sin nombre en el frente' },
+    { name: 'shared-skill', description: 'Desde agents' },
+    { name: 'solo-claude', description: 'Solo en claude' },
+  ])
+})
+
+test('matchDelegateSkills matches the full name, every long kebab part, and owns paths', (t) => {
+  const dir = tempDir(t, 'aether-proj-match-')
+  skill(dir, 'ui-kit', { body: 1, description: 'Hud' })
+  skill(dir, 'audio-fx', { body: 1, description: 'Volumen' })
+  skill(dir, 'save-game', { body: 1, description: 'Persistencia' })
+
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Monta ui-kit en el menu', description: '', owns: [] }),
+    ['ui-kit'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Ajusta el audio del trailer', description: '', owns: [] }),
+    ['audio-fx'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Ajusta el volumen', description: '', owns: [] }),
+    [],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Revisa el modulo', description: 'modulo', owns: ['src/save-game/store.js'] }),
+    ['save-game'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Revisa el modulo', description: 'modulo', owns: ['src/save/game/store.js'] }),
+    ['save-game'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Revisa el modulo', description: 'modulo', owns: ['src/save/store.js'] }),
+    [],
+  )
+})
+
+test('matchDelegateSkills matches accented kebab names the same way as the brief words', (t) => {
+  const dir = tempDir(t, 'aether-proj-accent-')
+  skill(dir, 'diseño-web', { body: 1, description: 'Maquetas' })
+
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Actualiza el diseño web de la portada', description: '', owns: [] }),
+    ['diseño-web'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Usa diseno-web hoy', description: '', owns: [] }),
+    ['diseño-web'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Revisa el modulo', description: 'modulo', owns: ['src/diseño/paginas/web.js'] }),
+    ['diseño-web'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Revisa la web', description: '', owns: [] }),
+    [],
+  )
+})
