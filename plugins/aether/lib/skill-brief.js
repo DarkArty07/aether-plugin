@@ -90,16 +90,73 @@ function resolveSkill(name, { cwd, home = os.homedir(), pluginRoot = path.resolv
   return null
 }
 
+function foldQuotedLines(text, quote) {
+  // Protect double-quoted escapes before folding physical line breaks.
+  const breaks = quote === '"'
+    ? /\\(?:[^\n]|\n[ \t]*(?:\n[ \t]*)*)|[ \t]*\n[ \t]*(?:\n[ \t]*)*/g
+    : /[ \t]*\n[ \t]*(?:\n[ \t]*)*/g
+  return text.replace(breaks, (part) => {
+    if (part[0] === '\\' && part[1] !== '\n') return part
+    const count = part.split('\n').length - 1
+    if (count > 1) return '\n'.repeat(count - 1)
+    return part[0] === '\\' ? '' : ' '
+  })
+}
+
 function parseFrontMatter(text) {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
   if (!match) return {}
   const entries = {}
-  for (const line of match[1].split(/\r?\n/)) {
-    const colon = line.indexOf(':')
-    if (colon !== -1) {
-      const key = line.slice(0, colon).trim()
-      const val = line.slice(colon + 1).trim()
-      entries[key] = val
+  const lines = match[1].split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const field = lines[i].match(/^([^\s:#][^:]*):(?:\s+|$)(.*)$/)
+    if (!field) continue
+    const key = field[1].trim()
+    const value = field[2].trim()
+    if (/^[|>](?:[+-][1-9]?|[1-9][+-]?)?(?:\s+#.*)?$/.test(value)) {
+      const block = []
+      while (i + 1 < lines.length && (/^\s/.test(lines[i + 1]) || lines[i + 1] === '')) {
+        block.push(lines[++i])
+      }
+      const specifiedIndent = value.match(/[1-9]/)
+      const indent = specifiedIndent ? Number(specifiedIndent[0]) : Math.min(...block.filter((line) => line.trim()).map((line) => line.match(/^ */)[0].length))
+      const content = block.map((line) => line.slice(Number.isFinite(indent) ? indent : 0))
+      entries[key] = value[0] === '|' ? content.join('\n') : content.reduce((out, line, index) => {
+        if (index === 0) return line
+        const prev = content[index - 1]
+        if (prev && !line && !/^\s/.test(prev)) return out
+        return out + (prev && line && !/^\s/.test(prev) && !/^\s/.test(line) ? ' ' : '\n') + line
+      }, '')
+    } else if (value.startsWith("'") || value.startsWith('"')) {
+      const quote = value[0]
+      const pattern = quote === "'"
+        ? /^'((?:[^']|'')*)'(?:[ \t]+#.*)?[ \t]*$/
+        : /^"((?:[^"\\]|\\[\s\S])*)"(?:[ \t]+#.*)?[ \t]*$/
+      let scalar = field[2].trimStart()
+      let end = i
+      let quoted = scalar.match(pattern)
+      while (!quoted && end + 1 < lines.length) {
+        scalar += '\n' + lines[++end]
+        quoted = scalar.match(pattern)
+      }
+      if (!quoted) {
+        entries[key] = value
+        continue
+      }
+      i = end
+      const folded = foldQuotedLines(quoted[1], quote)
+      if (quote === "'") {
+        entries[key] = folded.replace(/''/g, "'")
+      } else {
+        const escapes = { '0': '\0', a: '\x07', b: '\b', t: '\t', n: '\n', v: '\v', f: '\f', r: '\r', e: '\x1b', ' ': ' ', '"': '"', '/': '/', '\\': '\\', N: '\u0085', _: '\u00a0', L: '\u2028', P: '\u2029' }
+        entries[key] = folded.replace(/\\(?:([0abtnvfre "\/\\N_LP])|x([\da-fA-F]{2})|u([\da-fA-F]{4})|U([\da-fA-F]{8}))/g, (whole, simple, x, u, upper) => {
+          if (simple) return escapes[simple]
+          const code = parseInt(x || u || upper, 16)
+          return code <= 0x10ffff ? String.fromCodePoint(code) : whole
+        })
+      }
+    } else {
+      entries[key] = value.replace(/\s+#.*$/, '').trimEnd()
     }
   }
   return entries
@@ -183,6 +240,95 @@ function usesFile(dataDir) {
   return path.join(dataDir, 'skills', 'uses.jsonl')
 }
 
+function readSkillEntry(file, dirName) {
+  let text = ''
+  try {
+    text = fs.readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
+  const front = parseFrontMatter(text)
+  const name = (front.name && String(front.name).trim()) || dirName
+  const description = front.description !== undefined ? String(front.description).trim() : ''
+  return { name, description }
+}
+
+function listProjectSkills(cwd) {
+  const root = cwd ? path.resolve(cwd) : process.cwd()
+  const byName = new Map()
+  for (const folder of ['.agents', '.claude']) {
+    const skillsDir = path.join(root, folder, 'skills')
+    let entries = []
+    try {
+      entries = fs.readdirSync(skillsDir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const file = path.join(skillsDir, entry.name, 'SKILL.md')
+      if (!fs.existsSync(file)) continue
+      const skill = readSkillEntry(file, entry.name)
+      if (!skill || !skill.name || byName.has(skill.name)) continue
+      byName.set(skill.name, skill)
+    }
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function formatProjectSkills(skills) {
+  if (!Array.isArray(skills) || skills.length === 0) return ''
+  const lines = [
+    '## Project skills',
+    '',
+    'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
+  ]
+  for (const skill of skills) {
+    lines.push(`- \`${skill.name}\`: ${skill.description}`)
+  }
+  return lines.join('\n')
+}
+
+function foldToken(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+}
+
+function foldedWords(text) {
+  return foldToken(text).split(/[^a-z0-9]+/).filter(Boolean)
+}
+
+function skillMatchesBrief(skill, words, raw) {
+  const name = String(skill.name || '').toLowerCase()
+  if (!name) return false
+  if (words.has(name) || raw.includes(name)) return true
+  const parts = name
+    .split('-')
+    .filter((part) => part.length >= 4)
+    .map((part) => foldToken(part))
+  if (parts.length > 0 && parts.every((part) => words.has(part))) return true
+  const significant = new Set()
+  for (const word of [...foldedWords(skill.name), ...foldedWords(skill.description)]) {
+    if (word.length >= 4) significant.add(word)
+  }
+  let hits = 0
+  for (const word of significant) {
+    if (words.has(word)) hits += 1
+  }
+  return hits >= 2
+}
+
+function matchDelegateSkills(cwd, { prompt = '', description = '', owns = [] } = {}) {
+  const owned = Array.isArray(owns) ? owns.join(' ') : ''
+  const raw = `${prompt}\n${description}\n${owned}`.toLowerCase()
+  const words = new Set(foldedWords(raw))
+  return listProjectSkills(cwd)
+    .filter((skill) => skillMatchesBrief(skill, words, raw))
+    .map((skill) => skill.name)
+}
+
 function recordUse(dataDir, { session, kind, run = null, task, skills, time = Date.now() } = {}) {
   try {
     const file = usesFile(dataDir)
@@ -208,4 +354,7 @@ module.exports = {
   skillsSection,
   usesFile,
   recordUse,
+  listProjectSkills,
+  formatProjectSkills,
+  matchDelegateSkills,
 }
