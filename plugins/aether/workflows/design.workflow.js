@@ -456,6 +456,27 @@ function nativeOf(seat, value, author) {
   return reference
 }
 
+// The same text as lib/skill-brief.js formatProjectSkills. A workflow does not import lib/.
+function formatProjectSkills(skills) {
+  if (!Array.isArray(skills) || skills.length === 0) return ''
+  const lines = [
+    '## Project skills',
+    '',
+    'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
+  ]
+  for (const skill of skills) {
+    lines.push(`- \`${skill.name}\`: ${skill.description}`)
+  }
+  return lines.join('\n')
+}
+
+// The project skills a round names: the list in the reply's value when it is not empty, else the list seat-start named.
+function skillsFrom(started, reply) {
+  const fromReply = isObject(reply) && isObject(reply.value) && Array.isArray(reply.value.projectSkills) ? reply.value.projectSkills : []
+  if (fromReply.length > 0) return fromReply
+  return Array.isArray(started.projectSkills) ? started.projectSkills : []
+}
+
 // The native agent of a round, on its model and effort, with the round's message and its own lines. An answer that is
 // missing or does not fit the schema is tried once more; resolves to the answer, or to { failed } after the second.
 async function nativeAnswer({ seat, base, text, schema, phase, native: { model, effort } }) {
@@ -518,7 +539,8 @@ function seeNative(stage) {
 // stopped for 10 minutes with no change, or, before its first write, at its first-write cap. A Judge, and a Writer or
 // Examiner reply with no changedMs key, keeps the document's total cap. A stop for one of those comes back as
 // { id, note, capped: true, pair, durationMs }, with the pair seat-stop names. `id` is the round's, once it started.
-// seatRound sends a capped round to the native agent and does not ask for the next pair.
+// seatRound sends a capped round to the native agent and does not ask for the next pair. Every reply that has an `id`
+// also has `projectSkills`: the list the reply's value names, else the list seat-start named.
 async function awaitSeat({ seat, doc, base, flags, exclude, text, phase }) {
   const excluding = exclude.length > 0 ? ` --exclude ${exclude.join(',')}` : ''
   const started = await ops(`aether-lane seat-start ${seat} ${flags}${excluding} --digest ${digest(text)}`, {
@@ -531,6 +553,7 @@ async function awaitSeat({ seat, doc, base, flags, exclude, text, phase }) {
     return { id: null, note: `the seat round did not start: ${started.error || JSON.stringify(started).slice(0, 300)}`, startFailed: true }
   }
   const { id } = started
+  const projectSkills = skillsFrom(started, null)
   if (Number.isFinite(started.at)) seeAt(doc, started.at, true)
   const tracks = seat === 'writer' || seat === 'examiner'
   const totalCap = hasOwn(SEAT_CAP_SECONDS, doc) ? SEAT_CAP_SECONDS[doc] : null
@@ -558,7 +581,7 @@ async function awaitSeat({ seat, doc, base, flags, exclude, text, phase }) {
     const max = limit === null ? WAIT_SECONDS : Math.max(1, Math.min(WAIT_SECONDS, Math.ceil(limit - elapsedMs / 1000)))
     const out = await ops(`aether-lane seat-wait ${id} --max ${max}`, { phase, label: `${base}: wait ${k}`, long: true, anyExit: true })
     if (!out.error && Number.isFinite(out.at)) seeAt(doc, out.at, false)
-    if (!out.error && out.done === true) return { id, reply: out, durationMs: Number.isFinite(out.durationMs) ? out.durationMs : null }
+    if (!out.error && out.done === true) return { id, reply: out, durationMs: Number.isFinite(out.durationMs) ? out.durationMs : null, projectSkills: skillsFrom(started, out) }
     if (!out.error) {
       elapsedMs = Number.isFinite(out.elapsedMs) ? Math.max(elapsedMs, out.elapsedMs) : elapsedMs + max * 1000
       if (tracks && hasOwn(out, 'changedMs')) {
@@ -600,9 +623,9 @@ async function awaitSeat({ seat, doc, base, flags, exclude, text, phase }) {
   if (!stopped.error && stopped.continued === true) carry.continued = true
   if (capNote !== null) {
     const pair = !stopped.error && matches(PAIR_ID, stopped.pair) ? stopped.pair : null
-    return { id, note: capNote, capped: true, pair, durationMs: elapsedMs, ...carry }
+    return { id, note: capNote, capped: true, pair, durationMs: elapsedMs, projectSkills, ...carry }
   }
-  return { id, note: `the seat round did not finish after ${MAX_WAITS} waits of ${WAIT_SECONDS} s, and was stopped`, ...carry }
+  return { id, note: `the seat round did not finish after ${MAX_WAITS} waits of ${WAIT_SECONDS} s, and was stopped`, projectSkills, ...carry }
 }
 
 // The pair a round that ended failed (exit 4) ran on, as its decision names it, or null when the reply names none that
@@ -647,8 +670,10 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   // are in the round's record (issue 62). A round that only the native agent took has none.
   const durations = []
   let value = {}
+  let projectSkills = []
   for (let n = 1; ; n++) {
     const waited = await awaitSeat({ seat, doc, base: n === 1 ? base : `${base} (try ${n})`, flags, exclude: excluded, text, phase })
+    if (Array.isArray(waited.projectSkills)) projectSkills = waited.projectSkills
     if (waited.refused === true) {
       record.provider = null
       record.refused = true
@@ -722,6 +747,11 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   if (seat === 'examiner' && examPartial !== null) {
     nativeText = `${text}\n\n${examinerPartialForNative(examPartial)}`
     record.continued = true
+  }
+  // The native plan Writer and Judge get the project's skills as an external seat does; a spec round and the Examiner do not.
+  if (doc === 'plan' && (seat === 'writer' || seat === 'judge')) {
+    const block = formatProjectSkills(projectSkills)
+    if (block && !nativeText.includes('## Project skills')) nativeText = `${nativeText}\n\n${block}`
   }
   seeNative(doc)
   const taken = await nativeAnswer({ seat, base, text: nativeText, schema: nativeSchema, phase, native })
