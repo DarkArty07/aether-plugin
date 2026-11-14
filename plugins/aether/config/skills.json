@@ -1,0 +1,62 @@
+{
+  "repeat": {
+    "minWordLength": 3,
+    "similarityThreshold": 0.35,
+    "stopwords": [
+      "falta", "cuando", "donde", "para", "como", "este", "esta", "esto", "estos", "estas",
+      "con", "sin", "por", "que", "del", "las", "los", "una", "uno", "the", "and", "for",
+      "with", "from", "that", "this", "when", "where", "what", "which", "into", "over",
+      "not", "but", "are", "was", "were", "has", "have", "had", "its", "than"
+    ]
+  },
+  "topics": [
+    {
+      "id": "machine-learning",
+      "label": "Machine Learning",
+      "files": [".ipynb"],
+      "dependencies": ["torch", "pytorch", "tensorflow", "scikit-learn", "sklearn", "keras", "xgboost", "transformers", "lightgbm"],
+      "words": ["machine learning", "entrenar modelo", "red neuronal", "fine-tuning", "dataset", "pytorch", "scikit-learn"],
+      "skillKeywords": ["machine learning", "pytorch", "tensorflow", "scikit-learn", "modelo", "entrenamiento"]
+    },
+    {
+      "id": "google-colab",
+      "label": "Google Colab",
+      "files": [".ipynb"],
+      "dependencies": ["google-colab", "colab"],
+      "words": ["google colab", "colab", "cuaderno colab", "tpu colab"],
+      "skillKeywords": ["colab", "google colab", "cuaderno"]
+    },
+    {
+      "id": "godot",
+      "label": "Godot Engine",
+      "files": ["project.godot", ".gd"],
+      "dependencies": [],
+      "words": ["godot", "gdscript", "escena godot"],
+      "skillKeywords": ["godot", "gdscript"]
+    },
+    {
+      "id": "containers",
+      "label": "Containers and Docker",
+      "files": ["Dockerfile", "docker-compose.yml", "compose.yaml"],
+      "dependencies": [],
+      "words": ["docker", "contenedor", "dockerfile", "compose"],
+      "skillKeywords": ["docker", "container", "contenedor", "compose"]
+    },
+    {
+      "id": "browser-automation",
+      "label": "Browser Automation",
+      "files": ["playwright.config.ts", "playwright.config.js"],
+      "dependencies": ["@playwright/test", "playwright", "puppeteer"],
+      "words": ["playwright", "puppeteer", "automatizar navegador", "browser automation"],
+      "skillKeywords": ["playwright", "puppeteer", "browser"]
+    },
+    {
+      "id": "shaders",
+      "label": "Shaders and GPU Graphics",
+      "files": [".wgsl", ".glsl", ".frag", ".vert"],
+      "dependencies": ["three", "regl", "twgl.js"],
+      "words": ["shader", "wgsl", "glsl", "fragment shader", "gpu"],
+      "skillKeywords": ["shader", "wgsl", "glsl", "gpu"]
+    }
+  ]
+}
