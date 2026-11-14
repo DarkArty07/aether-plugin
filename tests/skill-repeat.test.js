@@ -1,9 +1,13 @@
 'use strict'
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { tempDir } = require('./helpers.js')
+const path = require('node:path')
+const fs = require('node:fs')
+const { tempDir, makeRepo, runBin, PLUGIN } = require('./helpers.js')
 const log = require('../plugins/aether/lib/delegate-log.js')
 const repeat = require('../plugins/aether/lib/skill-repeat.js')
+const task = require('../plugins/aether/lib/delegate-task.js')
+const reg = require('../plugins/aether/lib/skill-registry.js')
 
 const verdict = (data, session, task, findings, kind = 'fix') =>
   log.appendEntry(data, { kind: 'verdict', time: Date.now(), session, task, attempt: 1, step: 'haiku', verdict: kind, input: { kind, findings: findings.map(([file, line, what]) => ({ file, line, what })), reason: null, fromScratch: false } })
@@ -54,4 +58,160 @@ test('multiple repeated findings return multiple lines in posttool', (t) => {
     'The finding "src/a.js: missing check" already came up in task t1. Consider a skill for it: load aether:skills.\n' +
     'The finding "src/b.js: syntax error" already came up in task t1. Consider a skill for it: load aether:skills.'
   )
+})
+
+// A real begin makes each launch; one verdict goes through the library and one through the real bin, so the findings
+// are stored as { file, line, what } exactly as in production.
+test('repeatedFindings matches similar words of finding.what across sessions of one project, through the real verdict path, and respects the config threshold (R1, R2, R22, C1)', async (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-repeat-sim-')
+  const deps = { dataDir: data, cwd: repo.dir, home: tempDir(t, 'aether-home-'), settings: { lanes: false, harnesses: [], deadlines: { quotaMs: 1 } }, pickPair: async () => ({ pick: null, quota: [] }) }
+  const launch = (session) => task.begin({ session, event: { subagent_type: 'general-purpose', description: 'd', prompt: 'AETHER-TASK: t1\nDo the work.' } }, deps)
+  assert.equal((await launch('s1')).kind, 'first')
+  const v1 = await task.verdict({ task: 't1', verdict: 'fix', session: 's1', findings: ['src/foo.js:10:falta validar el borde cuando la lista viene vacía'] }, deps)
+  assert.equal(v1.ok, true, JSON.stringify(v1))
+  assert.equal((await launch('s2')).kind, 'first')
+  const BIN = path.join(PLUGIN, 'bin', 'aether-delegate')
+  const v2 = runBin(BIN, ['verdict', '--task', 't1', '--verdict', 'fix', '--session', 's2', '--finding', 'src/foo.js:18:no valida la lista vacía en el borde'], repo.dir, { AETHER_DATA_DIR: data })
+  assert.equal(v2.json.ok, true, v2.stdout + v2.stderr)
+
+  const verdicts = log.readEntries(data, { task: 't1' }).filter((e) => e.kind === 'verdict')
+  assert.deepEqual(verdicts.map((e) => [e.session, e.repo]), [['s1', repo.dir], ['s2', repo.dir]])
+  assert.deepEqual(Object.keys(verdicts[1].input.findings[0]).sort(), ['file', 'line', 'what'])
+
+  const across = repeat.repeatedFindings(data, { session: 's2', task: 't1' })
+  assert.deepEqual(across, [{ finding: 'src/foo.js: no valida la lista vacía en el borde', tasks: ['t1'] }])
+  const notice = repeat.posttool(
+    { tool_name: 'Bash', session_id: 's2', cwd: repo.dir, tool_input: { command: 'aether-delegate verdict --task t1 --verdict fix --finding "src/foo.js:18:no valida la lista vacía en el borde"' } },
+    { env: {}, home: '/h', now: 1, dataDir: data },
+  )
+  assert.equal(notice, 'The finding "src/foo.js: no valida la lista vacía en el borde" already came up in task t1. Consider a skill for it: load aether:skills.')
+  assert.deepEqual(reg.readNotices(data).map((n) => [n.kind, n.name, n.session, n.repo]), [['repeated-finding', 'src/foo.js', 's2', repo.dir]])
+
+  log.appendEntry(data, { kind: 'verdict', time: 1, session: 's9', task: 'legacy', attempt: 1, step: 'haiku', verdict: 'fix', input: { kind: 'fix', findings: [{ file: 'src/foo.js', line: 1, what: 'no valida la lista vacía en el borde' }], reason: null, fromScratch: false } })
+  assert.deepEqual(repeat.repeatedFindings(data, { session: 's2', task: 't1' }).map((r) => r.tasks), [['t1']], 'a legacy entry with no repo is not compared across sessions')
+
+  const strict = repeat.repeatedFindings(data, { session: 's2', task: 't1', config: { minWordLength: 3, similarityThreshold: 0.99, stopwords: [] } })
+  assert.deepEqual(strict, [])
+})
+
+test('word similarity uses sets of normalized prefix-equivalent words', () => {
+  const config = { minWordLength: 3, similarityThreshold: 0.75, stopwords: ['the'] }
+  assert.equal(repeat.wordSimilarity('valid valid', 'valid', config), 1)
+  assert.equal(repeat.wordSimilarity('válidar validacion the', 'valida', config), 1)
+  assert.equal(repeat.wordSimilarity('valid valid extra', 'valid', config), 0.5)
+})
+
+test('similar findings in different tasks retain distinct problems on one file and reject different files and projects', (t) => {
+  const data = tempDir(t)
+  const add = (session, task, repo, findings) => log.appendEntry(data, {
+    kind: 'verdict', session, task, repo, verdict: 'fix', input: { kind: 'fix', findings },
+  })
+  const finding = (file, what) => ({ file, line: 1, what })
+  add('s1', 'old', '/project', [finding('src/a.js', 'validar lista vacía borde'), finding('src/a.js', 'cerrar recurso abierto')])
+  add('s1', 'different-file', '/project', [finding('src/b.js', 'validar lista vacía borde')])
+  add('s1', 'different-project', '/other', [finding('src/a.js', 'validar lista vacía borde')])
+  add('s1', 'target', '/project', [finding('src/a.js', 'valida lista vacía borde'), finding('src/a.js', 'cerrar recursos abiertos'), finding('src/a.js', 'calcular precio total')])
+  assert.deepEqual(repeat.repeatedFindings(data, { session: 's1', task: 'target' }), [
+    { finding: 'src/a.js: valida lista vacía borde', tasks: ['old'] },
+    { finding: 'src/a.js: cerrar recursos abiertos', tasks: ['old'] },
+  ])
+})
+
+test('repetition reads the similarity threshold from configuration data', (t) => {
+  const data = tempDir(t)
+  const file = path.join(data, 'skills-config.json')
+  const previous = process.env.AETHER_SKILLS_CONFIG
+  t.after(() => {
+    if (previous === undefined) delete process.env.AETHER_SKILLS_CONFIG
+    else process.env.AETHER_SKILLS_CONFIG = previous
+  })
+  process.env.AETHER_SKILLS_CONFIG = file
+  verdict(data, 's1', 'old', [['src/a.js', 1, 'validar lista borde']])
+  verdict(data, 's1', 'target', [['src/a.js', 2, 'valida lista vacía']])
+  const write = (similarityThreshold) => fs.writeFileSync(file, JSON.stringify({ ...reg.loadSkillsConfig(reg.CONFIG_FILE), repeat: { minWordLength: 3, similarityThreshold, stopwords: [] } }))
+  write(0.4)
+  assert.equal(repeat.repeatedFindings(data, { session: 's1', task: 'target' }).length, 1)
+  write(0.6)
+  assert.deepEqual(repeat.repeatedFindings(data, { session: 's1', task: 'target' }), [])
+})
+
+test('a task matches other projects never, and legacy lines only inside their own session (R1, R22)', (t) => {
+  const data = tempDir(t)
+  const add = (session, taskId, repo, findings) => log.appendEntry(data, {
+    kind: 'verdict', session, task: taskId, ...(repo ? { repo } : {}), verdict: 'fix',
+    input: { kind: 'fix', findings: findings.map(([file, what]) => ({ file, line: 1, what })) },
+  })
+  const same = [['src/a.js', 'validar lista vacía borde']]
+  add('s1', 'legacy', null, same)
+  add('s9', 'elsewhere', null, same)
+  add('s1', 'other-project', '/other', same)
+  add('s1', 'same-project', '/project', same)
+  add('s2', 'legacy-s2', null, same)
+  add('s2', 'target', '/project', [['src/a.js', 'valida lista vacía borde']])
+  assert.deepEqual(repeat.repeatedFindings(data, { session: 's2', task: 'target' }), [
+    { finding: 'src/a.js: valida lista vacía borde', tasks: ['same-project', 'legacy-s2'] },
+  ])
+  // A task with no project of its own still compares inside its session, and never across sessions.
+  add('s3', 'with-repo', '/project', same)
+  add('s3', 'bare', null, [['src/a.js', 'valida lista vacía borde']])
+  assert.deepEqual(repeat.repeatedFindings(data, { session: 's3', task: 'bare' }), [
+    { finding: 'src/a.js: valida lista vacía borde', tasks: ['with-repo'] },
+  ])
+})
+
+test('a finding the task repeats is reported once, and words below the threshold do not match (R1, R2)', (t) => {
+  const data = tempDir(t)
+  const add = (session, taskId, repo, findings) => log.appendEntry(data, {
+    kind: 'verdict', session, task: taskId, repo, verdict: 'fix',
+    input: { kind: 'fix', findings: findings.map(([file, what]) => ({ file, line: 1, what })) },
+  })
+  add('s1', 'old', '/project', [['src/a.js', 'falta validar el borde cuando la lista viene vacía']])
+  add('s2', 'target', '/project', [
+    ['src/a.js', 'valida lista vacía borde'],
+    ['src/a.js', 'valida lista vacía borde'],
+    ['src/a.js', 'revisar permisos de usuario al cerrar sesión'],
+  ])
+  assert.deepEqual(repeat.repeatedFindings(data, { session: 's2', task: 'target' }), [
+    { finding: 'src/a.js: valida lista vacía borde', tasks: ['old'] },
+  ])
+})
+
+test('findings with no significant word never match, even at a zero threshold (R2)', () => {
+  const config = { minWordLength: 3, similarityThreshold: 0, stopwords: ['de', 'la', 'en', 'el'] }
+  assert.equal(repeat.findingsMatch('de la', 'en el', config), false)
+  assert.equal(repeat.wordSimilarity('de la', 'en el', config), 0)
+})
+
+test('posttool logs one repeated-finding notice per line it prints, with the project of the verdicts (R16, R22)', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-repeat-notice-')
+  const add = (session, taskId, findings) => log.appendEntry(data, {
+    kind: 'verdict', session, task: taskId, repo: repo.dir, verdict: 'fix',
+    input: { kind: 'fix', findings: findings.map(([file, what]) => ({ file, line: 1, what })) },
+  })
+  add('s1', 't1', [['src/a.js', 'validar lista vacía borde'], ['src/a.js', 'cerrar recurso abierto']])
+  add('s1', 't2', [['src/a.js', 'valida lista vacía borde'], ['src/a.js', 'cerrar recursos abiertos']])
+  const text = repeat.posttool(
+    { tool_name: 'Bash', session_id: 's1', cwd: repo.dir, tool_input: { command: 'aether-delegate verdict --task t2 --verdict fix' } },
+    { env: {}, home: '/h', now: 1, dataDir: data },
+  )
+  assert.equal(text.split('\n').length, 2, text)
+  assert.deepEqual(reg.readNotices(data).map((n) => [n.kind, n.name, n.session, n.repo]), [
+    ['repeated-finding', 'src/a.js', 's1', repo.dir],
+    ['repeated-finding', 'src/a.js', 's1', repo.dir],
+  ])
+})
+
+test('a verdict outside a repository keeps no project, so its task is not compared across sessions (R22)', async (t) => {
+  const data = tempDir(t, 'aether-data-')
+  const cwd = tempDir(t, 'aether-plain-')
+  const deps = { dataDir: data, cwd, home: tempDir(t, 'aether-home-'), settings: { lanes: false, harnesses: [], deadlines: { quotaMs: 1 } }, pickPair: async () => ({ pick: null, quota: [] }) }
+  const launch = (session, id) => task.begin({ session, event: { subagent_type: 'general-purpose', description: 'd', prompt: `AETHER-TASK: ${id}\nDo the work.` } }, deps)
+  assert.equal((await launch('s1', 'p1')).kind, 'first')
+  assert.equal((await task.verdict({ task: 'p1', verdict: 'fix', session: 's1', findings: ['src/a.js:1:validar lista vacía borde'] }, deps)).ok, true)
+  assert.equal((await launch('s2', 'p2')).kind, 'first')
+  assert.equal((await task.verdict({ task: 'p2', verdict: 'fix', session: 's2', findings: ['src/a.js:1:valida lista vacía borde'] }, deps)).ok, true)
+  assert.deepEqual(log.readEntries(data, { task: 'p1' }).filter((e) => e.kind === 'verdict').map((e) => e.repo), [null])
+  assert.deepEqual(repeat.repeatedFindings(data, { session: 's2', task: 'p2' }), [])
 })
