@@ -36,25 +36,30 @@ function wordSimilarity(whatA, whatB, config = null) {
   return shared / (left.size + right.size - shared)
 }
 
+// Two findings with no significant word on either side never match, whatever the threshold.
 function findingsMatch(whatA, whatB, config = null) {
   const repeat = repeatOf(config)
-  return wordSimilarity(whatA, whatB, repeat) >= repeat.similarityThreshold
+  const score = wordSimilarity(whatA, whatB, repeat)
+  return score > 0 && score >= repeat.similarityThreshold
 }
 
 function sameFile(left, right) {
   return fold(left) === fold(right)
 }
 
+// Two verdicts share a project when both name it and it is the same. A verdict with no project (a legacy line, or a task
+// outside a repository) counts only inside its own session (R22).
+function sameProject(entry, session, targetRepo) {
+  const entryRepo = typeof entry.repo === 'string' && entry.repo ? entry.repo : null
+  if (entryRepo && targetRepo) return entryRepo === targetRepo
+  return entry.session === session
+}
+
 function otherTask(entry, session, task, targetRepo) {
   if (entry.kind !== 'verdict' || entry.verdict !== 'fix') return false
   if (entry.input?.kind !== 'fix' || !Array.isArray(entry.input.findings)) return false
   if (!entry.task || (entry.session === session && entry.task === task)) return false
-  const entryRepo = typeof entry.repo === 'string' && entry.repo ? entry.repo : null
-  const knownRepo = typeof targetRepo === 'string' && targetRepo ? targetRepo : null
-  if (entryRepo && knownRepo) return entryRepo === knownRepo
-  // A legacy line has no repo, so it only counts inside the same session.
-  if (!entryRepo) return entry.session === session && entry.task !== task
-  return false
+  return sameProject(entry, session, targetRepo)
 }
 
 function repeatedFindings(dataDir, { session = null, task = null, repo = null, config = null } = {}) {
@@ -68,8 +73,11 @@ function repeatedFindings(dataDir, { session = null, task = null, repo = null, c
     return []
   }
   const targetRepo = (typeof repo === 'string' && repo) ? repo : (typeof lastVerdict.repo === 'string' ? lastVerdict.repo : null)
+  // The configuration is read once for the whole comparison, not once per pair of findings.
+  const rule = repeatOf(config)
 
   const results = []
+  const shown = new Set()
 
   for (const finding of lastVerdict.input.findings) {
     if (!finding || typeof finding.file !== 'string' || typeof finding.what !== 'string') continue
@@ -77,15 +85,14 @@ function repeatedFindings(dataDir, { session = null, task = null, repo = null, c
     const matchingTasks = []
     for (const entry of entries) {
       if (!otherTask(entry, session, task, targetRepo)) continue
-      const hit = entry.input.findings.some((other) => other && typeof other.file === 'string' && typeof other.what === 'string' && sameFile(other.file, finding.file) && findingsMatch(finding.what, other.what, config))
+      const hit = entry.input.findings.some((other) => other && typeof other.file === 'string' && typeof other.what === 'string' && sameFile(other.file, finding.file) && findingsMatch(finding.what, other.what, rule))
       if (hit && !matchingTasks.includes(entry.task)) matchingTasks.push(entry.task)
     }
 
-    if (matchingTasks.length > 0) {
-      results.push({
-        finding: `${finding.file}: ${finding.what}`,
-        tasks: matchingTasks,
-      })
+    const text = `${finding.file}: ${finding.what}`
+    if (matchingTasks.length > 0 && !shown.has(text)) {
+      shown.add(text)
+      results.push({ finding: text, tasks: matchingTasks })
     }
   }
 

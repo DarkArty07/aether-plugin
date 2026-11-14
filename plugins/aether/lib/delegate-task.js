@@ -720,7 +720,9 @@ async function begin(input, deps = {}) {
       recordUse(r.dataDir, { session, kind: 'delegate', task: id, skills: launch.skills, time, repo })
     }
     if (brief.skills.length === 0) {
-      const matched = matchDelegateSkills(r.cwd, { prompt, description, owns: brief.owns })
+      // A suggestion is advisory: a project whose skills cannot be read gets none and the launch goes on (R15).
+      let matched = []
+      try { matched = matchDelegateSkills(r.cwd, { prompt, description, owns: brief.owns }) } catch { matched = [] }
       if (matched.length > 0) {
         notes.push(`Aether delegate task ${id}: project skill(s) ${matched.join(', ')} match this brief; add AETHER-SKILLS: ${matched.slice(0, 3).join(', ')} if it helps.`)
         for (const name of matched) recordNotice(r.dataDir, { time, session, repo, kind: 'delegate-skill', name })
