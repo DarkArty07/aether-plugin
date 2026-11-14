@@ -33,7 +33,8 @@ const { startRenewal } = require('./router-renewal.js')
 const { slowPairIds } = require('./router-slow.js')
 const { readDelegateSettings } = require('./session.js')
 const { matchesAny } = require('./globs.js')
-const { loadSkills, skillsSection, recordUse, parseSkillNames } = require('./skill-brief.js')
+const { loadSkills, skillsSection, recordUse, parseSkillNames, matchDelegateSkills } = require('./skill-brief.js')
+const { recordNotice } = require('./skill-registry.js')
 
 const ID_RE = /^[A-Za-z0-9_-]+$/
 const TASK_PREFIX = 'AETHER-TASK:'
@@ -704,6 +705,8 @@ async function begin(input, deps = {}) {
     // was already changed there is not its doing.
     const dirty = !edits && base !== null ? dirtyOf(r.cwd, base) : null
     const time = r.now()
+    let repo = null
+    try { repo = repoPaths(r.cwd).mainRoot } catch { /* not a repository: the record keeps repo null */ }
     const launch = {
       kind: 'launch', time, session, task: id, step, attempt, launchKind, effort, edits, owns: brief.owns, tests: brief.tests,
       description, requested, ignored, pin, base, dirty,
@@ -714,7 +717,14 @@ async function begin(input, deps = {}) {
     if (outside !== null) launch.outside = outside
     log.appendEntry(r.dataDir, launch)
     if (loadedSkills && loadedSkills.length > 0) {
-      recordUse(r.dataDir, { session, kind: 'delegate', task: id, skills: launch.skills, time })
+      recordUse(r.dataDir, { session, kind: 'delegate', task: id, skills: launch.skills, time, repo })
+    }
+    if (brief.skills.length === 0) {
+      const matched = matchDelegateSkills(r.cwd, { prompt, description, owns: brief.owns })
+      if (matched.length > 0) {
+        notes.push(`Aether delegate task ${id}: project skill(s) ${matched.join(', ')} match this brief; add AETHER-SKILLS: ${matched.slice(0, 3).join(', ')} if it helps.`)
+        for (const name of matched) recordNotice(r.dataDir, { time, session, repo, kind: 'delegate-skill', name })
+      }
     }
     if (launchKind === 'first') {
       const of = relaunchOf(r.dataDir, session, id, brief)
@@ -880,9 +890,11 @@ async function verdict(input, deps = {}) {
 
     const next = judged.next
     const label = next.kind === 'exhausted' ? 'exhausted' : kind === 'approve' ? 'approved' : kind
+    let repo = null
+    try { repo = repoPaths(r.cwd).mainRoot } catch { /* not a repository: the record keeps repo null */ }
     log.appendEntry(r.dataDir, {
       kind: 'verdict', time: r.now(), session, task, attempt: launch.attempt, step: state.step, verdict: label,
-      input: verdictInput, reason: verdictInput.reason, cause: next.cause, next, ignore: ignored.globs,
+      input: verdictInput, reason: verdictInput.reason, cause: next.cause, next, ignore: ignored.globs, repo,
     })
     return { ok: true, task, verdict: label, step: judged.state.step, next }
   } catch (err) {
