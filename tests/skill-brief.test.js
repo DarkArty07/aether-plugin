@@ -99,3 +99,35 @@ test('recordUse only appends one line with the time, the session, the kind, the 
     { time: 8, session: 's1', kind: 'delegate', run: null, task: 't1', skills: ['a', 'b'] },
   ])
 })
+
+test('listProjectSkills, formatProjectSkills and matchDelegateSkills discover and match project skills without a model (R8, R15, C4, C7)', (t) => {
+  const dir = tempDir(t, 'aether-proj-skills-')
+  const a = path.join(dir, '.agents', 'skills', 'diseno-de-juego')
+  const b = path.join(dir, '.claude', 'skills', 'direccion-de-arte')
+  fs.mkdirSync(a, { recursive: true })
+  fs.mkdirSync(b, { recursive: true })
+  fs.writeFileSync(path.join(a, 'SKILL.md'), '---\nname: diseno-de-juego\ndescription: Balance de economia, niveles y combate del juego\n---\nbody\n')
+  fs.writeFileSync(path.join(b, 'SKILL.md'), '---\nname: direccion-de-arte\ndescription: Paleta, tipografia y composicion visual\n---\nbody\n')
+
+  const skills = sb.listProjectSkills(dir)
+  assert.deepEqual(skills.map((s) => s.name), ['direccion-de-arte', 'diseno-de-juego'])
+  assert.equal(
+    sb.formatProjectSkills(skills),
+    [
+      '## Project skills',
+      '',
+      'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
+      '- `direccion-de-arte`: Paleta, tipografia y composicion visual',
+      '- `diseno-de-juego`: Balance de economia, niveles y combate del juego',
+    ].join('\n'),
+  )
+  assert.equal(sb.formatProjectSkills([]), '')
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Ajusta el balance de economia y combate del juego', description: 'balance', owns: ['src/game.js'] }),
+    ['diseno-de-juego'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Actualiza el parser de JSON', description: 'parser', owns: ['src/json.js'] }),
+    [],
+  )
+})

@@ -183,6 +183,90 @@ function usesFile(dataDir) {
   return path.join(dataDir, 'skills', 'uses.jsonl')
 }
 
+function readSkillEntry(file, dirName) {
+  let text = ''
+  try {
+    text = fs.readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
+  const front = parseFrontMatter(text)
+  const name = (front.name && String(front.name).trim()) || dirName
+  const description = front.description !== undefined ? String(front.description).trim() : ''
+  return { name, description }
+}
+
+function listProjectSkills(cwd) {
+  const root = cwd ? path.resolve(cwd) : process.cwd()
+  const byName = new Map()
+  for (const folder of ['.agents', '.claude']) {
+    const skillsDir = path.join(root, folder, 'skills')
+    let entries = []
+    try {
+      entries = fs.readdirSync(skillsDir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const file = path.join(skillsDir, entry.name, 'SKILL.md')
+      if (!fs.existsSync(file)) continue
+      const skill = readSkillEntry(file, entry.name)
+      if (!skill || !skill.name || byName.has(skill.name)) continue
+      byName.set(skill.name, skill)
+    }
+  }
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function formatProjectSkills(skills) {
+  if (!Array.isArray(skills) || skills.length === 0) return ''
+  const lines = [
+    '## Project skills',
+    '',
+    'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
+  ]
+  for (const skill of skills) {
+    lines.push(`- \`${skill.name}\`: ${skill.description}`)
+  }
+  return lines.join('\n')
+}
+
+function normalizedWords(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+}
+
+function skillMatchesBrief(skill, words, raw) {
+  const name = String(skill.name || '').toLowerCase()
+  if (!name) return false
+  if (words.has(name) || raw.includes(name)) return true
+  const parts = name.split('-').filter((part) => part.length >= 4)
+  if (parts.length > 0 && parts.every((part) => words.has(part))) return true
+  const significant = new Set()
+  for (const word of [...normalizedWords(skill.name), ...normalizedWords(skill.description)]) {
+    if (word.length >= 4) significant.add(word)
+  }
+  let hits = 0
+  for (const word of significant) {
+    if (words.has(word)) hits += 1
+  }
+  return hits >= 2
+}
+
+function matchDelegateSkills(cwd, { prompt = '', description = '', owns = [] } = {}) {
+  const owned = Array.isArray(owns) ? owns.join(' ') : ''
+  const raw = `${prompt}\n${description}\n${owned}`.toLowerCase()
+  const words = new Set(normalizedWords(raw))
+  return listProjectSkills(cwd)
+    .filter((skill) => skillMatchesBrief(skill, words, raw))
+    .map((skill) => skill.name)
+}
+
 function recordUse(dataDir, { session, kind, run = null, task, skills, time = Date.now() } = {}) {
   try {
     const file = usesFile(dataDir)
@@ -208,4 +292,7 @@ module.exports = {
   skillsSection,
   usesFile,
   recordUse,
+  listProjectSkills,
+  formatProjectSkills,
+  matchDelegateSkills,
 }
