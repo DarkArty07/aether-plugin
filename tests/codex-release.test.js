@@ -7,16 +7,16 @@ const path = require('node:path')
 const ROOT = path.join(__dirname, '..')
 const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
 
-test('the manifest, the launcher pin, the README and the changelog all say 0.42.0 (R25 of spec 022, sixteen releases later)', () => {
-  assert.equal(JSON.parse(read('plugins/aether/.claude-plugin/plugin.json')).version, '0.42.0')
-  assert.ok(read('tests/launcher.test.js').includes("'0.42.0'"))
+test('the manifest, the launcher pin, the README and the changelog all say 0.43.0 (R25 of spec 022, seventeen releases later)', () => {
+  assert.equal(JSON.parse(read('plugins/aether/.claude-plugin/plugin.json')).version, '0.43.0')
+  assert.ok(read('tests/launcher.test.js').includes("'0.43.0'"))
   const readme = read('README.md')
   assert.equal(readme.split('\n').filter((line) => /^Version \d/.test(line)).length, 1)
-  assert.ok(readme.includes('Version 0.42.0 ('))
+  assert.ok(readme.includes('Version 0.43.0 ('))
   const lines = read('docs/changelog.md').split('\n')
   const first = lines.findIndex((line) => /^Version \d+\.\d+\.\d+: /.test(line))
   const firstVersion = lines[first]
-  assert.ok(firstVersion.startsWith('Version 0.42.0: ') && /spec 036/.test(firstVersion), firstVersion)
+  assert.ok(firstVersion.startsWith('Version 0.43.0: ') && /spec 037/.test(firstVersion), firstVersion)
   const previous = lines.findIndex((line) => line.startsWith('Version 0.40.0: '))
   const following = lines.findIndex((line, i) => i > previous && /^Version \d+\.\d+\.\d+: /.test(line))
   assert.ok(/stuckWaitSeconds/.test(lines.slice(previous, following).join('\n')), 'the entry of 0.40.0 says how long a stuck unit waits')
@@ -29,6 +29,6 @@ test('the decisions record A100 with the owner\'s words and what was decided abo
 })
 
 test('the guides say that Codex is a work harness, and the roadmap says what is now (R25)', () => {
-  assert.ok(read('docs/roadmap.md').split('\n').find((line) => line.startsWith('**Now:**')).includes('version 0.42.0'))
+  assert.ok(read('docs/roadmap.md').split('\n').find((line) => line.startsWith('**Now:**')).includes('version 0.43.0'))
   assert.ok(/codex/i.test(read('docs/reference/components.md')))
 })
