@@ -39,7 +39,7 @@ Aprobó en la página de plan del 2026-11-13 la propuesta entera, que para esta 
 
 - Las etapas 2 y 3: carpetas por harness, extras como plugins, aviso de modelos nuevos, ficha en el doctor y el panel.
 - El release: versión, changelog, tag y publicación esperan el sí del dueño.
-- Borrar la clave de Artificial Analysis del `.env` local del dueño: es una credencial suya.
+- La clave de Artificial Analysis del `.env` local del dueño: se borró el 2026-11-13 con su sí y no es parte de la construcción.
 - Cambiar la escalera guardada. Si las cifras de hoy la moverían, el refresco lo informa y lo decide el dueño.
 - Dar a Hydrogen otros papeles (supervisar, revisar, asientos de diseño).
 
@@ -48,3 +48,5 @@ Aprobó en la página de plan del 2026-11-13 la propuesta entera, que para esta 
 - ¿Comprobación real de Grok, Cursor y Muse antes de congelarlos? «congela como estan». No afecta a esta etapa.
 - ¿Aviso de modelos nuevos? «sobre modelos nuevos es buena idea». Va en la etapa 2.
 - ¿De dónde salen las cifras? De las páginas, nunca de una API (palabras 4 y 5).
+- ¿Vale que en esta etapa las páginas por defecto salgan de las filas de la tabla de pares y que un modelo nuevo entre dando su dirección a mano (Supuesto 6 del diseño)? «Lo que recomeindes que sea util y mantenible». El Lead recomendó aceptarlo: el descubrimiento automático va con el aviso de modelos nuevos de la etapa 2.
+- ¿Se borra la clave de la API del `.env` local? «Ya no usamos api asi que si».
