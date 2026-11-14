@@ -18,6 +18,7 @@ const { judge } = require('./baseline.js')
 const { isSessionId, newestIn } = require('./spend.js')
 const { timingsOf, quotaWaitOf } = require('./run-timings.js')
 const { archiveSpend, noteFailure, clearFailure } = require('./spend-archive.js')
+const { skillsReport } = require('./skill-registry.js')
 
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
 const DAY_MS = 24 * 3600 * 1000
@@ -875,8 +876,6 @@ function finalize(cwd, runId, options = {}) {
   return { record, cleanup: sweepRun(cwd, runId, { finish: true }) }
 }
 
-// Skills report reads only the already-resolved data directory's skills/*.jsonl (R17, A8). It does not
-// aggregate other install directories.
-const { skillsReport } = require('./skill-registry.js')
-
+// skillsReport (aether-report --skills) reads only the already-resolved data directory's skills/*.jsonl (R17, A8).
+// It does not aggregate other install directories.
 module.exports = { readUsage, pickSession, report, finalize, pruneUsage, seatsReport, runStartOf, finalizedRecords, skillsReport }
