@@ -875,4 +875,8 @@ function finalize(cwd, runId, options = {}) {
   return { record, cleanup: sweepRun(cwd, runId, { finish: true }) }
 }
 
-module.exports = { readUsage, pickSession, report, finalize, pruneUsage, seatsReport, runStartOf, finalizedRecords }
+// Skills report reads only the already-resolved data directory's skills/*.jsonl (R17, A8). It does not
+// aggregate other install directories.
+const { skillsReport } = require('./skill-registry.js')
+
+module.exports = { readUsage, pickSession, report, finalize, pruneUsage, seatsReport, runStartOf, finalizedRecords, skillsReport }

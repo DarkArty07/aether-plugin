@@ -7,11 +7,13 @@
 // aether-report --seats [--session <id>] [--since <ms>]
 // aether-report --delegates [--session <id>] [--since <ms>]
 // aether-report --spend [--session <id>]
+//   aether-report --skills [--repo <path>] [--since <ms|iso>] [--until <ms|iso>] [--session <id>]
 
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
 const { readJson } = require(path.join(lib, 'common.js'))
-const { report, finalize, seatsReport } = require(path.join(lib, 'report.js'))
+const { report, finalize, seatsReport, skillsReport } = require(path.join(lib, 'report.js'))
+const { dataDir } = require(path.join(lib, 'run.js'))
 const { delegatesReport } = require(path.join(lib, 'delegate-report.js'))
 const { loadPrices, priceModelUsage } = require(path.join(lib, 'prices.js'))
 const { spendReport, isSessionId } = require(path.join(lib, 'spend.js'))
@@ -60,7 +62,35 @@ function spend(argv) {
   return spendReport({ session })
 }
 
+const SKILLS_USAGE = 'usage: aether-report --skills [--repo <path>] [--since <ms|iso>] [--until <ms|iso>] [--session <id>]'
+
+// A millisecond count, or an ISO time. Absent stays null so skillsReport applies no bound.
+function timeBound(raw) {
+  if (raw === null) return null
+  if (/^\d+$/.test(raw)) return Number(raw)
+  const parsed = Date.parse(raw)
+  if (Number.isFinite(parsed)) return parsed
+  throw new Error(SKILLS_USAGE)
+}
+
+// --skills reads only the resolved data directory. It takes --repo, --since, --until and --session.
+function skills(argv) {
+  const rest = argv.filter((arg) => arg !== '--skills')
+  const allowed = new Set(['--repo', '--since', '--until', '--session'])
+  for (let i = 0; i < rest.length; i += 2) {
+    if (!allowed.has(rest[i])) throw new Error(SKILLS_USAGE)
+    if (rest[i + 1] === undefined || rest[i + 1].startsWith('--')) throw new Error(SKILLS_USAGE)
+  }
+  return skillsReport(dataDir(), {
+    repo: value(rest, '--repo'),
+    since: timeBound(value(rest, '--since')),
+    until: timeBound(value(rest, '--until')),
+    session: value(rest, '--session'),
+  })
+}
+
 function main(argv) {
+  if (argv.includes('--skills')) return skills(argv)
   if (argv.includes('--spend')) return spend(argv)
   if (argv[0] === 'price') {
     if (!argv[1] || argv[1].startsWith('--')) throw new Error(USAGE)
