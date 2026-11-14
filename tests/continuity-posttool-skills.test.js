@@ -120,3 +120,45 @@ test('writing specs/NNN-topic/intent.md with practical topic signals emits a sea
   const second = posttool.posttool({ session_id: 's-ml', cwd: w.repo.dir, tool_name: 'Edit', tool_input: { file_path: intent } }, w.ctx)
   assert.equal(second, null)
 })
+
+test('the intent notice names the topics it found and comes again in another session or repository (R12, R13, R16, C6)', (t) => {
+  const w = world(t)
+  const other = makeRepo(t)
+  const intentWrite = (dir, session) => {
+    const intent = path.join(dir, 'specs', '001-ml', 'intent.md')
+    put(intent, '# Intent\nEntrenar un modelo con PyTorch en Google Colab.\n')
+    return posttool.posttool({ session_id: session, cwd: dir, tool_name: 'Write', tool_input: { file_path: intent } }, w.ctx)
+  }
+  const first = intentWrite(w.repo.dir, 's-ml')
+  assert.ok(first.additionalContext.includes('Machine Learning'))
+  assert.ok(first.additionalContext.includes('Google Colab'))
+  assert.ok(intentWrite(w.repo.dir, 's-ml-2'), 'another session is notified again')
+  assert.ok(intentWrite(other.dir, 's-ml'), 'another repository is notified again')
+  assert.equal(intentWrite(w.repo.dir, 's-ml'), null)
+})
+
+test('only a Lead load of aether:skills in this session stops the unloaded notice; another session or skill does not (R11, C2)', (t) => {
+  const w = world(t)
+  const good = path.join(w.repo.dir, '.agents', 'skills', 'good')
+  put(path.join(good, 'SKILL.md'), '---\nname: good\ndescription: Use for good work.\n---\nbody\n')
+  const loadSkill = (session, skill) => posttool.posttool({ session_id: session, cwd: w.repo.dir, tool_name: 'Skill', tool_input: { skill } }, w.ctx)
+  const edit = (session) => posttool.posttool({ session_id: session, cwd: w.repo.dir, tool_name: 'Edit', tool_input: { file_path: path.join(good, 'SKILL.md') } }, w.ctx)
+  loadSkill('other', 'aether:skills')
+  loadSkill('now', 'godot-tools')
+  assert.ok(edit('now').additionalContext.includes('aether:skills'))
+  assert.equal(edit('other'), null)
+  loadSkill('now', 'aether:skills')
+  assert.equal(edit('now'), null)
+})
+
+test('a Skill call in a session that is not the Lead writes no file and prints nothing (R18, C9)', (t) => {
+  const w = world(t)
+  const bin = path.join(PLUGIN, 'bin', 'aether-continuity')
+  const run = spawnSync(process.execPath, [bin, 'posttool'], {
+    input: JSON.stringify({ hook_event_name: 'PostToolUse', session_id: 'plain', cwd: w.repo.dir, tool_name: 'Skill', tool_input: { skill: 'criterio-del-dueno' } }),
+    encoding: 'utf8',
+    env: { ...process.env, AETHER_DATA_DIR: w.data, CLAUDE_CONFIG_DIR: w.home, HOME: w.home },
+  })
+  assert.deepEqual([run.status, run.stdout], [0, ''])
+  assert.deepEqual(fs.readdirSync(w.data), [])
+})

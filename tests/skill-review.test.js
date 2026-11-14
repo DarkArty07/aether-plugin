@@ -158,3 +158,51 @@ test('file and dependency signals, installed coverage in every search location, 
   }
   assert.ok(reg.readNotices(w.data).every((n) => n.repo === w.repo.dir && n.kind === 'topic-search'))
 })
+
+test('a Lead load is recorded under the name of the skill whichever field carries it, never with its arguments (R3, C2)', (t) => {
+  const w = world(t)
+  const load = (tool_input) => review.recordLeadSkillLoad({ session_id: 'lead', cwd: w.repo.dir, tool_name: 'Skill', tool_input }, w.ctx)
+  for (const tool_input of [{ name: 'by-name SECRET' }, { skill_name: 'by-skill-name' }, { skill: 'by-skill secret text' }, { args: 'only args' }]) assert.equal(load(tool_input), null)
+  assert.deepEqual(reg.readUses(w.data).map((u) => u.skills), [['by-name'], ['by-skill-name'], ['by-skill']])
+  assert.ok(!JSON.stringify(reg.readUses(w.data)).includes('SECRET'))
+})
+
+test('a topic notice is kept per session, repository and topic: another one is notified again (R13, R16, C6)', (t) => {
+  const w = world(t)
+  const other = makeRepo(t)
+  for (const dir of [w.repo.dir, other.dir]) {
+    fs.writeFileSync(path.join(dir, 'project.godot'), '')
+    fs.writeFileSync(path.join(dir, 'Dockerfile'), '')
+  }
+  const ids = (extra) => review.detectUncoveredTopics({ ...w.opts, dataDir: w.data, ...extra }).map((x) => x.id)
+  reg.recordNotice(w.data, { session: 's1', repo: w.repo.dir, kind: 'topic-search', name: 'godot' })
+  assert.deepEqual(ids({ session: 's1' }), ['containers'], 'a notice for one topic does not silence the others')
+  assert.deepEqual(ids({ session: 's2' }), ['godot', 'containers'], 'another session is notified again')
+  assert.deepEqual(ids({ session: 's1', cwd: other.dir }), ['godot', 'containers'], 'another repository is notified again')
+  reg.recordNotice(w.data, { session: 's1', repo: w.repo.dir, kind: 'skill-location', name: 'containers' })
+  assert.deepEqual(ids({ session: 's1' }), ['containers'], 'only topic-search notices silence a topic')
+})
+
+test('a dependency or a word signals a topic only as a whole name: a longer name or a word inside another word does not (R12, R13)', (t) => {
+  const w = world(t)
+  const opts = { ...w.opts, dataDir: w.data }
+  const intent = path.join(w.repo.dir, 'specs', '001-equipo', 'intent.md')
+  fs.mkdirSync(path.dirname(intent), { recursive: true })
+  fs.writeFileSync(intent, '# Intent\nQueremos colaborar con el equipo.\n')
+  fs.writeFileSync(path.join(w.repo.dir, 'pyproject.toml'), '[project]\ndescription = "A three tier web app"\ndependencies = ["requests"]\n')
+  fs.writeFileSync(path.join(w.repo.dir, 'package.json'), JSON.stringify({ dependencies: { 'three-utils': '1' } }))
+  assert.deepEqual(review.detectUncoveredTopics({ ...opts, intentPath: intent }).map((x) => x.id), [])
+  fs.writeFileSync(intent, '# Intent\nEntrenar en Google Colab.\n')
+  assert.deepEqual(review.detectUncoveredTopics({ ...opts, intentPath: intent }).map((x) => x.id), ['google-colab'])
+  fs.writeFileSync(path.join(w.repo.dir, 'requirements.txt'), 'torch==2.3\n')
+  assert.deepEqual(review.detectUncoveredTopics({ ...opts, intentPath: intent }).map((x) => x.id), ['machine-learning', 'google-colab'])
+})
+
+test('an installed skill covers a topic only with a whole word of it, so Composer does not cover containers (R13)', (t) => {
+  const w = world(t)
+  fs.writeFileSync(path.join(w.repo.dir, 'Dockerfile'), 'FROM scratch')
+  skill(w.home, 'php-packages', { description: 'Use for Composer packages.' })
+  assert.deepEqual(review.detectUncoveredTopics({ ...w.opts, dataDir: w.data }).map((x) => x.id), ['containers'])
+  skill(w.home, 'docker-basics', { description: 'Use for Docker containers.' })
+  assert.deepEqual(review.detectUncoveredTopics({ ...w.opts, dataDir: w.data }).map((x) => x.id), [])
+})

@@ -211,18 +211,36 @@ function fileSignal(names, signal) {
   return names.some((name) => name === wanted || name.toLowerCase() === wanted.toLowerCase())
 }
 
-function dependencyBlob(root) {
-  let blob = ''
+// The dependency names of the project, each one whole: a longer name, or a description that merely contains it, is not that dependency.
+function dependencyNames(root) {
+  const names = new Set()
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
-    blob += ` ${Object.keys({ ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}), ...(pkg.optionalDependencies || {}) }).join(' ')}`
+    for (const name of Object.keys({ ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}), ...(pkg.optionalDependencies || {}) })) names.add(name.toLowerCase())
   } catch {}
   for (const file of ['requirements.txt', 'pyproject.toml']) {
+    let text
     try {
-      blob += `\n${fs.readFileSync(path.join(root, file), 'utf8')}`
-    } catch {}
+      text = fs.readFileSync(path.join(root, file), 'utf8').toLowerCase()
+    } catch {
+      continue
+    }
+    for (const line of text.split(/\r?\n/)) {
+      const code = line.replace(/#.*$/, '')
+      const leading = code.match(/^\s*([a-z0-9@][a-z0-9@._/-]*)/)
+      if (leading) names.add(leading[1])
+      for (const quoted of code.matchAll(/"\s*([a-z0-9@][a-z0-9@._/-]*)/g)) names.add(quoted[1])
+    }
   }
-  return blob.toLowerCase()
+  return names
+}
+
+// Whole-word match: the word, or its plural, never a part of a longer word ("colab" is not in "colaborar").
+function wordIn(text, word) {
+  const wanted = String(word).trim().toLowerCase()
+  if (!wanted) return false
+  const escaped = wanted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?:e?s)?(?![\\p{L}\\p{N}])`, 'u').test(String(text).toLowerCase())
 }
 
 function readIntentText(cwd, intentPath) {
@@ -309,8 +327,7 @@ function installedBlobs({ cwd, home, dataDir }) {
 function topicCovered(blobs, topic) {
   const keys = [topic.id, ...(Array.isArray(topic.skillKeywords) ? topic.skillKeywords : [])]
     .filter((key) => typeof key === 'string' && key.trim())
-    .map((key) => key.toLowerCase())
-  return keys.some((key) => blobs.some((blob) => blob.includes(key)))
+  return keys.some((key) => blobs.some((blob) => wordIn(blob, key)))
 }
 
 function topicSignaled(topic, { names, deps, words }) {
@@ -318,8 +335,8 @@ function topicSignaled(topic, { names, deps, words }) {
   const dependencies = Array.isArray(topic.dependencies) ? topic.dependencies : []
   const topicWords = Array.isArray(topic.words) ? topic.words : []
   if (files.some((signal) => fileSignal(names, signal))) return true
-  if (dependencies.some((dep) => typeof dep === 'string' && dep && deps.includes(dep.toLowerCase()))) return true
-  if (words && topicWords.some((word) => typeof word === 'string' && word && words.includes(word.toLowerCase()))) return true
+  if (dependencies.some((dep) => typeof dep === 'string' && dep && deps.has(dep.toLowerCase()))) return true
+  if (words && topicWords.some((word) => typeof word === 'string' && wordIn(words, word))) return true
   return false
 }
 
@@ -328,7 +345,7 @@ function detectUncoveredTopics({ cwd, home, dataDir, session = null, intentPath 
   const topics = Array.isArray(loaded.topics) ? loaded.topics : []
   const root = cwd || process.cwd()
   const names = shallowNames(root)
-  const deps = dependencyBlob(root)
+  const deps = dependencyNames(root)
   const words = readIntentText(root, intentPath)
   const blobs = installedBlobs({ cwd: root, home, dataDir })
   const repo = canonicalRepo({ repo: mainRootOf(root) })
