@@ -43,8 +43,40 @@ test('patches every page row in place only with --write, including external code
   assert.match(run(f).stdout, /intelligence 29.6 → 29.9/); assert.equal(fs.readFileSync(f.pairs, 'utf8'), before)
   assert.equal(run(f, ['--write']).exitCode, 0)
   const [a,b] = rowsOf(f); assert.deepEqual([a.intelligence,a.checked,a.codeMinutesPerTask], [29.9,'2026-11-13',12.3]); assert.deepEqual([b.costPerTaskUsd,b.code,b.codeCostPerTaskUsd,b.codeMinutesPerTask,b.codeChecked], [null,57.07,6.78,42.7,'2026-11-13'])
+  assert.equal(a.costPerTaskUsd, 0.159, 'an existing numeric cost updates from the snapshot')
   assert.equal(fs.readFileSync(f.pairs, 'utf8').split('\n').filter(l => l.includes('"id"')).length, 2)
   const text = fs.readFileSync(f.pairs, 'utf8'); const again = run(f, ['--write']); assert.match(again.stdout, /^No figure changed\./); assert.doesNotMatch(again.stdout, /written to/); assert.equal(fs.readFileSync(f.pairs, 'utf8'), text)
+})
+test('a 0.3 Claude scale shift preserves the recalculated rung order and stored ladder', t => {
+  const rows = [
+    haikuHigh,
+    row('claude/haiku@xhigh', 'haiku-xhigh', { intelligence: 34.3, costPerTaskUsd: 0.248, code: 29.29, codeCostPerTaskUsd: 0.46 }),
+    row('claude/sonnet@high', 'sonnet-high', { intelligence: 41.1, costPerTaskUsd: 1.636, code: 43.94, codeCostPerTaskUsd: 2.186 }),
+    row('claude/opus@high', 'opus-high', { intelligence: 51.7, costPerTaskUsd: 3.465, code: 56.57, codeCostPerTaskUsd: 5.119 }),
+    row('claude/opus@xhigh', 'opus-xhigh', { intelligence: 57, costPerTaskUsd: 6.047, code: 59.6, codeCostPerTaskUsd: 8.778 }),
+  ]
+  const f = setup(t, rows)
+  const stored = fs.readFileSync(f.ladder, 'utf8')
+  const shot = shift => snapshotOf(Object.fromEntries(rows.map(r => [r.slug, { figures: {
+    intelligence: Math.round((r.intelligence + shift) * 10) / 10,
+    costPerTaskUsd: r.costPerTaskUsd,
+    code: r.code,
+    codeCostPerTaskUsd: r.codeCostPerTaskUsd,
+    codeMinutesPerTask: 12.3,
+  } }])))
+  const expected = 'Recalculated ladder: haiku high > haiku xhigh > sonnet high > opus high > opus xhigh'
+  writeSnapshot(f, shot(0))
+  const before = run(f)
+  assert.equal(before.exitCode, 0, before.stdout)
+  assert.ok(before.stdout.includes(expected))
+  assert.match(before.stdout, /Stored ladder: unchanged/)
+  writeSnapshot(f, shot(0.3))
+  const after = run(f, ['--write'])
+  assert.equal(after.exitCode, 0, after.stdout)
+  assert.ok(after.stdout.includes(expected))
+  assert.match(after.stdout, /Stored ladder: unchanged/)
+  assert.deepEqual(rowsOf(f).map(r => r.intelligence), [29.9, 34.6, 41.4, 52, 57.3])
+  assert.equal(fs.readFileSync(f.ladder, 'utf8'), stored)
 })
 test('missing page reports command, leaves row intact and patches other rows', t => {
   const f = setup(t); writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { intelligence: 29.9 } } }))
