@@ -70,3 +70,12 @@ test('the Judge lists everything in round one, and from round two on answers for
     'Add a new finding only when the revision introduced it or you could not have seen it before',
   ])
 })
+
+test('the Writer, the tasks skill and the Judge document and check the Skills field on tasks (R9, C4)', () => {
+  has('writer', ['- **Skills** is optional', '`- Skills:', 'at most 3'])
+  has('judge', ['`- Skills:`', 'at most 3 skills per task'])
+  const tasksSkill = fs.readFileSync(path.join(PLUGIN, 'skills', 'tasks', 'SKILL.md'), 'utf8')
+  const speckitTasks = fs.readFileSync(path.join(PLUGIN, 'speckit', 'commands', 'speckit.tasks.md'), 'utf8')
+  assert.ok(tasksSkill.includes('**Skills:**') && tasksSkill.includes('- Skills:'))
+  assert.ok(speckitTasks.includes('**Skills:**') && speckitTasks.includes('- Skills:'))
+})

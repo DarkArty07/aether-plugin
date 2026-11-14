@@ -67,6 +67,7 @@ The swarm starts every task on the cheapest model and raises it by itself: do no
 - **Depends on** is `none` for an independent task, or one line per dependency in the form `Task N — reason`. The line is required, and every dependency needs a reason.
 - **Merges with** is optional: `none`, or a list such as `Task 13, Task 19`; naming it on one side is enough. Use it only when the tasks cannot be green alone, because each changes something that a test owned by another still holds: `aether-plan` builds them as one unit, which one agent builds in sequence. Otherwise give one task the file and its test, and make the other depend on it.
 - **Serves** lists the requirement ids of the spec that the task serves, such as `- Serves: R1, R3`; a task that serves no requirement does not belong in the plan.
+- **Skills** is optional: up to 3 project or installed skills that help the task, separated by commas, such as `- Skills: direccion-de-arte, patron-api`. Put `Skills:` on the tasks where one of the project skills applies (at most 3 per task); omit it when none applies.
 
 **The contract, not the implementation (A10).** A task meant for the swarm gives the Interfaces (exact names, signatures and types), the failing tests in full, and the acceptance; the implementer writes the code. Where the exact text is the requirement, such as a message, a command line or a prompt, write it in full.
 
