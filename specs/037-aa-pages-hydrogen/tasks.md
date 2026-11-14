@@ -10,7 +10,7 @@ Esta función tiene un diseño corto aprobado y no tiene `spec.md` ni `plan.md`:
 - Antes de terminar, busca en `tests/` (`grep -rn`) un fragmento de cada texto, dato o archivo que la tarea cambió o quitó, y cuenta `readdirSync`. Una prueba que fija lo viejo y no está en `Owns` se informa en el mensaje final de la tarea, no se edita.
 - Comando de pruebas de toda la construcción: `npm test`. Cada tarea corre además sus archivos con `node --test <archivos>`. La última tarea corre `npm run check`.
 - El código, las pruebas y los mensajes de los scripts van en inglés; la prosa de documentos y de habilidades conserva el idioma que el archivo ya tiene.
-- **La foto, formato común** (lo escribe la Tarea 1, lo leen las Tareas 3, 4, 6 y 7): `plugins/aether/config/models/aa-pages.json` es un objeto con una sola clave, `pages`. Cada dirección (el `slug` de la página, como `claude-haiku-5-5-high`) es un objeto `{ "readOn": "AAAA-MM-DD", "name": "<nombre que dio la página>", "figures": { "<cifra>": { "value": <número>, "on": "AAAA-MM-DD" } } }`. `readOn` es la última lectura que escribió algo en esa dirección; `on` es la lectura que dio ese valor, así que un valor conservado porque la página no lo trajo sigue con su fecha anterior. Una cifra que nunca se dio no aparece (nunca `null`). Las direcciones van ordenadas por unidades de código, una línea por dirección, con la clave `pages` y las llaves en líneas propias, y un salto de línea al final. Las cifras, en este orden fijo (`FIGURES` de `scripts/aa-pages.js`):
+- **La foto, formato común** (la forma la fija la Tarea 1, el archivo lo escribe la Tarea 6 con la pasada real, y lo leen las Tareas 3, 4 y 7): `plugins/aether/config/models/aa-pages.json` es un objeto con una sola clave, `pages`. Cada dirección (el `slug` de la página, como `claude-haiku-5-5-high`) es un objeto `{ "readOn": "AAAA-MM-DD", "name": "<nombre que dio la página>", "figures": { "<cifra>": { "value": <número>, "on": "AAAA-MM-DD" } } }`. `readOn` es la última lectura que escribió algo en esa dirección; `on` es la lectura que dio ese valor, así que un valor conservado porque la página no lo trajo sigue con su fecha anterior. Una cifra que nunca se dio no aparece (nunca `null`). Las direcciones van ordenadas por unidades de código, una línea por dirección, con la clave `pages` y las llaves en líneas propias, y un salto de línea al final. Las cifras, en este orden fijo (`FIGURES` de `scripts/aa-pages.js`):
 
   | Cifra | Sale de la página | Redondeo |
   |---|---|---|
@@ -30,9 +30,10 @@ Esta función tiene un diseño corto aprobado y no tiene `spec.md` ni `plan.md`:
   | `outputTokensPerSecond` | `medianOutputSpeed` | 1 |
   | `timeToFirstTokenS` | `medianTimeToFirstAnswerToken` | 2 |
 
-- **Declaraciones en `harness-models.json`** (las lee la Tarea 3, las llenan las Tareas 6 y 7). Dentro de la entrada de un harness, dos mapas opcionales, con el id del modelo como el índice lo agrupa (para un harness con el esfuerzo en el id, el id sin el esfuerzo: `gemini-3.8-flash`): `"superseded": { "<id>": { "by": "<id del sucesor>", "on": "AAAA-MM-DD", "reason": "<motivo>", "figures": "<cifras con su fecha>" } }` y `"outOfScope": { "<id>": { "on": "AAAA-MM-DD", "reason": "<motivo>" } }`. Los `excluded` de texto que ya hay en los harness de bandera no cambian. Las claves de primer nivel de `harness-models.json` y de `profiles.json` siguen siendo `harnesses` y `profiles` (`tests/config-keys.test.js`).
-- **Valores por omisión elegidos** (reversibles; la tarea que los usa los repite en su mensaje final): (a) `released` de una entrada de `models.json` sale del campo `released` del perfil en `profiles.json`, y se omite cuando el perfil no lo tiene, porque las páginas no traen la fecha de salida; (b) el `generatedAt` de `models.json` es la lectura más reciente (`readOn`) de la foto, no la fecha de hoy, para que dos corridas den los mismos archivos; (c) `timeToFirstTokenS` de la foto sale de `medianTimeToFirstAnswerToken`; las páginas leídas el 2026-11-13 traen nulas las velocidades y el primer token, así que el lector las nombra como campos que faltan; (d) `scripts/build-models-index.js` conserva sus constantes `HARNESSES`, `DEFAULT_HARNESSES` y `CAPTURE` tal cual (`tests/new-harness-skill.test.js` y `tests/copies-harness-config.test.js` las leen) y el `note` de `withoutFigures` conserva su texto `offered, with no Artificial Analysis entry, so no figures` (`tests/copies-muse.test.js`).
-- Las pruebas que cargan las tablas reales (`lanes.CONFIG_FILE`, `loadPairs()` sin argumento, `lane-fixtures.js`, que lee la tabla real de carriles) están en el `Owns` de las Tareas 6 y 7 por glob. Antes de dar por cerrada su lista, cada una corre `grep -il flash tests/*.test.js` y revisa cada prueba que cargue la tabla real y afirme un conteo, un id o un nombre.
+- **Declaraciones en `harness-models.json`** (las lee la Tarea 3 y las llena la Tarea 7). Dentro de la entrada de un harness, dos mapas opcionales, con el id del modelo como el índice lo agrupa (para un harness con el esfuerzo en el id, el id sin el esfuerzo: `gemini-3.8-flash`): `"superseded": { "<id>": { "by": "<id del sucesor>", "on": "AAAA-MM-DD", "reason": "<motivo>", "figures": "<cifras con su fecha>" } }` y `"outOfScope": { "<id>": { "on": "AAAA-MM-DD", "reason": "<motivo>" } }`. Los `excluded` de texto que ya hay en los harness de bandera no cambian. Las claves de primer nivel de `harness-models.json` y de `profiles.json` siguen siendo `harnesses` y `profiles` (`tests/config-keys.test.js`).
+- **Valores por omisión elegidos** (reversibles; la tarea que los usa los repite en su mensaje final): (a) `released` de una entrada de `models.json` sale del campo `released` del perfil en `profiles.json`, y se omite cuando el perfil no lo tiene, porque las páginas no traen la fecha de salida (la Tarea 7 copia el `released` de hoy a cada perfil antes de regenerar); (b) el `generatedAt` de `models.json` es la lectura más reciente (`readOn`) de la foto, no la fecha de hoy, para que dos corridas den los mismos archivos; (c) `timeToFirstTokenS` de la foto sale de `medianTimeToFirstAnswerToken`; las páginas leídas el 2026-11-13 traen nulas las velocidades y el primer token, así que el lector las nombra como campos que faltan; (d) `scripts/build-models-index.js` conserva sus constantes `HARNESSES`, `DEFAULT_HARNESSES` y `CAPTURE` tal cual (`tests/new-harness-skill.test.js` y `tests/copies-harness-config.test.js` las leen) y el `note` de `withoutFigures` conserva su texto `offered, with no Artificial Analysis entry, so no figures` (`tests/copies-muse.test.js`).
+- Las pruebas que cargan las tablas reales (`lanes.CONFIG_FILE`, `loadPairs()` sin argumento, `lane-fixtures.js`, que lee la tabla real de carriles) están en el `Owns` de la Tarea 8, que se construye junto con la Tarea 7 (`Merges with`): la Tarea 7 cambia las tablas y esas pruebas todavía fijan las de hoy, así que no están verdes por separado. Antes de dar por cerrada su lista, la Tarea 8 corre `grep -il flash tests/*.test.js` y revisa cada prueba que cargue la tabla real y afirme un conteo, un id o un nombre. Cada archivo tiene un solo dueño: donde el `Owns` de la Tarea 8 usa un glob, ningún otro `Owns` toca un archivo que ese glob cubra.
+- **Los tres textos de la prueba de ausencia** (la dirección de la API de Artificial Analysis, el nombre de su clave y el encabezado `x-api-key`; los fija la Tarea 9) no se escriben enteros en ningún archivo que esta construcción cree o reescriba fuera de `specs/`. Una prueba que los nombra los arma con `[…].join(…)`, como hace la prueba de ausencia; una que busca la palabra `fetch` usa `/\bfetch\b/`, porque `fetchedAt` es un campo de `pairs.json`.
 - Fechas: una prueba nunca fija «hoy». Las cifras de la foto de 2026-11-13 entran a las pruebas del lector desde `specs/037-aa-pages-hydrogen/evidence/aa-extract-2026-11-13.json` (13 páginas ya leídas); las pruebas de las Tareas 6 y 7 leen la foto y las tablas que se envían.
 
 ## Aether Execution
@@ -42,20 +43,21 @@ Esta función tiene un diseño corto aprobado y no tiene `spec.md` ni `plan.md`:
 
 ## Checklist
 
-- [ ] T001 [P] El lector único `scripts/aa-pages.js`, la foto vacía `plugins/aether/config/models/aa-pages.json` y su formato, con sus pruebas → Task 1
+- [ ] T001 [P] El lector único `scripts/aa-pages.js` y el formato de la foto, con sus pruebas → Task 1
 - [ ] T002 [P] El piso de código para `implementer` en `plugins/aether/lib/superdelegation.js` y la validación de `code` en `plugins/aether/lib/pairs.js` → Task 2
 - [ ] T003 `scripts/build-models-index.js` sin lista global, desde `harness-models.json`, `pairs.json`, `lanes.json`, `profiles.json` y la foto → Task 3
 - [ ] T004 `scripts/refresh-lanes.js` sin red y sin clave, desde la foto → Task 4
 - [ ] T005 Fuera `aa-api.js`, `aa-pages.js` y `aa-extract.js`; `SKILL.md` y `agent-prompt.md` del skill y el skill `new-harness` reescritos → Task 5
-- [ ] T006 Los datos, parte 1: la foto llena (una pasada real por las páginas), `pairs.json` refrescado, `models.json` y `docs/models/README.md` regenerados → Task 6
-- [ ] T007 Los datos, parte 2: Hydrogen entra, Flash sale y se declara reemplazado, en `pairs.json`, `lanes.json`, `harness-models.json`, `profiles.json`, `prices.json` y el índice → Task 7
-- [ ] T008 La documentación, la decisión numerada, `AGENTS.md`, la prueba de ausencia y `tests/docs-032.test.js` → Task 8
+- [ ] T006 La pasada real por las páginas: la foto `plugins/aether/config/models/aa-pages.json` (el único paso con red) → Task 6
+- [ ] T007 Las tablas desde la foto: `pairs.json` refrescado, Hydrogen entra, Flash sale y se declara reemplazado, `lanes.json`, `harness-models.json`, `profiles.json`, `prices.json`, `models.json` y `docs/models/README.md` → Task 7
+- [ ] T008 Las pruebas que cargan las tablas reales, ajustadas a las tablas nuevas (se construye con la Tarea 7) → Task 8
+- [ ] T009 La documentación, la decisión numerada, `AGENTS.md`, la prueba de ausencia y `tests/docs-032.test.js` → Task 9
 
 ### Task 1: El lector único de páginas y el formato de la foto (C2, C3, C8)
 
 **Aether:**
 - Area: aa-reader
-- Owns: `scripts/aa-pages.js`, `plugins/aether/config/models/aa-pages.json`, `tests/aa-pages.test.js`, `tests/aa-page-fixtures.js`, `tests/guards.test.js`, `tests/models-index.test.js`
+- Owns: `scripts/aa-pages.js`, `tests/aa-pages.test.js`, `tests/aa-page-fixtures.js`, `tests/guards.test.js`
 - Depends on: none
 - Serves: C2, C3, C8
 
@@ -95,7 +97,7 @@ mergeSnapshot(snapshot, results, today)  // -> { snapshot, summary: { written: [
 // `missing[slug]` lista las cifras de FIGURES que esa lectura no trajo (aunque la foto conserve un valor anterior).
 
 serializeSnapshot(snapshot)      // -> el texto del archivo, en el formato común
-loadSnapshot(file = SNAPSHOT_FILE)  // -> { pages: {} } cuando el archivo no existe; lanza si no es JSON o no tiene `pages`
+loadSnapshot(file = SNAPSHOT_FILE)  // -> { pages: {} } cuando el archivo no existe (hasta que la Tarea 6 lo escribe); lanza si no es JSON o no tiene `pages`
 slugsOf(pairsTable, { harness = null } = {})  // direcciones de las filas sin `estimateOf`, sin repetir, en el orden de la tabla;
                                               // con `harness`, las de ese harness y las de las filas `claude`
 
@@ -122,12 +124,14 @@ Un 403 o 429: `Artificial Analysis answered <status> for <url>: the pass stopped
 // el inicio del modelo, sus escalares como "clave":valor, sus objetos como "clave":{…}, las evals como
 // {"slug","score","outputTokensPerTask","costPerTask","timePerTask"} y el objeto briefcaseBreakdown después, comillas escapadas.
 pageFromExtract(entry)
-// Una foto en el formato común: pages = { '<slug>': { name?, readOn?, figures: { intelligence: 41.5, code: { value: 43.94, on: '2026-11-12' } } } };
-// un número toma la fecha `on` del argumento (por omisión '2026-11-13'), un objeto { value, on } se copia.
+// Una foto en el formato común: pages = { '<slug>': { name?, readOn?, figures: { intelligence: 41.5, code: { value: 43.94, on: '2026-11-12' } } } }.
+// `on` por omisión es '2026-11-13'. Una cifra dada como número toma la fecha `on`; una dada como { value, on } se copia.
+// `readOn` de cada dirección es el que se da y, si no se da, `on`; `name` es el que se da y, si no se da, `Model <slug>` (el nombre
+// que `block` pone a sus páginas). Devuelve { pages: { '<slug>': { readOn, name, figures } } }.
 snapshotOf(pages, on = '2026-11-13')
 ```
 
-`plugins/aether/config/models/aa-pages.json` se envía vacío: `{\n  "pages": {\n  }\n}\n` (la Tarea 6 lo llena con la pasada real). `tests/guards.test.js` (`R21`): el patrón `KEPT_EVIDENCE` gana la carpeta de esta función, `037-aa-pages-hydrogen\/evidence\/(README\.md|aa-extract-2026-11-13\.json)`, porque la evidencia que una spec nombra como fuente se queda rastreada (lo mismo que 032 y 036); hoy esa prueba está roja en esta rama. `tests/models-index.test.js`: la afirmación `fs.readdirSync(CONFIG).sort()` de «the committed models.json and README are in the shape the script writes» (hoy en la línea 740) pasa a `['aa-pages.json', 'harness-models.json', 'models.json', 'profiles.json']`; es el único cambio de ese archivo en esta tarea (la Tarea 3 lo reescribe).
+El archivo `plugins/aether/config/models/aa-pages.json` **no se crea en esta tarea**: lo escribe la Tarea 6 con la pasada real, y mientras no exista `loadSnapshot` da la foto vacía. `tests/guards.test.js` (`R21`): el patrón `KEPT_EVIDENCE` gana la carpeta de esta función, `037-aa-pages-hydrogen\/evidence\/(README\.md|aa-extract-2026-11-13\.json)`, porque la evidencia que una spec nombra como fuente se queda rastreada (lo mismo que 032 y 036); hoy esa prueba está roja en esta rama.
 
 **Tests (write first):**
 
@@ -141,7 +145,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
-const { block, page, pageFromExtract } = require('./aa-page-fixtures.js')
+const { block, page, pageFromExtract, snapshotOf } = require('./aa-page-fixtures.js')
 const reader = require('../scripts/aa-pages.js')
 
 const EVIDENCE = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'specs', '037-aa-pages-hydrogen', 'evidence', 'aa-extract-2026-11-13.json'), 'utf8'))
@@ -334,15 +338,26 @@ test('a bad argument prints the usage and exits 2, and a slug that is not a page
   assert.match(bad.stdout, /Not read: \.\.\/etc\/passwd \(bad-slug\)/)
   assert.equal(bad.exitCode, 1)
 })
+
+test('snapshotOf dates a bare number with `on`, copies an { value, on } as given, and defaults readOn to `on` and name to `Model <slug>`', () => {
+  const shot = snapshotOf({
+    a: { figures: { intelligence: 41.5, code: { value: 43.94, on: '2026-11-12' } } },
+    b: { readOn: '2026-11-10', name: 'B', figures: {} },
+  })
+  assert.deepEqual(shot.pages.a, { readOn: '2026-11-13', name: 'Model a', figures: { intelligence: { value: 41.5, on: '2026-11-13' }, code: { value: 43.94, on: '2026-11-12' } } })
+  assert.deepEqual(shot.pages.b, { readOn: '2026-11-10', name: 'B', figures: {} })
+  const other = snapshotOf({ a: { figures: { intelligence: 1 } } }, '2026-11-01').pages.a
+  assert.deepEqual([other.readOn, other.figures.intelligence.on], ['2026-11-01', '2026-11-01'])
+})
 ```
 
-`tests/guards.test.js` y `tests/models-index.test.js` quedan verdes con los dos cambios de arriba (corre `node --test tests/guards.test.js tests/models-index.test.js`).
+`tests/guards.test.js` queda verde con el cambio de arriba (corre `node --test tests/guards.test.js`).
 
 **Acceptance:**
 
-- `node --test tests/aa-pages.test.js tests/guards.test.js tests/models-index.test.js` en verde y luego `npm test` sin una falla nueva.
+- `node --test tests/aa-pages.test.js tests/guards.test.js` en verde y luego `npm test` sin una falla nueva.
 - `scripts/aa-pages.js` es el único archivo del árbol, junto con los tres lectores viejos que la Tarea 5 borra, que llama a `fetch` para una página de Artificial Analysis; los scripts `refresh-lanes.js` y `build-models-index.js` aún no cambian en esta tarea.
-- La foto se envía vacía y con el formato común; ninguna prueba toca la red.
+- El archivo de la foto no existe todavía (lo escribe la Tarea 6); `snapshotOf` tiene sus valores por omisión fijados por una prueba; ninguna prueba toca la red.
 
 ### Task 2: El código entra en la regla de elección (C7)
 
@@ -390,7 +405,7 @@ const ext = (effort, intelligence, cost, code) => ({
   intelligence, costPerTaskUsd: cost, outputTokensPerSecond: null, timeToFirstTokenS: null,
   ...(code === undefined ? {} : { code, codeCostPerTaskUsd: 1, codeMinutesPerTask: 1 }),
 })
-const LANES = { harnesses: { agy: { models: { m: { roles: ['implementer', 'supervisor', 'reviewer'] } } } } }
+const LANES = { harnesses: { agy: { models: { m: { roles: ['implementer', 'supervisor', 'reviewer', 'judge'] } } } } }
 const view = (state) => ({ agy: { installed: true, groups: { g: state } } })
 const OPEN = { usable: true, unknown: false, mark: null, resetsAt: '2026-11-20T00:00:00Z' }
 const DRY = { usable: false, unknown: false, mark: null, resetsAt: '2026-11-20T00:00:00Z' }
@@ -433,11 +448,15 @@ test('a pair that is below the code floor and in a dry quota does not make the r
   assert.match(reaching.reason, /every quota with a pair that reaches 40\.1 points is dry/)
 })
 
-test('a supervisor, a reviewer, a call with no role and a reference with no code are judged by intelligence alone', () => {
+test('a supervisor, a reviewer, a design seat (judge), a call with no role and a reference with no code are judged by intelligence alone', () => {
   const rows = [ext('medium', 41.2, 0.5, 29.29)]
-  assert.equal(ask(rows, { role: 'supervisor' }).picked.id, 'agy/m@medium')
-  assert.equal(ask(rows, { role: 'reviewer' }).picked.id, 'agy/m@medium')
-  assert.equal(ask(rows, { role: undefined, lanes: undefined }).picked, null, 'no role and no table: nothing allows the role, as before')
+  // The pair reaches the points and has 29.29 in code against a floor of 42.9: only an implementer call leaves it out.
+  for (const role of ['supervisor', 'reviewer', 'judge', undefined]) {
+    const decision = ask(rows, { role })
+    assert.equal(decision.picked.id, 'agy/m@medium', String(role))
+    assert.equal(why(decision, 'agy/m@medium'), null, String(role))
+    assert.doesNotMatch(decision.reason, /code floor|code figure/, String(role))
+  }
   const noCode = { ...SONNET }
   delete noCode.code
   assert.equal(choose({ pairs: [noCode, ...rows], reference: { model: 'sonnet', effort: 'high' }, harnesses: view(OPEN), lanes: LANES, role: 'implementer' }).picked.id, 'agy/m@medium')
@@ -457,7 +476,7 @@ test('loadPairs checks the code figure of an external row when it is there', (t)
 })
 ```
 
-(La prueba del supervisor sin papel llama con `lanes: undefined`: confirma que sin tabla ningún modelo externo permite un papel, como hoy; la implementadora puede quitar esa línea si la regla de `allowsRole` ya la cubre otra prueba.)
+(Una llamada sin papel no pasa por `allowsRole` y su piso de código es `null`: `choose` no lo calcula, como hoy lo hace con el supervisor.)
 
 **Acceptance:**
 
@@ -469,7 +488,7 @@ test('loadPairs checks the code figure of an external row when it is there', (t)
 
 **Aether:**
 - Area: models-index
-- Owns: `scripts/build-models-index.js`, `tests/models-index.test.js`, `tests/models-index-pages.test.js`, `tests/aa-free-endpoint.test.js`, `tests/fixtures/aa-language-free-2026-11-11.json`, `tests/fixtures/codex/aa-api-2026-10-29.json`, `tests/codex-models.test.js`, `docs/models/README.md`, `tests/config-keys.test.js`, `tests/docs-claims-rest.test.js`
+- Owns: `scripts/build-models-index.js`, `tests/models-index.test.js`, `tests/models-index-pages.test.js`, `tests/aa-free-endpoint.test.js`, `tests/fixtures/aa-language-free-2026-11-11.json`, `tests/codex-models.test.js`, `tests/copies-muse.test.js`, `tests/config-keys.test.js`
 - Depends on: Task 1 — la foto, su formato y `loadSnapshot` de `scripts/aa-pages.js` son lo que el índice lee
 - Serves: C1, C3, C4
 
@@ -506,9 +525,11 @@ Reglas del índice (cada una con una prueba abajo):
    - `Named by the lane table and not offered (<n>): ….`
    - `Offered and excluded by the owner (<n>): ….`
    - `Without a profile (<n>): …` como hoy, con código 1.
-7. **README.** La parte generada dice `Generated on <generatedAt> from <source>; the harnesses' listings are of …`. La parte escrita a mano de `docs/models/README.md` (hasta `<!-- models-index:start -->`) pierde las dos órdenes de la API y `--from`; la sección «Refresh» muestra `node scripts/build-models-index.js --write   # from the photo of the model pages, no network: plugins/aether/config/models/aa-pages.json`, y el texto que explica el agrupamiento por slug de AA se reemplaza por una frase que dice que los modelos salen de `harness-models.json` y las cifras de la foto. El README sigue por debajo de 80 líneas y enlaza a los tres archivos de `config/models` donde `tests/models-index.test.js` los busca.
+7. **README.** La parte generada dice `Generated on <generatedAt> from <source>; the harnesses' listings are of …`. Esta tarea no toca `docs/models/README.md`: su parte escrita a mano (hasta `<!-- models-index:start -->`) la reescribe la Tarea 7, que también regenera la parte generada.
 
-`tests/codex-models.test.js`: se quita solo la prueba «the script, run on the saved AA list, reproduces the committed Codex records» (usaba `--from` y el dato que esta tarea borra) y la referencia a ese dato en el comentario de `TERMINAL`; la Tarea 6 la vuelve a escribir con la foto. Los demás archivos de `tests/` que importan funciones borradas se reescriben aquí.
+`tests/codex-models.test.js`: se quita la prueba «the script, run on the saved AA list, reproduces the committed Codex records» (usaba `--from`; `tests/models-index-shipped.test.js` de la Tarea 7 reconstruye el índice enviado byte a byte y la cubre) y se quita de su comentario la referencia al dato `tests/fixtures/codex/aa-api-2026-10-29.json`, que borra la Tarea 8. Las tablas fijas `POINTS` y `TERMINAL` y la aserción `29.6` de Haiku (cifras del 2026-10-29 que la Tarea 7 mueve al regenerar el índice) se reemplazan por una comparación con la tabla: la `intelligence` de cada puntuación de Codex es la de su fila `codex/<modelo>@<esfuerzo>` de `pairs.json` (con `loadPairs()`), `terminalBench` es un número entre 0 y 1 en cada puntuación, y la de Haiku `high` es la de la fila `claude/haiku@high`; así la prueba vale con el índice de hoy y con el regenerado. Si con el índice de hoy alguna cifra no coincide con su fila, la tarea compara solo lo que coincide, lo informa en su mensaje final, y la Tarea 7 vuelve a mirarlo. Si otra prueba fuera de `Owns` importa una función que esta tarea borra, se informa en el mensaje final.
+
+`tests/copies-muse.test.js`: la lista de claves de `models.json` pierde `'since'` y la comparación de claves del archivo enviado lo tolera mientras el archivo de hoy aún lo lleva (`Object.keys(json(file)).filter((key) => key !== 'since').sort()` para `models.json`); la Tarea 7 regenera el archivo sin `since` y `tests/models-index-shipped.test.js` afirma que ya no está.
 
 **Tests (write first):**
 
@@ -562,7 +583,9 @@ test('the index has no flag for the API, a saved answer, a date or the pages: ea
     assert.match(out.stdout, /^usage: node scripts\/build-models-index\.js \[--harnesses /)
   }
   const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'build-models-index.js'), 'utf8')
-  for (const gone of ['fetch', 'MODELS_URL', 'x-api-key', 'keyFrom', 'refresh-lanes', 'aa-api']) assert.equal(source.includes(gone), false, gone)
+  const KEY_HEADER = ['x', 'api', 'key'].join('-') // built from pieces: the absence test of Task 9 searches the tree for it
+  assert.equal(/\bfetch\b/.test(source), false, 'fetch')
+  for (const gone of ['MODELS_URL', KEY_HEADER, 'keyFrom', 'refresh-lanes', 'aa-api']) assert.equal(source.includes(gone), false, gone)
 })
 
 test('the models in use are the listed ones, with the efforts of their pair rows and the figures of the photo', (t) => {
@@ -648,12 +671,14 @@ test('the native harness maps an alias to its pair rows, and the page of the max
 })
 ```
 
-`tests/models-index-pages.test.js` se reescribe para decir lo que sigue valiendo: el `terminalBench` de `models.json` sale de la foto (una fila cuya dirección está en la foto con `terminalBench` lo lleva; sin él, `models.json` no lo escribe), con las fotos de `snapshotOf`, sin `fetch` ni páginas guardadas. `tests/aa-free-endpoint.test.js` y sus dos datos se borran. `tests/models-index.test.js` pierde además la prueba que copia `aa-api.js` a un árbol de prueba (línea ~992) y la que compara el `models.json` enviado con una reconstrucción (la Tarea 6 vuelve a escribir esa comparación con los datos finales); las pruebas de los archivos enviados (`readCommitted`) siguen y no deben quedar rojas con los datos de hoy: si una afirma lo que solo la lista de la API daba (`since`, `superseded` deducido, `outOfScope` deducido), la tarea la ajusta a lo que el archivo enviado tiene, y la Tarea 6 lo regenera.
+`tests/models-index-pages.test.js` se reescribe para decir lo que sigue valiendo: el `terminalBench` de `models.json` sale de la foto (una fila cuya dirección está en la foto con `terminalBench` lo lleva; sin él, `models.json` no lo escribe), con las fotos de `snapshotOf`, sin `fetch` ni páginas guardadas. `tests/aa-free-endpoint.test.js` y su dato `tests/fixtures/aa-language-free-2026-11-11.json` se borran. `tests/models-index.test.js` pierde además la prueba que copia `aa-api.js` a un árbol de prueba (línea ~992) y la que compara el `models.json` enviado con una reconstrucción (la Tarea 7 la vuelve a escribir con los datos finales).
+
+Las pruebas de los archivos enviados (`readCommitted`) siguen y deben valer con el archivo de hoy **y** con el que regenera la Tarea 7: afirman la forma (claves, un perfil por modelo, orden, README corto) y no una lista de modelos, una cifra ni la presencia de `since`, de `superseded` o de `outOfScope` deducidos; lo que fija un modelo o una cifra concreta lo fija `tests/models-index-shipped.test.js` de la Tarea 7. La afirmación `fs.readdirSync(CONFIG).sort()` de «the committed models.json and README are in the shape the script writes» (línea ~740) pasa a `fs.readdirSync(CONFIG).filter((name) => name !== 'aa-pages.json').sort()` igual a `['harness-models.json', 'models.json', 'profiles.json']`: el archivo de la foto lo crea la Tarea 6 y `tests/aa-snapshot-shipped.test.js` lo fija.
 
 **Acceptance:**
 
 - `node --test tests/models-index.test.js tests/models-index-pages.test.js tests/codex-models.test.js tests/copies-muse.test.js tests/copies-harness-config.test.js tests/new-harness-skill.test.js tests/config-keys.test.js` en verde, y `npm test` sin una falla nueva.
-- Ni `scripts/build-models-index.js` ni `docs/models/README.md` (la parte escrita a mano) nombran ya la API, la clave ni `x-api-key`; `models.json` enviado todavía los lleva (lo regenera la Tarea 6) y por eso las pruebas de los archivos enviados siguen leyendo lo que hay.
+- `scripts/build-models-index.js` no nombra ya la API, la clave ni `x-api-key`; `models.json` y `docs/models/README.md` enviados todavía los llevan (los regenera la Tarea 7) y las pruebas de los archivos enviados valen con ambos estados.
 - El script no importa `scripts/refresh-lanes.js` ni nada de `.claude/skills/artificial-analysis/`; solo lee `loadSnapshot` de `scripts/aa-pages.js`.
 - Dos corridas seguidas con las mismas entradas dan los mismos archivos.
 
@@ -689,7 +714,11 @@ const { snapshotOf } = require('./aa-page-fixtures.js')
 
 test('the script asks nothing of the network and holds no key: no fetch, no key reader, and main is the only export', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'refresh-lanes.js'), 'utf8')
-  for (const gone of ['fetch', 'ARTIFICIAL_ANALYSIS_API_KEY', 'keyFrom', 'keyFile', 'envFileFor', 'x-api-key', 'artificial-analysis/aa-api']) assert.equal(source.includes(gone), false, gone)
+  // Two of the texts are built from pieces: the absence test of Task 9 searches the tree for them whole.
+  const KEY_NAME = ['ARTIFICIAL_ANALYSIS', 'API', 'KEY'].join('_')
+  const KEY_HEADER = ['x', 'api', 'key'].join('-')
+  assert.equal(/\bfetch\b/.test(source), false, 'fetch')
+  for (const gone of [KEY_NAME, 'keyFrom', 'keyFile', 'envFileFor', KEY_HEADER, 'aa-api']) assert.equal(source.includes(gone), false, gone)
   assert.deepEqual(Object.keys(require('../scripts/refresh-lanes.js')), ['main'])
 })
 
@@ -750,8 +779,8 @@ test('two runs in a row with --write leave the same file, and the second says no
 **Acceptance:**
 
 - `node --test tests/refresh-lanes.test.js tests/build-models-index.test.js tests/models-index.test.js tests/docs-032.test.js` en verde (el segundo nombre solo si existe) y `npm test` sin una falla nueva.
-- `scripts/refresh-lanes.js` no contiene `fetch`, la clave ni sus funciones, y exporta solo `main`; dos corridas seguidas dan el mismo archivo.
-- `tests/docs-032.test.js` aún fija el texto de los documentos (lo cambia la Tarea 8); esta tarea no lo toca.
+- `scripts/refresh-lanes.js` no contiene `fetch`, la clave ni sus funciones, y exporta solo `main`; dos corridas seguidas dan el mismo archivo; el archivo de pruebas no escribe entero ninguno de los tres textos de la Tarea 9.
+- `tests/docs-032.test.js` aún fija el texto de los documentos (lo cambia la Tarea 9); esta tarea no lo toca.
 
 ### Task 5: Fuera los tres lectores del skill; el skill y `new-harness` reescritos (C1, C2)
 
@@ -784,6 +813,7 @@ const path = require('node:path')
 const ROOT = path.join(__dirname, '..')
 const SKILL = path.join(ROOT, '.claude', 'skills', 'artificial-analysis')
 const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8')
+const KEY_HEADER = ['x', 'api', 'key'].join('-') // built from pieces: the absence test of Task 9 searches the tree for it whole
 
 // Every source file that could ask a page of the network: the scripts, the plugin's code and the skills; no test file.
 function sources(dir, out = []) {
@@ -810,7 +840,7 @@ test('the skill and its brief send the reader to scripts/aa-pages.js and name no
   for (const file of ['SKILL.md', 'agent-prompt.md']) {
     const text = read('.claude', 'skills', 'artificial-analysis', file)
     assert.match(text, /scripts\/aa-pages\.js read/, file)
-    for (const gone of [/aa-api/, /aa-extract\.js/, /aa-pages\.js api/, /x-api-key/i, /ARTIFICIAL_ANALYSIS/, /\/api\/v2/]) assert.doesNotMatch(text, gone, `${file} ${gone}`)
+    for (const gone of [/aa-api/, /aa-extract\.js/, /aa-pages\.js api/, new RegExp(KEY_HEADER, 'i'), /ARTIFICIAL_ANALYSIS/, /\/api\/v2/]) assert.doesNotMatch(text, gone, `${file} ${gone}`)
   }
   assert.match(read('.claude', 'skills', 'artificial-analysis', 'SKILL.md'), /only source|única fuente/i)
   assert.match(read('.claude', 'skills', 'new-harness', 'SKILL.md'), /scripts\/aa-pages\.js read/)
@@ -821,40 +851,36 @@ test('the skill and its brief send the reader to scripts/aa-pages.js and name no
 **Acceptance:**
 
 - `node --test tests/aa-single-reader.test.js tests/new-harness-skill.test.js` en verde y `npm test` sin una falla nueva; ningún archivo fuera de `scripts/aa-pages.js` llama a `fetch` para una página.
-- El skill describe lo que existe: ninguna orden que lea una API.
+- El skill describe lo que existe: ninguna orden que lea una API; `tests/aa-single-reader.test.js` no escribe entero ninguno de los tres textos de la Tarea 9.
 
-### Task 6: Los datos, parte 1: la foto llena y las tablas refrescadas (C3, C4, C8)
+### Task 6: La pasada real por las páginas: la foto (C3, C8)
 
 **Aether:**
-- Area: tables
-- Owns: `plugins/aether/config/models/aa-pages.json`, `plugins/aether/config/pairs.json`, `plugins/aether/config/models/models.json`, `plugins/aether/config/models/profiles.json`, `plugins/aether/config/models/harness-models.json`, `plugins/aether/config/prices.json`, `docs/models/README.md`, `tests/fixtures/aa-pairs-2026-10-29.json`, `tests/aa-snapshot-shipped.test.js`, `tests/models-index-shipped.test.js`, `tests/aether-lane.test.js`, `tests/aether-plan.test.js`, `tests/bootstrap-names.test.js`, `tests/copies-*.test.js`, `tests/codex-*.test.js`, `tests/delegate-*.test.js`, `tests/detached-head.test.js`, `tests/ladder-stored.test.js`, `tests/lane-*.test.js`, `tests/lanes.test.js`, `tests/merge-lock.test.js`, `tests/muse-*.test.js`, `tests/new-skills.test.js`, `tests/observe-baseline.test.js`, `tests/pairs*.test.js`, `tests/pick-data.test.js`, `tests/prices.test.js`, `tests/roles.test.js`, `tests/router-*.test.js`, `tests/seat*.test.js`, `tests/session-start.test.js`, `tests/superdelegation*.test.js`, `tests/using-aether-030.test.js`, `tests/workflow-design.test.js`, `tests/config-keys.test.js`, `tests/docs-claims-rest.test.js`
-- Depends on: Task 1 — el lector es lo que llena la foto
-- Depends on: Task 2 — el piso de código cambia las elecciones de las pruebas que cargan la tabla real, y esas se ajustan una sola vez
-- Depends on: Task 3 — el índice sin lista es lo que regenera `models.json` y el README
-- Depends on: Task 4 — el refresco desde la foto es lo que parchea `pairs.json`
-- Serves: C3, C4, C8
+- Area: aa-snapshot
+- Owns: `plugins/aether/config/models/aa-pages.json`, `tests/aa-snapshot-shipped.test.js`
+- Depends on: Task 1 — el lector es lo que escribe la foto
+- Serves: C3, C8
 
 **Interfaces:**
 
-Esta tarea llena los datos con las cifras reales del día y no cambia qué modelos hay (Hydrogen y Flash son la Tarea 7).
+Esta tarea escribe un solo archivo, la foto, y es el único paso de la construcción que usa la red. No toca ninguna tabla: `pairs.json`, `models.json` y las demás las cambia la Tarea 7, desde esta foto.
 
-1. **La pasada real por las páginas (el dueño la pidió: «leeremos la pagina directamente»).** Es un paso explícito, con red. Corre, desde la raíz del worktree, en este orden:
+**La pasada real por las páginas (el dueño la pidió: «leeremos la pagina directamente»).** Corre, desde la raíz del worktree, en este orden:
 
-   ```text
-   node scripts/aa-pages.js read
-   node scripts/aa-pages.js read gemini-4-hydrogen-low gemini-4-hydrogen-medium gemini-4-hydrogen-high gemini-4-hydrogen
-   ```
+```text
+node scripts/aa-pages.js read
+node scripts/aa-pages.js read gemini-4-hydrogen-low gemini-4-hydrogen-medium gemini-4-hydrogen-high gemini-4-hydrogen
+```
 
-   La primera lee la dirección de cada fila de `plugins/aether/config/pairs.json` que no es una estimación; la segunda las cuatro de Hydrogen, que aún no tienen fila. Son unas 55 peticiones con 1,5 s entre una y otra; la caché queda en la carpeta temporal del sistema y no se rastrea. **Si el entorno de esta unidad no tiene red, la tarea termina informando que está bloqueada por eso: no inventa cifras.** Las 13 páginas ya leídas de `specs/037-aa-pages-hydrogen/evidence/aa-extract-2026-11-13.json` sirven para las pruebas, no para llenar las filas que faltan de la foto enviada. Si un 403 o 429 detiene la pasada, la tarea termina bloqueada y lo dice. Si una dirección falla por otra clase (404, 5xx, red, tiempo, sin bloque), el reloj no se reintenta en bucle: la tarea corre la orden una vez más para esa dirección y, si sigue fallando, termina bloqueada nombrándola. La foto enviada es el archivo que la orden escribe, tal cual.
-2. **Refrescar la tabla.** `node scripts/refresh-lanes.js --write` parchea `pairs.json` con todas las cifras de las filas con página (inteligencia, costo por tarea, código y sus fechas), también las de código de las filas externas. No cambia `fetchedAt`. Si la salida dice `Stored ladder: changed`, la tarea **no** toca `plugins/aether/config/ladder.json` (fuera de alcance): se detiene, deja `pairs.json` refrescado, y lo informa como pregunta para el dueño con las líneas que el refresco imprimió; las pruebas de `tests/ladder-stored.test.js` entonces no se tocan para esconderlo.
-3. **Los perfiles ganan `released`.** Antes de regenerar, copia el `released` de cada modelo (en uso y excluido) del `models.json` enviado al campo `released` de su perfil en `profiles.json`, para que el índice nuevo lo conserve (valor por omisión (a) de Global Constraints).
-4. **Declarar lo que la lista deducía.** En `harness-models.json`, con `on` igual a la `readOn` más reciente de la foto: `grok` declara `superseded` a `grok-4.6` y `grok-4.5` por `grok-4.7`; `muse` declara `superseded` a `muse-spark-1.2` por `muse-spark-1.3`; `agy` declara `outOfScope` a `gpt-oss-120b` con el motivo `listed by agy, released 2025-08-05, before the index's 2026-01-01 cut; no Artificial Analysis page is read for it` (motivos de una frase, con la fecha en `on`). La tarea redacta cada `reason`; para los `superseded` basta decir qué generación lo reemplaza.
-5. **Regenerar.** `node scripts/build-models-index.js --write` rearma `plugins/aether/config/models/models.json` y la parte generada de `docs/models/README.md` desde la foto, sin red. Sale con 0.
-6. **Fuera los datos de la API de prueba.** Se borra `tests/fixtures/aa-pairs-2026-10-29.json` (lo leía `tests/pairs.test.js`, que ahora compara con la foto). Los `sources` de `gpt-6.1-sol`, `gpt-6.1-terra` y `gpt-6-luna` en `prices.json` (hoy `tests/fixtures/codex/aa-api-2026-10-29.json`, un dato que la Tarea 3 borró) pasan a `plugins/aether/config/models/aa-pages.json`; `tests/prices.test.js` acepta ese origen (el prefijo `plugins/aether/config/models/` se añade a los orígenes que acepta).
+La primera lee la dirección de cada fila de `plugins/aether/config/pairs.json` que no es una estimación: incluye las tres de Flash (`gemini-3-8-flash-low`, `gemini-3-8-flash-medium`, `gemini-3-8-flash`), que se quedan en la foto aunque la Tarea 7 saque las filas, porque son las cifras de Flash del día en que Hydrogen lo reemplaza. La segunda lee las cuatro de Hydrogen, que aún no tienen fila. Son unas 55 peticiones con 1,5 s entre una y otra; la caché queda en la carpeta temporal del sistema y no se rastrea.
+
+- **Si el entorno de esta unidad no tiene red, la tarea termina informando que está bloqueada por eso: no inventa cifras.** Las 13 páginas ya leídas de `specs/037-aa-pages-hydrogen/evidence/aa-extract-2026-11-13.json` sirven para las pruebas del lector, no para llenar la foto enviada.
+- Si un 403 o un 429 detiene la pasada, la tarea termina bloqueada y lo dice. Si una dirección falla por otra clase (404, 5xx, red, tiempo, sin bloque), la tarea corre la orden una vez más para esa dirección y, si sigue fallando, termina bloqueada nombrándola; no reintenta en bucle.
+- La foto enviada es el archivo que la orden escribe, tal cual: nadie la edita a mano.
 
 **Tests (write first):**
 
-`tests/aa-snapshot-shipped.test.js`, nuevo:
+`tests/aa-snapshot-shipped.test.js`, nuevo (falla hoy porque el archivo de la foto no existe):
 
 ```js
 'use strict'
@@ -864,16 +890,16 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { loadPairs } = require('../plugins/aether/lib/pairs.js')
-const { main } = require('../scripts/refresh-lanes.js')
 
-const ROOT = path.join(__dirname, '..')
-const SNAPSHOT = JSON.parse(fs.readFileSync(path.join(ROOT, 'plugins', 'aether', 'config', 'models', 'aa-pages.json'), 'utf8'))
+const SNAPSHOT = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models', 'aa-pages.json'), 'utf8'))
 const HYDROGEN = ['gemini-4-hydrogen-low', 'gemini-4-hydrogen-medium', 'gemini-4-hydrogen-high', 'gemini-4-hydrogen']
+const FLASH = ['gemini-3-8-flash-low', 'gemini-3-8-flash-medium', 'gemini-3-8-flash']
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
-test('the photo has a page for every row that has one and for the four Hydrogen addresses, each with its read date and figures with theirs', () => {
+test('the photo has a page for every row that has one, for the four Hydrogen addresses and for the three of Flash, each with its read date and figures with theirs', () => {
   assert.deepEqual(Object.keys(SNAPSHOT), ['pages'])
-  const slugs = new Set([...loadPairs().pairs.filter((pair) => !Object.hasOwn(pair, 'estimateOf')).map((pair) => pair.slug), ...HYDROGEN])
+  // Today's table, whichever rows it has when this test runs: the photo holds at least the pages of its rows.
+  const slugs = new Set([...loadPairs().pairs.filter((pair) => !Object.hasOwn(pair, 'estimateOf')).map((pair) => pair.slug), ...HYDROGEN, ...FLASH])
   for (const slug of slugs) {
     const entry = SNAPSHOT.pages[slug]
     assert.ok(entry, `${slug} is in the photo`)
@@ -882,100 +908,46 @@ test('the photo has a page for every row that has one and for the four Hydrogen 
     assert.equal(typeof entry.figures.intelligence?.value, 'number', `${slug} has its intelligence`)
     for (const figure of Object.values(entry.figures)) assert.deepEqual([typeof figure.value, DAY.test(figure.on)], ['number', true], slug)
   }
-  assert.deepEqual(Object.keys(SNAPSHOT.pages), Object.keys(SNAPSHOT.pages).sort(), 'one line per address, sorted')
 })
 
-test('the shipped table agrees with the photo: the refresh finds no figure to change, and the stored ladder is as the law gives it today', () => {
-  const out = main([])
-  assert.equal(out.exitCode, 0, out.stdout)
-  assert.match(out.stdout, /^No figure changed\./)
-  assert.match(out.stdout, /Stored ladder: unchanged/)
-})
-
-test('every row with a page carries its code figures, the external rows too, dated by the photo', () => {
-  for (const pair of loadPairs().pairs.filter((row) => !Object.hasOwn(row, 'estimateOf'))) {
-    const figures = SNAPSHOT.pages[pair.slug].figures
-    if (!figures.code) continue
-    assert.deepEqual([pair.code, pair.codeCostPerTaskUsd, pair.codeMinutesPerTask, pair.codeChecked], [figures.code.value, figures.codeCostPerTaskUsd.value, figures.codeMinutesPerTask.value, figures.code.on], pair.id)
-  }
+test('the photo is the text the reader writes: one line per address, the addresses sorted, and nothing under another key', () => {
+  const text = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models', 'aa-pages.json'), 'utf8')
+  assert.equal(require('../scripts/aa-pages.js').serializeSnapshot(SNAPSHOT), text)
+  assert.deepEqual(Object.keys(SNAPSHOT.pages), Object.keys(SNAPSHOT.pages).sort())
 })
 ```
-
-`tests/models-index-shipped.test.js`, nuevo (devuelve la comparación que la Tarea 3 quitó):
-
-```js
-'use strict'
-
-const test = require('node:test')
-const assert = require('node:assert/strict')
-const fs = require('node:fs')
-const path = require('node:path')
-const { tempDir } = require('./helpers.js')
-const { main } = require('../scripts/build-models-index.js')
-
-const ROOT = path.join(__dirname, '..')
-const SHIPPED_MODELS = path.join(ROOT, 'plugins', 'aether', 'config', 'models', 'models.json')
-const SHIPPED_README = path.join(ROOT, 'docs', 'models', 'README.md')
-
-test('rebuilding the index from the shipped inputs twice writes the shipped models.json and README block, byte for byte, with no network', (t) => {
-  const dir = tempDir(t, 'aether-shipped-index-')
-  const out = path.join(dir, 'out')
-  const docs = path.join(dir, 'docs')
-  fs.mkdirSync(docs)
-  fs.copyFileSync(SHIPPED_README, path.join(docs, 'README.md'))
-  const texts = []
-  for (let i = 0; i < 2; i++) {
-    const result = main(['--write', '--out', out, '--docs', docs])
-    assert.equal(result.exitCode, 0, result.stdout)
-    texts.push([fs.readFileSync(path.join(out, 'models.json'), 'utf8'), fs.readFileSync(path.join(docs, 'README.md'), 'utf8')])
-  }
-  assert.deepEqual(texts[0], texts[1])
-  assert.equal(texts[0][0], fs.readFileSync(SHIPPED_MODELS, 'utf8'))
-  assert.equal(texts[0][1], fs.readFileSync(SHIPPED_README, 'utf8'))
-})
-
-test('the shipped index names the photo as its source and keeps no trace of the API', () => {
-  const file = JSON.parse(fs.readFileSync(SHIPPED_MODELS, 'utf8'))
-  assert.equal(file.source, 'plugins/aether/config/models/aa-pages.json, from the model pages https://artificialanalysis.ai/models/<slug>')
-  assert.equal(Object.hasOwn(file, 'since'), false)
-  assert.deepEqual(file.superseded.map((entry) => `${entry.harness}/${entry.id}`).sort(), ['grok/grok-4.5', 'grok/grok-4.6', 'muse/muse-spark-1.2'])
-  assert.deepEqual(file.outOfScope.map((entry) => `${entry.harness}/${entry.model}`), ['agy/gpt-oss-120b'])
-})
-```
-
-Las demás pruebas de la lista de `Owns` se ajustan al nuevo estado, y solo a él:
-
-- `tests/pairs.test.js`: la prueba «the table holds the 22 pairs of the evidence…» compara cada fila con su página de la foto (`slug`, `intelligence`, `costPerTaskUsd`) en lugar del dato que se borra; el conteo de filas sigue siendo 50 (Hydrogen y Flash son de la Tarea 7).
-- `tests/codex-models.test.js`: `POINTS` y `TERMINAL` toman los valores de la foto (cinco esfuerzos por modelo, `terminalBench` de la foto con tres decimales); vuelve la prueba que reconstruye el índice con el script y compara los registros de Codex del archivo enviado, ahora con `main(['--write', '--out', …, '--docs', …])` y sin `--from`.
-- `tests/muse-spark.test.js`, `tests/codex-lanes.test.js`, `tests/lanes.test.js` y las que fijan una cifra de `pairs.json`, `lanes.json` o `models.json` que el refresco movió: si la cifra de `lanes.json` (`aa`) no la mueve el refresco, la prueba no cambia.
-- Las que fijan una elección con la tabla real (`tests/superdelegation.test.js`, `tests/superdelegation-scenarios.test.js`, `tests/router-pick.test.js`, `tests/pick-data.test.js`, `tests/seats.test.js`, `tests/lane-pick.test.js`, `tests/lane-delegate*.test.js`, `tests/workflow-design.test.js`…): ahora que las filas externas llevan `code` y la regla de la Tarea 2 lo exige, una elección de un papel `implementer` puede cambiar; cada afirmación se corrige con lo que la regla da y con el motivo, y la tarea escribe en su mensaje final qué elecciones cambiaron y por qué.
 
 **Acceptance:**
 
-- La pasada real se hizo una vez con red y la foto enviada trae las 4 direcciones de Hydrogen y todas las de las filas con página, cada una con `readOn` y cada cifra con su `on`; o la tarea terminó bloqueada diciéndolo, sin cifras inventadas.
-- `node scripts/refresh-lanes.js` (sin `--write`) imprime `No figure changed.` y `Stored ladder: unchanged`; `node scripts/build-models-index.js` sale con 0; las dos corridas seguidas de ambos dan los mismos archivos.
-- `models.json` enviado no nombra la API; `docs/models/README.md` está regenerado.
-- `npm test` completo en verde, o los fallos que queden son los que la línea base ya tenía; el mensaje final lista lo que cambió en cada prueba que carga la tabla real.
+- La pasada real se hizo una vez con red y la foto enviada trae las 4 direcciones de Hydrogen, las 3 de Flash y todas las de las filas con página, cada una con `readOn` y cada cifra con su `on`; o la tarea terminó bloqueada diciéndolo, sin cifras inventadas.
+- `node --test tests/aa-snapshot-shipped.test.js` en verde y `npm test` sin una falla nueva: ninguna tabla cambió, así que no hay otra prueba que mover.
+- La orden de la pasada no escribió nada más que `plugins/aether/config/models/aa-pages.json`.
 
-### Task 7: Los datos, parte 2: Hydrogen entra, Flash sale y queda reemplazado (C4, C5, C6)
+### Task 7: Las tablas desde la foto: Hydrogen entra, Flash sale y queda reemplazado (C3, C4, C5, C6)
 
 **Aether:**
 - Area: tables
-- Owns: `plugins/aether/config/pairs.json`, `plugins/aether/config/lanes.json`, `plugins/aether/config/prices.json`, `plugins/aether/config/models/harness-models.json`, `plugins/aether/config/models/profiles.json`, `plugins/aether/config/models/models.json`, `plugins/aether/config/models/aa-pages.json`, `docs/models/README.md`, `tests/hydrogen-placement.test.js`, `tests/aether-lane.test.js`, `tests/aether-plan.test.js`, `tests/bootstrap-names.test.js`, `tests/copies-*.test.js`, `tests/codex-*.test.js`, `tests/delegate-*.test.js`, `tests/detached-head.test.js`, `tests/ladder-stored.test.js`, `tests/lane-*.test.js`, `tests/lanes.test.js`, `tests/merge-lock.test.js`, `tests/muse-*.test.js`, `tests/new-skills.test.js`, `tests/observe-baseline.test.js`, `tests/pairs*.test.js`, `tests/pick-data.test.js`, `tests/prices.test.js`, `tests/roles.test.js`, `tests/router-*.test.js`, `tests/seat*.test.js`, `tests/session-start.test.js`, `tests/superdelegation*.test.js`, `tests/using-aether-030.test.js`, `tests/workflow-design.test.js`, `tests/config-keys.test.js`, `tests/docs-claims-rest.test.js`
-- Depends on: Task 6 — la foto llena, las tablas refrescadas y el índice regenerado son el punto de partida; esta tarea no vuelve a leer las 50 páginas
-- Serves: C4, C5, C6
+- Owns: `plugins/aether/config/pairs.json`, `plugins/aether/config/lanes.json`, `plugins/aether/config/prices.json`, `plugins/aether/config/models/harness-models.json`, `plugins/aether/config/models/profiles.json`, `plugins/aether/config/models/models.json`, `docs/models/README.md`, `tests/aa-tables-shipped.test.js`, `tests/models-index-shipped.test.js`, `tests/hydrogen-placement.test.js`, `tests/docs-claims-rest.test.js`
+- Depends on: Task 2 — el piso de código es lo que pone a Hydrogen en su sitio
+- Depends on: Task 3 — el índice sin lista es lo que regenera `models.json` y el README
+- Depends on: Task 4 — el refresco desde la foto es lo que parchea `pairs.json`
+- Depends on: Task 6 — la foto llena es la única fuente de las cifras
+- Merges with: Task 8
+- Serves: C3, C4, C5, C6
 
 **Interfaces:**
 
-Todos los datos de Hydrogen salen de la foto de la Tarea 6 (no hay lectura nueva de Artificial Analysis); si la foto no trae una cifra de Hydrogen, la tarea termina bloqueada nombrándola. El perfil sí necesita una lectura de la página de Google (ver el punto 5).
+Esta tarea cambia las tablas desde la foto de la Tarea 6 y **no lee ninguna página**: ni las de Artificial Analysis (si la foto no trae una cifra de Hydrogen o de Flash que la tarea necesita, termina bloqueada nombrándola) ni la de Google. Las pruebas que cargan las tablas reales y todavía fijan las de hoy son de la Tarea 8, que se construye junto con esta. Los pasos, en este orden:
 
-1. **`harness-models.json`, agy.** Recapturada el 2026-11-13 con agy 1.5.8: `capturedAt: "2026-11-13"`, `listedBy: "agy models (agy 1.5.8)"` y estos ids, en este orden: `gemini-4-argon-medium`, `gemini-4-argon-high`, `gemini-4-argon-low`, `gemini-4-hydrogen-high`, `gemini-4-hydrogen-xhigh`, `gemini-4-hydrogen-medium`, `gemini-4-hydrogen-low`, `gemini-pro-orchestrator-g1-pro`, `gemini-3.8-flash-high`, `gemini-3.8-flash-medium`, `gemini-3.8-flash-low`, `claude-opus-5-5-low`, `claude-opus-5-5-medium`, `claude-opus-5-5-high`, `claude-sonnet-5-5-low`, `claude-sonnet-5-5-medium`, `claude-sonnet-5-5-high`, `gpt-oss-120b-medium` (la lista de `specs/037-aa-pages-hydrogen/evidence/README.md`). Declaraciones de agy: `superseded` de `gemini-3.8-flash` con `by: "gemini-4-hydrogen"`, `on: "2026-11-13"`, un `reason` que cita la intención del dueño («hydrogen esta pensnaod para reemplazar a 3.8 flash») y un `figures` con las cifras de la foto con sus fechas (inteligencia, costo por tarea y código de Flash `high` y de Hydrogen `medium` y `high`); y `outOfScope` de `gemini-pro-orchestrator-g1-pro` con `on: "2026-11-13"` y el motivo `listed by agy 1.5.8; no page was read and the lane table gives it no role: not in use until the owner decides` (un valor por omisión reversible; se informa como pregunta). `gpt-oss-120b` ya está declarado de la Tarea 6.
-2. **`pairs.json`.** Salen las tres filas `agy/gemini-3.8-flash@low|medium|high`. Entran cuatro filas `agy/gemini-4-hydrogen@low|medium|high|xhigh`, con `model` y `family` `gemini-4-hydrogen`, `group` `hydrogen`, `slug` `gemini-4-hydrogen-low`, `gemini-4-hydrogen-medium`, `gemini-4-hydrogen-high` y `gemini-4-hydrogen` (el de `xhigh`), `outputTokensPerSecond` y `timeToFirstTokenS` en `null` (las páginas no los traen), y `intelligence`, `costPerTaskUsd`, `code`, `codeCostPerTaskUsd`, `codeMinutesPerTask`, `checked` y `codeChecked` copiados de la foto (la fila `low` entra aunque no alcanza ningún escalón: la regla la deja fuera por sí sola). Después `node scripts/refresh-lanes.js` (sin `--write`) imprime `No figure changed.`
-3. **`lanes.json`, agy.** El grupo `flash` se renombra `hydrogen` (misma etiqueta de cuota `"Gemini Models"`; los demás grupos quedan) y el modelo `gemini-3.8-flash` se reemplaza por `gemini-4-hydrogen`: `group: "hydrogen"`, `roles: ["implementer"]` y `aa: { slug: "gemini-4-hydrogen-high", intelligence, terminalBench, checked }` con las cifras de la foto (`terminalBench` es la fracción con dos decimales, como en las demás entradas). Las pruebas que leen `groups.flash` pasan a `hydrogen`.
-4. **`prices.json`.** Entra `gemini-4-hydrogen`: `ids: ["gemini-4-hydrogen"]`, `input: 1.5`, `output: 7.5`, `cacheRead: 0.075`, `cacheWrite5m` y `cacheWrite1h` iguales al precio de entrada (1.5; la página no da el de escritura de caché, y la hipótesis es la misma de Codex y Grok: «cache writes at the input price»), `checked` con la fecha de la foto, y en `sources` la dirección `plugins/aether/config/models/aa-pages.json`. La entrada de `gemini-3.8-flash` **se queda** para valorar corridas viejas de `usage/` (Supuesto 7 del diseño).
-5. **`profiles.json`.** Entra `gemini-4-hydrogen` (nombre `Gemini 4 Hydrogen`, `maker` `Google`, `released` `2026-11-12`, `efforts` `["low","medium","high","xhigh"]`, `price` de 1.5 y 7.5 dólares por millón) y sale `gemini-3-8-flash`. Los demás campos (`purpose`, `contextTokens`, `maxOutputTokens`, `knowledgeCutoff`, `availability`, `caveats`, `sources`, `checked`) se escriben de la página del fabricante (`https://ai.google.dev/gemini-api/docs/models`, su página de modelo de Hydrogen si existe), citada en `sources` con la fecha de la lectura. Si esa página no se puede leer desde la unidad, la tarea termina bloqueada nombrando qué campo falta; no inventa contexto ni límites.
-6. **El índice.** `node scripts/build-models-index.js --write` regenera `models.json` y la parte generada de `docs/models/README.md`; Hydrogen aparece en uso en agy con sus cuatro esfuerzos y Flash en `superseded` con su fecha y sus cifras; el motivo y las cifras salen de lo declarado.
-7. Las pruebas que cargan la tabla real y nombran a Flash o a su grupo se reescriben al salir Flash y renombrarse el grupo `flash` como `hydrogen`, las del diseño y las que la búsqueda de abajo encuentre: `tests/router-pick.test.js` (la línea 104 afirma `agy/gemini-3.8-flash@medium`; la 402 la lista), `tests/pick-data.test.js`, `tests/seats.test.js`, `tests/lane-refusal.test.js` (el grupo `flash`, `runFlashCall`, la línea 45), `tests/lane-delegate.test.js`, `tests/superdelegation.test.js`, `tests/superdelegation-scenarios.test.js`, `tests/codex-pairs.test.js`, `tests/pairs-claude.test.js` (`assert.equal(others.length, 35)` pasa a 36: tres filas de Flash fuera y cuatro de Hydrogen dentro), `tests/pairs.test.js`, `tests/lanes.test.js` (la línea 90 afirma el `aa` de Flash), `tests/lane-table-index.test.js` (la lista de modelos de la tabla enviada nombra `agy/gemini-4-hydrogen` en lugar de `agy/gemini-3.8-flash`), `tests/prices.test.js`, y las que usan `tests/lane-fixtures.js` y nombran a Flash: `tests/aether-lane.test.js` (la salida de `start` es `{ started: true, model: 'gemini-4-hydrogen-xhigh', group: 'hydrogen' }`), `tests/detached-head.test.js`, `tests/lane-start-marks.test.js`, `tests/lane-status.test.js`, `tests/lane-quota.test.js`, `tests/lane-pick.test.js`, `tests/merge-lock.test.js`, `tests/delegate-calls.test.js`, `tests/delegate-snapshot.test.js`. `tests/router-quota.test.js` y `tests/router-renewal.test.js` cargan la tabla real pero no nombran a Flash: se corren y se tocan solo si se ponen rojas. Antes de dar la lista por cerrada, la tarea corre `grep -il flash tests/*.test.js` y revisa cada prueba que cargue la tabla real de pares o de carriles (`CONFIG_FILE`, `PAIRS_FILE`, `loadPairs()` sin argumento, `pairs.json`, `lanes.json`, `lane-fixtures.js`) y afirme un conteo, un id o un nombre; cada una que se ponga roja se corrige aquí. Las pruebas que nombran a Flash con tablas propias (`tests/harness-agy.test.js`, `tests/delegate-chain.test.js`, `tests/workflow-*.test.js`…) no se tocan.
+1. **Los perfiles ganan `released`.** Antes de regenerar nada, copia el `released` de cada modelo (en uso y excluido) del `models.json` enviado al campo `released` de su perfil en `profiles.json`, para que el índice nuevo lo conserve (valor por omisión (a) de Global Constraints).
+2. **`harness-models.json`, agy.** Recapturada el 2026-11-13 con agy 1.5.8: `capturedAt: "2026-11-13"`, `listedBy: "agy models (agy 1.5.8)"` y estos ids, en este orden: `gemini-4-argon-medium`, `gemini-4-argon-high`, `gemini-4-argon-low`, `gemini-4-hydrogen-high`, `gemini-4-hydrogen-xhigh`, `gemini-4-hydrogen-medium`, `gemini-4-hydrogen-low`, `gemini-pro-orchestrator-g1-pro`, `gemini-3.8-flash-high`, `gemini-3.8-flash-medium`, `gemini-3.8-flash-low`, `claude-opus-5-5-low`, `claude-opus-5-5-medium`, `claude-opus-5-5-high`, `claude-sonnet-5-5-low`, `claude-sonnet-5-5-medium`, `claude-sonnet-5-5-high`, `gpt-oss-120b-medium` (la lista de `specs/037-aa-pages-hydrogen/evidence/README.md`). Declaraciones de agy: `superseded` de `gemini-3.8-flash` con `by: "gemini-4-hydrogen"`, `on: "2026-11-13"`, un `reason` que cita la intención del dueño («hydrogen esta pensnaod para reemplazar a 3.8 flash») y un `figures` con las cifras de la foto con sus fechas (inteligencia, costo por tarea y código de Flash `high` y de Hydrogen `medium` y `high`); y `outOfScope` de `gpt-oss-120b` con `on: "2026-11-13"` y el motivo `listed by agy, released 2025-08-05, before the index's 2026-01-01 cut; no Artificial Analysis page is read for it`. **`gemini-pro-orchestrator-g1-pro` no se declara fuera de alcance** (nadie lo pidió): queda como un modelo listado sin fila ni foto, y el resumen del índice lo nombra (paso 8).
+3. **Declarar lo que la lista de la API deducía.** En `harness-models.json`, con `on: "2026-11-13"`: `grok` declara `superseded` a `grok-4.6` y `grok-4.5` por `grok-4.7`; `muse` declara `superseded` a `muse-spark-1.2` por `muse-spark-1.3`. La tarea redacta cada `reason` (basta decir qué generación lo reemplaza).
+4. **`pairs.json`.** Salen las tres filas `agy/gemini-3.8-flash@low|medium|high`. Entran cuatro filas `agy/gemini-4-hydrogen@low|medium|high|xhigh`, con `model` y `family` `gemini-4-hydrogen`, `group` `hydrogen`, `slug` `gemini-4-hydrogen-low`, `gemini-4-hydrogen-medium`, `gemini-4-hydrogen-high` y `gemini-4-hydrogen` (el de `xhigh`), `outputTokensPerSecond` y `timeToFirstTokenS` en `null` (las páginas no los traen), y `intelligence`, `costPerTaskUsd`, `code`, `codeCostPerTaskUsd`, `codeMinutesPerTask`, `checked` y `codeChecked` copiados de la foto (la fila `low` entra aunque no alcanza ningún escalón: la regla la deja fuera por sí sola).
+5. **Refrescar la tabla.** `node scripts/refresh-lanes.js --write` parchea `pairs.json` con todas las cifras de las filas con página (inteligencia, costo por tarea, código y sus fechas), también las de código de las filas externas. No cambia `fetchedAt`. Si la salida dice `Stored ladder: changed`, la tarea **no** toca `plugins/aether/config/ladder.json` (fuera de alcance): se detiene, deja `pairs.json` refrescado, y lo informa como pregunta para el dueño con las líneas que el refresco imprimió; `tests/ladder-stored.test.js` entonces no se toca para esconderlo. Después `node scripts/refresh-lanes.js` (sin `--write`) imprime `No figure changed.`
+6. **`lanes.json`, agy.** El grupo `flash` se renombra `hydrogen` (misma etiqueta de cuota `"Gemini Models"`; los demás grupos quedan) y el modelo `gemini-3.8-flash` se reemplaza por `gemini-4-hydrogen`: `group: "hydrogen"`, `roles: ["implementer"]` y `aa: { slug: "gemini-4-hydrogen-high", intelligence, terminalBench, checked }` con las cifras de la foto (`terminalBench` es la fracción con dos decimales, como en las demás entradas).
+7. **`prices.json`.** Entra `gemini-4-hydrogen`: `ids: ["gemini-4-hydrogen"]`, `input: 1.5`, `output: 7.5`, `cacheRead: 0.075`, `cacheWrite5m` y `cacheWrite1h` iguales al precio de entrada (1.5; la página no da el de escritura de caché, y la hipótesis es la misma de Codex y Grok: «cache writes at the input price»), `checked` con la fecha de la foto, y en `sources` la dirección `plugins/aether/config/models/aa-pages.json`. La entrada de `gemini-3.8-flash` **se queda** para valorar corridas viejas de `usage/` (Supuesto 7 del diseño). Los `sources` de `gpt-6.1-sol`, `gpt-6.1-terra` y `gpt-6-luna` (hoy `tests/fixtures/codex/aa-api-2026-10-29.json`, un dato que borra la Tarea 8) pasan a `plugins/aether/config/models/aa-pages.json`.
+8. **`profiles.json`.** Entra `gemini-4-hydrogen` con **solo lo que la evidencia y la foto dan**, sin leer la página de Google (valor por omisión reversible; se informa como pregunta): `name` `Gemini 4 Hydrogen`, `maker` `Google`, `released` `2026-11-12`, `efforts` `["low","medium","high","xhigh"]`, `price` de 1.5 y 7.5 dólares por millón (`input`, `output`, con una `note` que cita la lista de agy y la foto), `defaultEffort`, `contextTokens`, `maxOutputTokens` y `knowledgeCutoff` en `null`, un `purpose` en una frase que diga lo que se sabe (lo ofrece agy 1.5.8 en esos cuatro esfuerzos y el dueño lo pensó como reemplazo de Flash) y que no se leyó la página del fabricante, un `availability` igual de honesto, un `caveat` que nombre los campos sin leer, `sources` con `specs/037-aa-pages-hydrogen/evidence/README.md` y `plugins/aether/config/models/aa-pages.json`, y `checked` `2026-11-13`. No inventa contexto ni límites. Sale `gemini-3-8-flash`. Entra también una ficha mínima de `gemini-pro-orchestrator-g1-pro`, con el id listado como clave (como `muse-wonder-full-1.0`, el otro modelo sin cifras) y como `name`, `maker` `Google`, los campos sin leer en `null`, y un `purpose` y un `caveat` que digan que agy 1.5.8 lo lista y que Aether no leyó ninguna página ni lo usa, para que el índice no salga con código 1 por un modelo sin perfil.
+9. **El índice y su README.** `node scripts/build-models-index.js --write` regenera `models.json` y la parte generada de `docs/models/README.md`; Hydrogen aparece en uso en agy con sus cuatro esfuerzos y Flash en `superseded` con su fecha y sus cifras; el motivo y las cifras salen de lo declarado. La parte escrita a mano de `docs/models/README.md` (hasta `<!-- models-index:start -->`) pierde las dos órdenes de la API y `--from`; la sección «Refresh» muestra `node scripts/build-models-index.js --write   # from the photo of the model pages, no network: plugins/aether/config/models/aa-pages.json`, y el texto que explica el agrupamiento por slug de AA se reemplaza por una frase que dice que los modelos salen de `harness-models.json` y las cifras de la foto. El README sigue por debajo de 80 líneas y enlaza a los tres archivos de `config/models` donde `tests/models-index.test.js` los busca. `tests/docs-claims-rest.test.js` se corre con el README nuevo y se toca solo si se pone roja. `models.json` y el README salen sin la dirección de la API, sin el nombre de la clave y sin `x-api-key`.
 
 **Tests (write first):**
 
@@ -1059,22 +1031,143 @@ test('harness-models.json and models.json give Flash as replaced by Hydrogen, wi
 })
 ```
 
-(La cuarta prueba compara solo Haiku `high` y Sonnet `high`: con las cifras del 2026-11-13, para Haiku `xhigh` ningún par `agy/claude-*` es más barato que Hydrogen `medium`, así que ahí Hydrogen gana aunque el grupo `claude` esté abierto. El diseño dice «en las referencias donde hoy gana Hydrogen»; la tarea informa si la foto de la unidad da otra cosa, y la pregunta queda para el Lead.)
+(La cuarta prueba compara solo Haiku `high` y Sonnet `high`: con las cifras del 2026-11-13, para Haiku `xhigh` ningún par `agy/claude-*` es más barato que Hydrogen `medium`, así que ahí Hydrogen gana aunque el grupo `claude` esté abierto. El diseño dice «en las referencias donde hoy gana Hydrogen»; la tarea informa si la foto da otra cosa, y la pregunta queda para el Lead.)
+
+`tests/aa-tables-shipped.test.js`, nuevo (falla hoy: `pairs.json` no tiene las cifras de código de las filas externas ni las de Hydrogen):
+
+```js
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { loadPairs } = require('../plugins/aether/lib/pairs.js')
+const { main } = require('../scripts/refresh-lanes.js')
+
+const SNAPSHOT = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models', 'aa-pages.json'), 'utf8'))
+
+test('the shipped table agrees with the photo: the refresh finds no figure to change, and the stored ladder is as the law gives it today', () => {
+  const out = main([])
+  assert.equal(out.exitCode, 0, out.stdout)
+  assert.match(out.stdout, /No figure changed\./)
+  assert.match(out.stdout, /Stored ladder: unchanged/)
+})
+
+test('every row with a page carries its code figures, the external rows too, dated by the photo', () => {
+  for (const pair of loadPairs().pairs.filter((row) => !Object.hasOwn(row, 'estimateOf'))) {
+    const figures = SNAPSHOT.pages[pair.slug].figures
+    if (!figures.code) continue
+    assert.deepEqual([pair.code, pair.codeCostPerTaskUsd, pair.codeMinutesPerTask, pair.codeChecked], [figures.code.value, figures.codeCostPerTaskUsd.value, figures.codeMinutesPerTask.value, figures.code.on], pair.id)
+  }
+})
+
+test('the four Hydrogen rows take their intelligence, their cost per task and their dates from the pages of the photo', () => {
+  const rows = loadPairs().pairs.filter((pair) => pair.model === 'gemini-4-hydrogen')
+  assert.deepEqual(rows.map((pair) => pair.slug), ['gemini-4-hydrogen-low', 'gemini-4-hydrogen-medium', 'gemini-4-hydrogen-high', 'gemini-4-hydrogen'])
+  for (const pair of rows) {
+    const figures = SNAPSHOT.pages[pair.slug].figures
+    assert.deepEqual([pair.intelligence, pair.costPerTaskUsd, pair.checked], [figures.intelligence.value, figures.costPerTaskUsd.value, figures.intelligence.on], pair.id)
+  }
+})
+```
+
+`tests/models-index-shipped.test.js`, nuevo (devuelve la comparación que la Tarea 3 quitó):
+
+```js
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { tempDir } = require('./helpers.js')
+const { main } = require('../scripts/build-models-index.js')
+
+const ROOT = path.join(__dirname, '..')
+const SHIPPED_MODELS = path.join(ROOT, 'plugins', 'aether', 'config', 'models', 'models.json')
+const SHIPPED_README = path.join(ROOT, 'docs', 'models', 'README.md')
+
+test('rebuilding the index from the shipped inputs twice writes the shipped models.json and README block, byte for byte, with no network', (t) => {
+  const dir = tempDir(t, 'aether-shipped-index-')
+  const out = path.join(dir, 'out')
+  const docs = path.join(dir, 'docs')
+  fs.mkdirSync(docs)
+  fs.copyFileSync(SHIPPED_README, path.join(docs, 'README.md'))
+  const texts = []
+  for (let i = 0; i < 2; i++) {
+    const result = main(['--write', '--out', out, '--docs', docs])
+    assert.equal(result.exitCode, 0, result.stdout)
+    texts.push([fs.readFileSync(path.join(out, 'models.json'), 'utf8'), fs.readFileSync(path.join(docs, 'README.md'), 'utf8')])
+  }
+  assert.deepEqual(texts[0], texts[1])
+  assert.equal(texts[0][0], fs.readFileSync(SHIPPED_MODELS, 'utf8'))
+  assert.equal(texts[0][1], fs.readFileSync(SHIPPED_README, 'utf8'))
+})
+
+test('the shipped index names the photo as its source, keeps no trace of the API, and lists what was declared superseded or out of scope', () => {
+  const file = JSON.parse(fs.readFileSync(SHIPPED_MODELS, 'utf8'))
+  assert.equal(file.source, 'plugins/aether/config/models/aa-pages.json, from the model pages https://artificialanalysis.ai/models/<slug>')
+  assert.equal(Object.hasOwn(file, 'since'), false)
+  assert.deepEqual(file.superseded.map((entry) => `${entry.harness}/${entry.id}`).sort(), ['agy/gemini-3.8-flash', 'grok/grok-4.5', 'grok/grok-4.6', 'muse/muse-spark-1.2'])
+  assert.deepEqual(file.outOfScope.map((entry) => `${entry.harness}/${entry.model}`), ['agy/gpt-oss-120b'])
+})
+
+test('the model agy lists with no pair row and no photo is named in the summary and is not declared out of scope, and the build still exits 0', () => {
+  const result = main([])
+  assert.equal(result.exitCode, 0, result.stdout)
+  assert.match(result.stdout, /Listed with no pair row and no photo \(\d+\): .*agy\/gemini-pro-orchestrator-g1-pro/)
+  const file = JSON.parse(fs.readFileSync(SHIPPED_MODELS, 'utf8'))
+  assert.ok(file.withoutFigures.some((entry) => entry.harness === 'agy' && entry.model === 'gemini-pro-orchestrator-g1-pro'))
+})
+```
 
 **Acceptance:**
 
-- `node --test tests/hydrogen-placement.test.js` en verde, y `npm test` completo en verde o con solo los fallos de la línea base; las cinco colocaciones del criterio 5 se cumplen con la foto de la unidad.
+- `node --test tests/hydrogen-placement.test.js tests/aa-tables-shipped.test.js tests/models-index-shipped.test.js` en verde, y con la Tarea 8 hecha, `npm test` completo en verde o con solo los fallos de la línea base; las cinco colocaciones del criterio 5 se cumplen con la foto de la unidad.
 - Ninguna fila de `gemini-3.8-flash` en `pairs.json` ni en `lanes.json`; `harness-models.json` y `models.json` lo dan por reemplazado por Hydrogen con fecha y cifras; `prices.json` conserva su precio.
-- `node scripts/refresh-lanes.js` imprime `No figure changed.` y `Stored ladder: unchanged`; `node scripts/build-models-index.js` sale con 0 y dos corridas dan los mismos archivos.
-- Si la lectura de la página de Google o una cifra de la foto faltó, la tarea terminó bloqueada diciéndolo.
+- `node scripts/refresh-lanes.js` imprime `No figure changed.` y `Stored ladder: unchanged`; `node scripts/build-models-index.js` sale con 0 y dos corridas dan los mismos archivos; ni `models.json` ni `docs/models/README.md` nombran la API, la clave ni `x-api-key`.
+- Si una cifra de la foto faltó, la tarea terminó bloqueada diciéndolo; no se leyó ninguna página, y el perfil de Hydrogen tiene solo lo que la evidencia y la foto dan.
 
-### Task 8: La documentación, la decisión numerada y la prueba de ausencia (C1, C2, C7)
+### Task 8: Las pruebas que cargan las tablas reales, ajustadas a las tablas nuevas (C4, C5, C6)
+
+**Aether:**
+- Area: tables
+- Owns: `tests/fixtures/aa-pairs-2026-10-29.json`, `tests/fixtures/codex/aa-api-2026-10-29.json`, `tests/lane-fixtures.js`, `tests/aether-lane.test.js`, `tests/aether-plan.test.js`, `tests/bootstrap-names.test.js`, `tests/codex-detect.test.js`, `tests/codex-docs.test.js`, `tests/codex-lane.test.js`, `tests/codex-lanes.test.js`, `tests/codex-lists.test.js`, `tests/codex-network.test.js`, `tests/codex-pairs.test.js`, `tests/codex-release.test.js`, `tests/codex-smoke.test.js`, `tests/copies-classes.test.js`, `tests/copies-deadlines.test.js`, `tests/copies-harness-config.test.js`, `tests/copies-harness.test.js`, `tests/copies-ladder.test.js`, `tests/delegate-*.test.js`, `tests/detached-head.test.js`, `tests/ladder-stored.test.js`, `tests/lane-*.test.js`, `tests/lanes.test.js`, `tests/merge-lock.test.js`, `tests/muse-*.test.js`, `tests/new-skills.test.js`, `tests/observe-baseline.test.js`, `tests/pairs*.test.js`, `tests/pick-data.test.js`, `tests/prices.test.js`, `tests/roles.test.js`, `tests/router-*.test.js`, `tests/seat*.test.js`, `tests/session-start.test.js`, `tests/superdelegation.test.js`, `tests/superdelegation-scenarios.test.js`, `tests/superdelegation-gone.test.js`, `tests/superdelegation-supervisor.test.js`, `tests/using-aether-030.test.js`, `tests/workflow-design.test.js`
+- Depends on: Task 2 — el piso de código cambia las elecciones de las pruebas que cargan la tabla real, y esas se ajustan una sola vez
+- Depends on: Task 6 — la foto es de donde salen las cifras que las pruebas afirman
+- Depends on: Task 7 — las tablas nuevas son lo que estas pruebas deben afirmar
+- Merges with: Task 7
+- Serves: C4, C5, C6
+
+**Interfaces:**
+
+Esta tarea no cambia ninguna tabla ni ningún código: ajusta las pruebas de su `Owns` al estado que deja la Tarea 7, y solo a él; no lee ninguna página. Los dos archivos de la lista de glob que otra tarea ya tiene (`tests/codex-models.test.js` y `tests/copies-muse.test.js` son de la Tarea 3, `tests/superdelegation-code.test.js` de la Tarea 2) no están en su `Owns`: por eso `codex-*`, `copies-*` y `superdelegation*` van por nombre.
+
+1. **Se borran** `tests/fixtures/aa-pairs-2026-10-29.json` (lo leía `tests/pairs.test.js`, que ahora compara con la foto) y `tests/fixtures/codex/aa-api-2026-10-29.json` (lo leían `tests/codex-models.test.js`, que ya no lo nombra desde la Tarea 3, y los `sources` de `prices.json`, que la Tarea 7 cambió). Antes de borrar cada uno, `grep -rn` de su nombre en `tests/` y en `plugins/`: lo que lo nombre y no esté en `Owns` se informa. `tests/prices.test.js` acepta el origen nuevo (el prefijo `plugins/aether/config/models/` se añade a los orígenes que acepta).
+2. **Las cifras que el refresco movió.** `tests/pairs.test.js`: la prueba «the table holds the 22 pairs of the evidence…» compara cada fila con su página de la foto (`slug`, `intelligence`, `costPerTaskUsd`) en lugar del dato que se borra, y el conteo de filas pasa de 50 a 51 (tres de Flash fuera, cuatro de Hydrogen dentro). `tests/muse-spark.test.js`, `tests/codex-lanes.test.js`, `tests/lanes.test.js` y las que fijan una cifra de `pairs.json`, `lanes.json` o `models.json` que el refresco movió: si la cifra de `lanes.json` (`aa`) no la mueve el refresco, la prueba no cambia.
+3. **Las elecciones con la tabla real.** `tests/superdelegation.test.js`, `tests/superdelegation-scenarios.test.js`, `tests/router-pick.test.js`, `tests/pick-data.test.js`, `tests/seats.test.js`, `tests/lane-pick.test.js`, `tests/lane-delegate*.test.js`, `tests/workflow-design.test.js` y las demás: ahora que las filas externas llevan `code` y la regla de la Tarea 2 lo exige, una elección de un papel `implementer` puede cambiar; cada afirmación se corrige con lo que la regla da y con el motivo, y la tarea escribe en su mensaje final qué elecciones cambiaron y por qué.
+4. **Flash sale y el grupo `flash` se renombra `hydrogen`.** Se reescriben las pruebas que cargan la tabla real y nombran a Flash o a su grupo, las del diseño y las que la búsqueda de abajo encuentre: `tests/router-pick.test.js` (la línea 104 afirma `agy/gemini-3.8-flash@medium`; la 402 la lista), `tests/pick-data.test.js` (líneas 21 y 50), `tests/seats.test.js` (líneas 25 a 49, 91 y 106), `tests/lane-refusal.test.js` (el grupo `flash`, `runFlashCall`, la línea 45), `tests/lane-delegate.test.js` (líneas 717 a 720), `tests/superdelegation.test.js` (líneas 13 a 15 y 55), `tests/superdelegation-scenarios.test.js` (líneas 17 a 19), `tests/codex-pairs.test.js` (línea 52), `tests/pairs-claude.test.js` (`assert.equal(others.length, 35)` pasa a 36: tres filas de Flash fuera y cuatro de Hydrogen dentro), `tests/pairs.test.js`, `tests/lanes.test.js` (la línea 90 afirma el `aa` de Flash), `tests/lane-table-index.test.js` (la lista de modelos de la tabla enviada nombra `agy/gemini-4-hydrogen` en lugar de `agy/gemini-3.8-flash`), `tests/prices.test.js`, y las que usan `tests/lane-fixtures.js` y nombran a Flash: `tests/aether-lane.test.js` (la salida de `start` es `{ started: true, model: 'gemini-4-hydrogen-xhigh', group: 'hydrogen' }`), `tests/detached-head.test.js`, `tests/lane-start-marks.test.js`, `tests/lane-status.test.js`, `tests/lane-quota.test.js`, `tests/lane-pick.test.js`, `tests/merge-lock.test.js`, `tests/delegate-calls.test.js`, `tests/delegate-snapshot.test.js`. `tests/lane-fixtures.js` se toca si lee a Flash o al grupo `flash`. `tests/router-quota.test.js` y `tests/router-renewal.test.js` cargan la tabla real pero no nombran a Flash: se corren y se tocan solo si se ponen rojas. Las pruebas que nombran a Flash con tablas propias (`tests/harness-agy.test.js`, `tests/delegate-chain.test.js`, `tests/workflow-*.test.js`, `tests/observe-*.test.js`…) no se tocan.
+5. **La búsqueda.** Antes de dar la lista por cerrada, la tarea corre `grep -il flash tests/*.test.js` y revisa cada prueba que cargue la tabla real de pares o de carriles (`CONFIG_FILE`, `PAIRS_FILE`, `loadPairs()` sin argumento, `pairs.json`, `lanes.json`, `lane-fixtures.js`) y afirme un conteo, un id o un nombre, nombre o no a Flash; cada una que se ponga roja y esté en `Owns` se corrige aquí, y cada una roja que no esté en `Owns` (por ejemplo `tests/exam.test.js` o `tests/harness-codex-quota.test.js`, que usan `lane-fixtures.js`) se informa con su nombre en el mensaje final.
+
+**Tests (write first):**
+
+Esta tarea no trae pruebas nuevas: sus pruebas son las aserciones corregidas de los archivos de su `Owns`. Para cada archivo, corre primero `node --test <archivo>` con las tablas de la Tarea 7 y mira que falle por la razón que el punto de arriba nombra (una fila de Flash que ya no está, un grupo `flash` que ya no existe, un conteo que cambió, una elección que la regla del código movió); luego corrige solo esa aserción. Aserciones que ya se conocen: en `tests/pairs-claude.test.js` (línea 52) `assert.equal(others.length, 36)`; en `tests/aether-lane.test.js` la salida de `start` con la tabla enviada es `{ started: true, model: 'gemini-4-hydrogen-xhigh', group: 'hydrogen' }`; en `tests/pairs.test.js` el conteo de filas de la tabla enviada es 51.
+
+**Acceptance:**
+
+- Cada archivo del `Owns` corre en verde con `node --test <archivo>`, y `npm test` completo queda en verde o con solo los fallos de la línea base; el mensaje final lista lo que cambió en cada prueba que carga la tabla real, qué elecciones cambiaron y por qué, y cada prueba roja fuera de `Owns`.
+- Ningún archivo de `tests/` nombra ya `tests/fixtures/aa-pairs-2026-10-29.json` ni `tests/fixtures/codex/aa-api-2026-10-29.json`, y los dos archivos ya no existen.
+- Ninguna aserción se debilita para esconder una elección que la regla cambió: cambia el valor esperado y el motivo.
+
+### Task 9: La documentación, la decisión numerada y la prueba de ausencia (C1, C2, C7)
 
 **Aether:**
 - Area: docs
 - Owns: `docs/reference/artificial-analysis.md`, `docs/contributing.md`, `docs/guide/lanes.md`, `docs/index.md`, `docs/decisions.md`, `AGENTS.md`, `tests/aa-absence.test.js`, `tests/docs-032.test.js`, `tests/docs-facts.test.js`, `tests/docs-decisions.test.js`, `tests/lanes-docs.test.js`
 - Depends on: Task 5 — el skill ya no nombra la API y la prueba de ausencia lo comprueba
 - Depends on: Task 7 — las tablas y el índice finales son lo que los documentos describen, y la ausencia se comprueba sobre el árbol entero
+- Depends on: Task 8 — la última de las pruebas y de los datos que nombran la API (los dos archivos de `tests/fixtures/`) se va con ella, y la ausencia se comprueba sobre el árbol entero
 - Serves: C1, C2, C7
 
 **Interfaces:**
