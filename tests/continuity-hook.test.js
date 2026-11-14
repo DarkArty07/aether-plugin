@@ -218,7 +218,7 @@ test('hooks.json registers one aether-continuity entry per verb, apart from the 
   }
   for (const event of ['PreCompact', 'StopFailure', 'SessionEnd']) assert.ok(entriesOf(event).some((h) => h.command.includes('aether-observe')), `${event} keeps the observation entry`)
   assert.equal(mine('SessionEnd')[0].timeout, undefined)
-  assert.equal(mine('PostToolUse')[0].matcher, 'Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash')
+  assert.equal(mine('PostToolUse')[0].matcher, 'Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash|Skill')
   assert.equal(mine('PermissionRequest')[0].matcher, 'Write|Edit|MultiEdit|NotebookEdit')
   assert.equal(hooks.SessionStart[0].matcher, 'startup|resume|clear|compact|fork')
   assert.equal(hooks.WorktreeCreate, undefined, 'Aether registers no WorktreeCreate hook: the copies of Claude Code stay in .claude/worktrees/ (R16)')
@@ -270,7 +270,7 @@ test('the real hooks.json sends Read, Grep and Glob to the posttool counter: its
   const group = hooks.PostToolUse.find((g) => g.hooks.some((h) => h.command.endsWith('/bin/aether-continuity" posttool')))
   assert.ok(group, 'hooks.json has a PostToolUse entry for aether-continuity posttool')
   const selects = (tool) => new RegExp(`^(?:${group.matcher})$`).test(tool)
-  for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read', 'Grep', 'Glob', 'Bash']) assert.ok(selects(tool), `${tool} reaches the counter`)
+  for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read', 'Grep', 'Glob', 'Bash', 'Skill']) assert.ok(selects(tool), `${tool} reaches the counter`)
   for (const tool of ['WebFetch', 'Agent', 'ScheduleWakeup']) assert.ok(!selects(tool), `${tool} does not`)
   const file = path.join(w.repo.dir, 'src', 'a.js')
   const outputs = []
