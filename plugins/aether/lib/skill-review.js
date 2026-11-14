@@ -246,16 +246,28 @@ function readIntentText(cwd, intentPath) {
 }
 
 function frontBlob(dir) {
-  let text = ''
   try {
-    text = fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8')
+    // Reuse the skill validator so missing or invalid metadata cannot provide coverage.
+    const metadataProblems = checkSkillFile(dir).filter((problem) => !problem.startsWith('SKILL.md has '))
+    if (metadataProblems.length) return ''
+    const text = fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8')
+    const block = (text.match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || ''
+    const fields = []
+    const lines = block.split(/\r?\n/)
+    for (let i = 0; i < lines.length; i++) {
+      const field = lines[i].match(/^(name|description):\s*(.*)$/)
+      if (!field) continue
+      let value = field[2].replace(/\s+#.*$/, '')
+      // Include YAML block scalars and multiline quoted descriptions, never the body.
+      while (i + 1 < lines.length && (/^\s/.test(lines[i + 1]) || lines[i + 1] === '')) {
+        value += `\n${lines[++i].trim()}`
+      }
+      fields.push(value)
+    }
+    return fields.join('\n').toLowerCase()
   } catch {
-    return path.basename(dir).toLowerCase()
+    return ''
   }
-  const block = (text.match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || ''
-  const name = (block.match(/^name:\s*(.*)$/m) || [])[1] || path.basename(dir)
-  const description = (block.match(/^description:\s*(.*)$/m) || [])[1] || ''
-  return `${name}\n${description}\n${path.basename(dir)}`.toLowerCase()
 }
 
 function installedBlobs({ cwd, home, dataDir }) {
@@ -287,8 +299,7 @@ function installedBlobs({ cwd, home, dataDir }) {
   }
   if (dataDir) {
     for (const entry of readInstalls(dataDir)) {
-      let blob = typeof entry.name === 'string' ? entry.name.toLowerCase() : ''
-      if (typeof entry.path === 'string' && entry.path) blob += `\n${frontBlob(entry.path)}`
+      const blob = typeof entry.path === 'string' && entry.path ? frontBlob(entry.path) : ''
       if (blob) blobs.push(blob)
     }
   }
@@ -357,15 +368,23 @@ function intentPathOf(file, cwd) {
 }
 
 function outsideAgents(file, info, cwd) {
-  const slash = path.resolve(cwd || '.', file).split(path.sep).join('/')
-  const agents = `/.agents/skills/${info.name}`
-  if (slash.includes(`${agents}/`) || slash.endsWith(agents)) return false
-  const marker = `/.claude/skills/${info.name}`
-  const at = slash.indexOf(marker)
-  const accessed = at === -1 ? info.dir : slash.slice(0, at + marker.length)
-  try {
-    if (fs.lstatSync(accessed).isSymbolicLink()) return false
-  } catch {}
+  const absolute = path.resolve(cwd || '.', file)
+  const roots = new Set([path.resolve(cwd || '.'), mainRootOf(cwd)])
+  try { roots.add(repoPaths(cwd || '.').worktree) } catch {}
+  for (const root of roots) {
+    if (!root) continue
+    const relative = path.relative(root, absolute).split(path.sep).join('/')
+    const match = relative.match(/^\.(agents|claude)\/skills\/([^/]+)(?:\/|$)/)
+    if (!match) continue
+    if (match[1] === 'agents') return false
+    const accessed = path.join(root, '.claude', 'skills', match[2])
+    const expected = path.join(root, '.agents', 'skills', match[2])
+    try {
+      return !fs.lstatSync(accessed).isSymbolicLink() || fs.realpathSync(accessed) !== fs.realpathSync(expected)
+    } catch {
+      return true
+    }
+  }
   return true
 }
 
