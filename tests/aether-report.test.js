@@ -126,3 +126,127 @@ test('aether-report --skills reports per project and period and reproduces the #
   const later = runBin(REPORT_BIN, ['--skills', '--since', String(t0 + 25)], repo.dir, { AETHER_DATA_DIR: data })
   assert.deepEqual(later.json.created.map((s) => s.name), ['direccion-de-arte'])
 })
+
+// Two install directories under plugins/data, plus a conversation and a stray jsonl the report must not read.
+function skillsFilterFixture(t) {
+  const root = tempDir(t, 'aether-report-skills-filter-')
+  const mine = path.join(root, 'plugins', 'data', 'aether-inline')
+  const sibling = path.join(root, 'plugins', 'data', 'aether-aether-plugin')
+  const repoA = '/gone/repo-a'
+  const repoB = '/gone/repo-b'
+  const tEarly = Date.parse('2026-11-01T00:00:00.000Z')
+  const tMid = Date.parse('2026-11-08T12:00:00.000Z')
+  const tLate = Date.parse('2026-11-13T00:00:00.000Z')
+  const skill = (repo, name) => `${repo}/.agents/skills/${name}`
+  reg.recordCreated(mine, { time: tEarly, session: 's-early', repo: repoA, name: 'alpha', path: skill(repoA, 'alpha'), type: 'project' })
+  reg.recordCreated(mine, { time: tMid, session: 's-mid', repo: repoA, name: 'beta', path: skill(repoA, 'beta'), type: 'project' })
+  reg.recordCreated(mine, { time: tLate, session: 's-late', repo: repoB, name: 'gamma', path: `${repoB}/.claude/skills/gamma`, type: 'project' })
+  // Same skill again, later and in another session: dedupe keeps the first line, so --session s-late must not revive it.
+  reg.recordCreated(mine, { time: tLate, session: 's-late', repo: repoA, name: 'alpha', path: skill(repoA, 'alpha'), type: 'project' })
+  reg.recordInstall(mine, { time: tMid, session: 's-mid', source: 'owner', scope: 'project', repo: repoA, name: 'downloaded-one', path: skill(repoA, 'downloaded-one'), hash: 'abc' })
+  reg.recordUse(mine, { time: tMid, session: 's-mid', kind: 'lead', skills: ['beta'], repo: repoA })
+  reg.recordUse(mine, { time: tLate, session: 's-late', kind: 'delegate', task: 't1', skills: ['gamma'], repo: repoB })
+  reg.recordNotice(mine, { time: tMid, session: 's-mid', repo: repoA, kind: 'idle-skills', name: 'beta' })
+  reg.recordCreated(sibling, { time: tMid, session: 's-other', repo: '/gone/other', name: 'from-sibling', path: skill('/gone/other', 'from-sibling'), type: 'project' })
+  reg.recordUse(sibling, { time: tMid, session: 's-other', kind: 'lead', skills: ['from-sibling'], repo: '/gone/other' })
+  const convo = path.join(mine, 'projects', 's-mid.jsonl')
+  fs.mkdirSync(path.dirname(convo), { recursive: true })
+  fs.writeFileSync(convo, JSON.stringify({ time: tMid, session: 's-mid', repo: repoA, name: 'from-conversation', path: skill(repoA, 'from-conversation'), type: 'project' }) + '\n')
+  fs.writeFileSync(path.join(mine, 'skills', 'extra.jsonl'), JSON.stringify({ time: tMid, session: 's-mid', repo: repoA, name: 'stray-file', path: skill(repoA, 'stray-file'), type: 'project' }) + '\n')
+  const run = (args) => {
+    const r = runBin(REPORT_BIN, ['--skills', ...args], root, { AETHER_DATA_DIR: mine, CLAUDE_CODE_SESSION_ID: '' })
+    assert.equal(r.status, 0, `${r.stdout}${r.stderr}`)
+    return r.json
+  }
+  return { root, mine, sibling, repoA, repoB, tEarly, tMid, tLate, run }
+}
+
+function treeText(dir) {
+  const files = []
+  const walk = (current) => {
+    for (const name of fs.readdirSync(current)) {
+      const full = path.join(current, name)
+      if (fs.statSync(full).isDirectory()) walk(full)
+      else files.push(`${path.relative(dir, full)}\n${fs.readFileSync(full, 'utf8')}`)
+    }
+  }
+  walk(dir)
+  files.sort()
+  return files.join('\n---\n')
+}
+
+test('aether-report --skills --repo limits the report to one canonical project (R17)', (t) => {
+  const fx = skillsFilterFixture(t)
+  const repoOnly = fx.run(['--repo', fx.repoA])
+  assert.equal(repoOnly.mode, 'skills')
+  assert.deepEqual(repoOnly.created.map((s) => s.name), ['alpha', 'beta'])
+  assert.equal(repoOnly.totals.createdRaw, 3)
+  assert.equal(repoOnly.totals.leadLoads, 1)
+  assert.equal(repoOnly.totals.delegateUses, 0)
+  assert.equal(repoOnly.totals.notices, 1)
+  assert.equal(repoOnly.totals.downloaded, 1)
+  assert.deepEqual(Object.keys(repoOnly.projects), [fx.repoA])
+  assert.equal(repoOnly.projects[fx.repoA].downloaded[0].name, 'downloaded-one')
+  const viaWorktree = fx.run(['--repo', `${fx.repoA}/.aether/work/delegates/d1/wt`])
+  assert.deepEqual(viaWorktree.created.map((s) => s.name), ['alpha', 'beta'])
+  const other = fx.run(['--repo', fx.repoB])
+  assert.deepEqual(other.created.map((s) => s.name), ['gamma'])
+  assert.equal(other.totals.agentUses, 1)
+  assert.equal(other.totals.leadLoads, 0)
+})
+
+test('aether-report --skills --until and ISO --since/--until bound the period (R17)', (t) => {
+  const fx = skillsFilterFixture(t)
+  const early = fx.run(['--until', String(fx.tEarly)])
+  assert.deepEqual(early.created.map((s) => s.name), ['alpha'])
+  assert.equal(early.period.until, fx.tEarly)
+  assert.equal(early.period.since, null)
+  const throughMid = fx.run(['--until', '2026-11-08T12:00:00Z'])
+  assert.deepEqual(throughMid.created.map((s) => s.name), ['alpha', 'beta'])
+  assert.equal(throughMid.period.until, fx.tMid)
+  assert.equal(throughMid.totals.agentUses, 0)
+  assert.equal(throughMid.totals.leadLoads, 1)
+  const mid = fx.run(['--since', '2026-11-08T12:00:00Z', '--until', '2026-11-08T12:00:00.000Z'])
+  assert.deepEqual(mid.created.map((s) => s.name), ['beta'])
+  assert.deepEqual(mid.period, { since: fx.tMid, until: fx.tMid })
+  assert.equal(mid.totals.downloaded, 1)
+  assert.equal(mid.totals.notices, 1)
+  assert.equal(mid.totals.agentUses, 0)
+  const bad = runBin(REPORT_BIN, ['--skills', '--since', 'not-a-time'], fx.root, { AETHER_DATA_DIR: fx.mine, CLAUDE_CODE_SESSION_ID: '' })
+  assert.equal(bad.status, 1)
+  assert.match(bad.json.error, /usage: aether-report --skills/)
+})
+
+test('aether-report --skills --session keeps that session after dedupe (R17)', (t) => {
+  const fx = skillsFilterFixture(t)
+  const late = fx.run(['--session', 's-late'])
+  assert.deepEqual(late.created.map((s) => s.name), ['gamma'])
+  assert.equal(late.totals.createdRaw, 2)
+  assert.equal(late.totals.created, 1)
+  assert.equal(late.totals.leadLoads, 0)
+  assert.equal(late.totals.delegateUses, 1)
+  assert.equal(late.totals.swarmUses, 0)
+  assert.equal(late.totals.agentUses, 1)
+  assert.deepEqual(late.agentUsesBySkill, { gamma: 1 })
+  assert.equal(late.totals.notices, 0)
+  const mid = fx.run(['--session', 's-mid'])
+  assert.deepEqual(mid.created.map((s) => s.name), ['beta'])
+  assert.equal(mid.totals.leadLoads, 1)
+  assert.deepEqual(mid.leadLoadsBySkill, { beta: 1 })
+  assert.equal(mid.totals.noticesByKind['idle-skills'], 1)
+})
+
+test('aether-report --skills reads only the resolved data dir and does not write (R17, R18)', (t) => {
+  const fx = skillsFilterFixture(t)
+  const before = treeText(path.join(fx.root, 'plugins', 'data'))
+  const all = fx.run([])
+  assert.equal(all.mode, 'skills')
+  assert.deepEqual(all.period, { since: null, until: null })
+  assert.equal(all.totals.createdRaw, 4)
+  assert.deepEqual(all.created.map((s) => s.name), ['alpha', 'beta', 'gamma'])
+  assert.equal(JSON.stringify(all).includes('from-sibling'), false)
+  assert.equal(JSON.stringify(all).includes('from-conversation'), false)
+  assert.equal(JSON.stringify(all).includes('stray-file'), false)
+  assert.equal(treeText(path.join(fx.root, 'plugins', 'data')), before)
+  assert.match(fs.readFileSync(path.join(fx.sibling, 'skills', 'created.jsonl'), 'utf8'), /from-sibling/)
+})
