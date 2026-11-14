@@ -1600,25 +1600,34 @@ test('design.workflow.js also takes the project skills from the seat-start reply
   assertPlanRoundsGetSkills(run)
 })
 
-// A plan correction is a later Writer seat round, and the exam is a later seat. Both must see the same list the
-// write and the first review saw: the revision gets the block, the Examiner does not.
-test('design.workflow.js passes the project skills to a native plan Writer revision, and the native Examiner gets none (R8, C4)', async () => {
-  const run = await go(ARGS, {
-    ops: (call, fallback) => {
-      if (call.command.verb !== 'seat-wait') return fallback(call)
-      const out = fallback(call)
-      if (!out || !out.value) return out
-      return { ...out, value: { ...out.value, projectSkills: PROJECT_SKILLS } }
-    },
-    judge: (call, fallback) => (call.label === 'plan: judge review 1'
-      ? { verdict: 'revise', findings: [finding('gap')], openQuestions: [] }
-      : fallback(call)),
+// Exercise revision and Examiner isolation through both native skill-delivery paths.
+for (const source of ['seat-start', 'seat-wait']) {
+  test(`design.workflow.js passes ${source} project skills to a native plan Writer revision, and excludes them from the native Examiner (R8, C4)`, async () => {
+    const run = await go(ARGS, {
+      ops: (call, fallback) => {
+        const out = fallback(call)
+        if (call.command.verb !== source) return out
+        return source === 'seat-start'
+          ? { ...out, projectSkills: PROJECT_SKILLS }
+          : { ...out, value: { ...out.value, projectSkills: PROJECT_SKILLS } }
+      },
+      judge: (call, fallback) => (call.label === 'plan: judge review 1'
+        ? { verdict: 'revise', findings: [finding('gap')], openQuestions: [] }
+        : fallback(call)),
+    })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    assert.equal(run.result.status, 'approved')
+    const prompt = (label) => {
+      const call = nativeCalls(run).find((c) => c.label === label)
+      assert.ok(call, `${label} invokes a native agent`)
+      return call.prompt
+    }
+    assertPlanRoundsGetSkills(run)
+    for (const label of ['plan: writer revision 1', 'plan: judge review 2']) {
+      assert.ok(prompt(label).includes('\n\n' + PROJECT_BLOCK), label)
+      assert.equal(prompt(label).split('## Project skills').length - 1, 1, label)
+    }
+    assert.equal(prompt('exam: examiner').includes('## Project skills'), false)
+    assert.equal(prompt('exam: examiner').includes('direccion-de-arte'), false)
   })
-  assert.equal(run.error, null, run.error && run.error.stack)
-  const prompt = (label) => run.calls.find((c) => c.label === label).prompt
-  assert.ok(prompt('plan: writer revision 1').includes(PROJECT_BLOCK))
-  assert.ok(prompt('plan: judge review 2').includes(PROJECT_BLOCK))
-  assert.equal(prompt('exam: examiner').includes('## Project skills'), false)
-  assert.equal(prompt('spec: writer write').includes('## Project skills'), false)
-  assert.equal(prompt('spec: judge review 1').includes('## Project skills'), false)
-})
+}
