@@ -17,8 +17,8 @@ Esta función tiene un diseño corto aprobado y no tiene `spec.md` ni `plan.md`:
   | `intelligence` | `intelligenceIndex` | 1 decimal |
   | `costPerTaskUsd` | `intelligenceIndexCostPerTask.cost.total` | 3 |
   | `code` | puntaje de `terminalbench-4-0` por 100 | 2 |
-  | `codeCostPerTaskUsd` | `costUsd` de `terminalbench-4-0` | 3 |
-  | `codeMinutesPerTask` | `seconds` de `terminalbench-4-0` entre 60 | 1 |
+  | `codeCostPerTaskUsd` | `costPerTask` de la eval `terminalbench-4-0` de la página (`costUsd` en la salida de `aa-extract`) | 3 |
+  | `codeMinutesPerTask` | `timePerTask` de la eval `terminalbench-4-0` de la página (`seconds` en la salida de `aa-extract`), entre 60 | 1 |
   | `terminalBench` | puntaje de `terminalbench-4-0` (fracción) | 3 |
   | `briefcaseElo` | `briefcaseBreakdown.overall.elo` | 0 |
   | `briefcaseRubricPassRate` | `briefcaseBreakdown.rubricPassRate` | 3 |
@@ -818,7 +818,7 @@ const KEY_HEADER = ['x', 'api', 'key'].join('-') // built from pieces: the absen
 // Every source file that could ask a page of the network: the scripts, the plugin's code and the skills; no test file.
 function sources(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (['node_modules', '.git', '.worktrees', 'tests'].includes(entry.name)) continue
+    if (['node_modules', '.git', '.worktrees', 'worktrees', 'tests'].includes(entry.name)) continue
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) sources(full, out)
     else if (/\.(js|mjs|ts|tsx)$/.test(entry.name) && !/\.test\.(js|ts|tsx)$/.test(entry.name)) out.push(path.relative(ROOT, full).split(path.sep).join('/'))
