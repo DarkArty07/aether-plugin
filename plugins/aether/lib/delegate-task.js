@@ -33,8 +33,8 @@ const { startRenewal } = require('./router-renewal.js')
 const { slowPairIds } = require('./router-slow.js')
 const { readDelegateSettings } = require('./session.js')
 const { matchesAny } = require('./globs.js')
-const { loadSkills, skillsSection, recordUse, parseSkillNames, matchDelegateSkills } = require('./skill-brief.js')
-const { recordNotice } = require('./skill-registry.js')
+const { loadSkills, skillsSection, parseSkillNames, matchDelegateSkills } = require('./skill-brief.js')
+const { recordNotice, recordUse } = require('./skill-registry.js')
 
 const ID_RE = /^[A-Za-z0-9_-]+$/
 const TASK_PREFIX = 'AETHER-TASK:'

@@ -3,7 +3,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { tempDir } = require('./helpers.js')
+const { tempDir, makeRepo } = require('./helpers.js')
 const task = require('../plugins/aether/lib/delegate-task.js')
 const log = require('../plugins/aether/lib/delegate-log.js')
 const reg = require('../plugins/aether/lib/skill-registry.js')
@@ -102,4 +102,15 @@ test('aether-delegate begin without AETHER-SKILLS suggests a matching project sk
 
   const other = await task.begin(call('AETHER-TASK: d-none\nActualiza el parser de JSON en src/json.js.'), w.deps)
   assert.equal(other.notes.some((n) => n.includes('diseno-de-juego')), false)
+})
+
+test('delegate skill use persists the canonical project and only usage metadata', async (t) => {
+  const w = world(t)
+  const repo = makeRepo(t)
+  w.deps.cwd = repo.dir
+  skill(repo.dir, 'project-skill')
+  const plan = await task.begin(call(BRIEF('repo-use', 'project-skill')), w.deps)
+  assert.equal(plan.kind, 'first')
+  const records = reg.readUses(w.dataDir)
+  assert.deepEqual(records, [{ time: records[0].time, session: 's1', kind: 'delegate', run: null, task: 'repo-use', skills: ['project-skill'], repo: repo.dir }])
 })

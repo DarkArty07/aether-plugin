@@ -2,6 +2,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')
+const fs = require('node:fs')
 const { tempDir, makeRepo, runBin, PLUGIN } = require('./helpers.js')
 const log = require('../plugins/aether/lib/delegate-log.js')
 const repeat = require('../plugins/aether/lib/skill-repeat.js')
@@ -92,4 +93,45 @@ test('repeatedFindings matches similar words of finding.what across sessions of 
 
   const strict = repeat.repeatedFindings(data, { session: 's2', task: 't1', config: { minWordLength: 3, similarityThreshold: 0.99, stopwords: [] } })
   assert.deepEqual(strict, [])
+})
+
+test('word similarity uses sets of normalized prefix-equivalent words', () => {
+  const config = { minWordLength: 3, similarityThreshold: 0.75, stopwords: ['the'] }
+  assert.equal(repeat.wordSimilarity('valid valid', 'valid', config), 1)
+  assert.equal(repeat.wordSimilarity('válidar validacion the', 'valida', config), 1)
+  assert.equal(repeat.wordSimilarity('valid valid extra', 'valid', config), 0.5)
+})
+
+test('similar findings in different tasks retain distinct problems on one file and reject different files and projects', (t) => {
+  const data = tempDir(t)
+  const add = (session, task, repo, findings) => log.appendEntry(data, {
+    kind: 'verdict', session, task, repo, verdict: 'fix', input: { kind: 'fix', findings },
+  })
+  const finding = (file, what) => ({ file, line: 1, what })
+  add('s1', 'old', '/project', [finding('src/a.js', 'validar lista vacía borde'), finding('src/a.js', 'cerrar recurso abierto')])
+  add('s1', 'different-file', '/project', [finding('src/b.js', 'validar lista vacía borde')])
+  add('s1', 'different-project', '/other', [finding('src/a.js', 'validar lista vacía borde')])
+  add('s1', 'target', '/project', [finding('src/a.js', 'valida lista vacía borde'), finding('src/a.js', 'cerrar recursos abiertos'), finding('src/a.js', 'calcular precio total')])
+  assert.deepEqual(repeat.repeatedFindings(data, { session: 's1', task: 'target' }), [
+    { finding: 'src/a.js: valida lista vacía borde', tasks: ['old'] },
+    { finding: 'src/a.js: cerrar recursos abiertos', tasks: ['old'] },
+  ])
+})
+
+test('repetition reads the similarity threshold from configuration data', (t) => {
+  const data = tempDir(t)
+  const file = path.join(data, 'skills-config.json')
+  const previous = process.env.AETHER_SKILLS_CONFIG
+  t.after(() => {
+    if (previous === undefined) delete process.env.AETHER_SKILLS_CONFIG
+    else process.env.AETHER_SKILLS_CONFIG = previous
+  })
+  process.env.AETHER_SKILLS_CONFIG = file
+  verdict(data, 's1', 'old', [['src/a.js', 1, 'validar lista borde']])
+  verdict(data, 's1', 'target', [['src/a.js', 2, 'valida lista vacía']])
+  const write = (similarityThreshold) => fs.writeFileSync(file, JSON.stringify({ ...reg.loadSkillsConfig(reg.CONFIG_FILE), repeat: { minWordLength: 3, similarityThreshold, stopwords: [] } }))
+  write(0.4)
+  assert.equal(repeat.repeatedFindings(data, { session: 's1', task: 'target' }).length, 1)
+  write(0.6)
+  assert.deepEqual(repeat.repeatedFindings(data, { session: 's1', task: 'target' }), [])
 })

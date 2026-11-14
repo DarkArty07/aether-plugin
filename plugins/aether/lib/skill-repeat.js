@@ -23,28 +23,17 @@ function wordsOf(what, config) {
   return fold(what).split(/[^a-z0-9]+/).filter((word) => word.length >= config.minWordLength && !stop.has(word))
 }
 
-// Identical, or both at least five characters and sharing a five-character prefix.
-function wordsEqual(left, right) {
-  if (left === right) return true
-  return left.length >= 5 && right.length >= 5 && left.slice(0, 5) === right.slice(0, 5)
-}
-
+// A five-character prefix is the identity of every word at least that long.
+// Canonicalize before constructing sets so repetitions and inflections count once.
 function wordSimilarity(whatA, whatB, config = null) {
   const repeat = repeatOf(config)
-  const left = wordsOf(whatA, repeat)
-  const right = wordsOf(whatB, repeat)
-  if (left.length === 0 || right.length === 0) return 0
-  const used = new Set()
+  const wordSet = (what) => new Set(wordsOf(what, repeat).map((word) => word.length >= 5 ? word.slice(0, 5) : word))
+  const left = wordSet(whatA)
+  const right = wordSet(whatB)
+  if (left.size === 0 || right.size === 0) return 0
   let shared = 0
-  for (const word of left) {
-    for (let i = 0; i < right.length; i++) {
-      if (used.has(i) || !wordsEqual(word, right[i])) continue
-      used.add(i)
-      shared += 1
-      break
-    }
-  }
-  return shared / (left.length + right.length - shared)
+  for (const word of left) if (right.has(word)) shared += 1
+  return shared / (left.size + right.size - shared)
 }
 
 function findingsMatch(whatA, whatB, config = null) {
@@ -81,12 +70,9 @@ function repeatedFindings(dataDir, { session = null, task = null, repo = null, c
   const targetRepo = (typeof repo === 'string' && repo) ? repo : (typeof lastVerdict.repo === 'string' ? lastVerdict.repo : null)
 
   const results = []
-  const seenFiles = new Set()
 
   for (const finding of lastVerdict.input.findings) {
     if (!finding || typeof finding.file !== 'string' || typeof finding.what !== 'string') continue
-    const fileKey = fold(finding.file)
-    if (seenFiles.has(fileKey)) continue
 
     const matchingTasks = []
     for (const entry of entries) {
@@ -96,7 +82,6 @@ function repeatedFindings(dataDir, { session = null, task = null, repo = null, c
     }
 
     if (matchingTasks.length > 0) {
-      seenFiles.add(fileKey)
       results.push({
         finding: `${finding.file}: ${finding.what}`,
         tasks: matchingTasks,
