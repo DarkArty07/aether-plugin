@@ -90,6 +90,19 @@ function resolveSkill(name, { cwd, home = os.homedir(), pluginRoot = path.resolv
   return null
 }
 
+function foldQuotedLines(text, quote) {
+  // Protect double-quoted escapes before folding physical line breaks.
+  const breaks = quote === '"'
+    ? /\\(?:[^\n]|\n[ \t]*(?:\n[ \t]*)*)|[ \t]*\n[ \t]*(?:\n[ \t]*)*/g
+    : /[ \t]*\n[ \t]*(?:\n[ \t]*)*/g
+  return text.replace(breaks, (part) => {
+    if (part[0] === '\\' && part[1] !== '\n') return part
+    const count = part.split('\n').length - 1
+    if (count > 1) return '\n'.repeat(count - 1)
+    return part[0] === '\\' ? '' : ' '
+  })
+}
+
 function parseFrontMatter(text) {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
   if (!match) return {}
@@ -114,16 +127,29 @@ function parseFrontMatter(text) {
         if (prev && !line && !/^\s/.test(prev)) return out
         return out + (prev && line && !/^\s/.test(prev) && !/^\s/.test(line) ? ' ' : '\n') + line
       }, '')
-    } else if (value.startsWith("'")) {
-      const quoted = value.match(/^'((?:[^']|'')*)'(?:\s+#.*)?\s*$/)
-      entries[key] = quoted ? quoted[1].replace(/''/g, "'") : value
-    } else if (value.startsWith('"')) {
-      const quoted = value.match(/^"((?:[^"\\]|\\.)*)"(?:\s+#.*)?\s*$/)
+    } else if (value.startsWith("'") || value.startsWith('"')) {
+      const quote = value[0]
+      const pattern = quote === "'"
+        ? /^'((?:[^']|'')*)'(?:[ \t]+#.*)?[ \t]*$/
+        : /^"((?:[^"\\]|\\[\s\S])*)"(?:[ \t]+#.*)?[ \t]*$/
+      let scalar = field[2].trimStart()
+      let end = i
+      let quoted = scalar.match(pattern)
+      while (!quoted && end + 1 < lines.length) {
+        scalar += '\n' + lines[++end]
+        quoted = scalar.match(pattern)
+      }
       if (!quoted) {
         entries[key] = value
+        continue
+      }
+      i = end
+      const folded = foldQuotedLines(quoted[1], quote)
+      if (quote === "'") {
+        entries[key] = folded.replace(/''/g, "'")
       } else {
         const escapes = { '0': '\0', a: '\x07', b: '\b', t: '\t', n: '\n', v: '\v', f: '\f', r: '\r', e: '\x1b', ' ': ' ', '"': '"', '/': '/', '\\': '\\', N: '\u0085', _: '\u00a0', L: '\u2028', P: '\u2029' }
-        entries[key] = quoted[1].replace(/\\(?:([0abtnvfre "\/\\N_LP])|x([\da-fA-F]{2})|u([\da-fA-F]{4})|U([\da-fA-F]{8}))/g, (whole, simple, x, u, upper) => {
+        entries[key] = folded.replace(/\\(?:([0abtnvfre "\/\\N_LP])|x([\da-fA-F]{2})|u([\da-fA-F]{4})|U([\da-fA-F]{8}))/g, (whole, simple, x, u, upper) => {
           if (simple) return escapes[simple]
           const code = parseInt(x || u || upper, 16)
           return code <= 0x10ffff ? String.fromCodePoint(code) : whole

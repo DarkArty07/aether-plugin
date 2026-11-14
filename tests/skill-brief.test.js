@@ -238,3 +238,49 @@ test('project skills read quoted and block frontmatter values for discovery, for
   assert.deepEqual(sb.matchDelegateSkills(dir, { prompt: 'Use ui-kit' }), ['ui-kit'])
   assert.deepEqual(sb.matchDelegateSkills(dir, { prompt: 'Improve economy and combat' }), ['game-design'])
 })
+
+for (const [label, quote] of [['single', "'"], ['double', '"']]) {
+  test(`project skills read multiline ${label}-quoted descriptions for discovery, formatting and matching`, (t) => {
+    const dir = tempDir(t, 'aether-proj-multiline-')
+    skill(dir, 'guide', {
+      frontName: `${quote}guide${quote}`,
+      description: `${quote}Balance the\n  economy and combat\n  systems${quote} # project description`,
+    })
+    skill(dir, 'duplicate', { frontName: 'guide', description: 'Wrong duplicate', where: '.claude/skills' })
+
+    const skills = sb.listProjectSkills(dir)
+    assert.deepEqual(skills, [{ name: 'guide', description: 'Balance the economy and combat systems' }])
+    assert.equal(sb.formatProjectSkills(skills), [
+      '## Project skills', '',
+      'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
+      '- `guide`: Balance the economy and combat systems',
+    ].join('\n'))
+    assert.deepEqual(sb.matchDelegateSkills(dir, { prompt: 'Adjust economy and combat' }), ['guide'])
+    assert.deepEqual(sb.matchDelegateSkills(dir, { description: 'economy combat' }), ['guide'])
+    assert.deepEqual(sb.matchDelegateSkills(dir, { owns: ['src/economy/combat.js'] }), ['guide'])
+    assert.deepEqual(sb.matchDelegateSkills(dir, { prompt: 'Adjust economy' }), [])
+  })
+}
+
+test('multiline quoted frontmatter folds whitespace and blank lines and preserves escapes', (t) => {
+  const dir = tempDir(t, 'aether-proj-quoted-folding-')
+  skill(dir, 'single-flow', { description: "'Owner''s \t\n  economy and combat\n\n   systems: # retained' # comment" })
+  skill(dir, 'double-flow', { description: '"Balance the \t\n  \\"economy\\" and combat\n\n   systems" # comment' })
+  skill(dir, 'escaped-flow', {
+    frontName: ['"escaped-\\', '  flow"'].join('\n'),
+    description: ['"Balance the econo\\', '  my and com\\', '  bat systems"'].join('\n'),
+  })
+  skill(dir, 'backslash-flow', { description: ['"Path \\\\', '  economy and combat"'].join('\n') })
+  skill(dir, 'space-flow', { description: ['"Balance\\ ', '  economy and combat"'].join('\n') })
+
+  assert.deepEqual(sb.listProjectSkills(dir), [
+    { name: 'backslash-flow', description: 'Path \\ economy and combat' },
+    { name: 'double-flow', description: 'Balance the "economy" and combat\nsystems' },
+    { name: 'escaped-flow', description: 'Balance the economy and combat systems' },
+    { name: 'single-flow', description: "Owner's economy and combat\nsystems: # retained" },
+    { name: 'space-flow', description: 'Balance  economy and combat' },
+  ])
+  assert.deepEqual(sb.matchDelegateSkills(dir, { prompt: 'Adjust economy and combat' }), [
+    'backslash-flow', 'double-flow', 'escaped-flow', 'single-flow', 'space-flow',
+  ])
+})
