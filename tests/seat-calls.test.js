@@ -320,3 +320,15 @@ test('seatCalls.start refuses Lead sessions at time, quota, and cost stops but p
   assert.equal(cost.run, costRun.run.id)
   assert.match(cost.reason, /aether-autonomy end --outcome ceiling/)
 })
+
+test('seat-start reports the project skills of the checkout (R8)', (t) => {
+  const repo = seatRepo(t)
+  const skillDir = path.join(repo.dir, '.agents', 'skills', 'direccion-de-arte')
+  fs.mkdirSync(skillDir, { recursive: true })
+  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: direccion-de-arte\ndescription: Paleta y tipografia\n---\n')
+  const started = start(repo, modEnv(t), 'judge', 'Review.\n', ['--superdelegation', 'off', '--harnesses', 'agy'])
+  assert.equal(started.status, 0, started.stdout)
+  assert.equal(started.json.started, true)
+  assert.deepEqual(started.json.projectSkills, [{ name: 'direccion-de-arte', description: 'Paleta y tipografia' }])
+  if (started.json.id) lane(repo, ['seat-stop', started.json.id], modEnv(t))
+})

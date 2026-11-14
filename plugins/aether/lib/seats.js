@@ -22,6 +22,7 @@ const pairsTable = require('./pairs.js')
 const { excludeList, latestReadings } = require('./lane-pick.js')
 const quota = require('./lane-quota.js')
 const { pickData } = require('./pick-data.js')
+const { listProjectSkills, formatProjectSkills } = require('./skill-brief.js')
 
 const PLUGIN_BIN = path.join(__dirname, '..', 'bin')
 const SKILLS_DIR = path.join(__dirname, '..', 'skills')
@@ -699,8 +700,19 @@ function answerSection(seat, doc) {
   return ['## Your answer', 'End your answer with one JSON object that matches this schema, and nothing after it:', `\`\`\`json\n${JSON.stringify(schemaFor(seat, doc), null, 2)}\n\`\`\``].join('\n\n')
 }
 
+// Plan writing, revision and review get the project's skills. A spec round does not, and neither does a Judge
+// whose message opens a spec review (the Judge has no --doc, so the message is what tells the two apart).
+function wantsProjectSkills(seat, doc, message) {
+  if (seat === 'writer' && doc !== 'spec') return true
+  return seat === 'judge' && doc !== 'spec' && !/^Review the spec\b/.test(String(message || ''))
+}
+
 function seatPrompt({ seat, harness, adapter, message, workdir, feature, doc = 'plan' }) {
   const parts = [roleBody(seat), seatNote(seat, harness, feature, doc, message), ...claudeMdSections(workdir, os.homedir()), message]
+  if (wantsProjectSkills(seat, doc, message) && !String(message || '').includes('## Project skills')) {
+    const block = formatProjectSkills(listProjectSkills(workdir))
+    if (block) parts.push(block)
+  }
   if (adapter.schemaInPrompt === true) parts.push(answerSection(seat, doc))
   return parts.join('\n\n')
 }
@@ -1207,6 +1219,14 @@ function unavailable(seat, reason, { native, tried, decision }) {
   return reply(3, { unavailable: reason, seat, native, tried, decision })
 }
 
+// A round that does not answer (exit 3 or 4) still names the project's skills, so a native-only design gets the list.
+function withProjectSkills(top, result) {
+  if ((result.exitCode === 3 || result.exitCode === 4) && result.value && typeof result.value === 'object') {
+    result.value.projectSkills = listProjectSkills(top)
+  }
+  return result
+}
+
 // aether-lane seat: one round of a design seat. Exit 0 is an external answer; 3, nothing ran and the
 // native agent of the decision takes the round; 4, the external round failed and was undone, and the native
 // agent of the decision takes it; 1, the command broke.
@@ -1245,10 +1265,10 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     return unavailable(seat, reason, { ...chosen, tried: [] })
   }
   const switchState = superdelegationEnabled(env)
-  if (!switchState.on) return handBack(switchState.reason === 'platform' ? 'platform' : 'superdelegation-off')
-  if (config === null) return handBack('no-table')
+  if (!switchState.on) return withProjectSkills(top, handBack(switchState.reason === 'platform' ? 'platform' : 'superdelegation-off'))
+  if (config === null) return withProjectSkills(top, handBack('no-table'))
   // An external seat reads the commit, so the feature's documents must be committed.
-  if (feature !== null && git(['status', '--porcelain', '--', feature], top).stdout !== '') return handBack('uncommitted')
+  if (feature !== null && git(['status', '--porcelain', '--', feature], top).stdout !== '') return withProjectSkills(top, handBack('uncommitted'))
 
   const adapters = {}
   const adapterOf = (name, settings) => (adapters[name] ||= createAdapter(name, settings))
@@ -1284,13 +1304,13 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   const chosen = chooseSeat({ config, pairs: table, seat, author, harnesses, exclude, offered: (name, model, effort) => offeredByListing(name, model, effort) })
   if (chosen.native) {
     note('native', { reason: 'no-external', tried: chosen.tried, reference: chosen.decision.reference })
-    return unavailable(seat, 'no-external', chosen)
+    return withProjectSkills(top, unavailable(seat, 'no-external', chosen))
   }
   const { external, decision } = chosen
   external.quotaBefore = readings[external.harness]?.[external.group] ?? external.quotaBefore
   const message = typeof input === 'function' ? await input() : input
   if (message.trim() === '') throw new Error('the message is empty: give it on stdin')
-  return runRound({
+  return withProjectSkills(top, await runRound({
     cwd: top,
     mainRoot,
     seat,
@@ -1305,7 +1325,7 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     adapter: adapterOf(external.harness, config.harnesses[external.harness]),
     dataDir,
     note: chosen.note,
-  })
+  }))
 }
 
 module.exports = { REFERENCE, NATIVE, EXAM_DIR, USAGE, authorModel, excludeList, chooseSeat, offeredByListing, changedPaths, allowedFor, fileInside, changedAge, judgeText, windowUsed, findingTouch, revisionBrief, seatPrompt, seatCommand }

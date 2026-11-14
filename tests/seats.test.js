@@ -842,3 +842,51 @@ test('E7: when no external pair reaches Opus high (51.7), the native Judge hande
   assert.equal(r.json.decision.reference.id, 'claude/opus@high')
   assert.deepEqual(agyTurns(env), [])
 })
+
+const PROJECT_BLOCK = [
+  '## Project skills',
+  '',
+  'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
+  '- `direccion-de-arte`: Paleta y tipografia',
+].join('\n')
+
+function writeProjectSkill(dir) {
+  const skillDir = path.join(dir, '.agents', 'skills', 'direccion-de-arte')
+  fs.mkdirSync(skillDir, { recursive: true })
+  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: direccion-de-arte\ndescription: Paleta y tipografia\n---\n')
+}
+
+test('seatPrompt gives project skills to the plan Writer and the plan Judge, and not to a spec round (R8)', () => {
+  const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-seat-skills-'))
+  try {
+    writeProjectSkill(workdir)
+    const plan = seats.seatPrompt({ seat: 'writer', harness: 'agy', adapter: {}, message: 'Write the plan.', workdir, feature: FEATURE, doc: 'plan' })
+    assert.ok(plan.includes(PROJECT_BLOCK))
+    const review = seats.seatPrompt({ seat: 'judge', harness: 'agy', adapter: {}, message: 'Review the plan and its tasks.', workdir, feature: FEATURE })
+    assert.ok(review.includes(PROJECT_BLOCK))
+    const revise = seats.seatPrompt({ seat: 'writer', harness: 'agy', adapter: {}, message: 'Revise the plan after the Judge.', workdir, feature: FEATURE, doc: 'plan' })
+    assert.ok(revise.includes(PROJECT_BLOCK))
+    const spec = seats.seatPrompt({ seat: 'writer', harness: 'agy', adapter: {}, message: 'Write the spec.', workdir, feature: FEATURE, doc: 'spec' })
+    assert.equal(spec.includes('## Project skills'), false)
+    const specJudge = seats.seatPrompt({ seat: 'judge', harness: 'agy', adapter: {}, message: 'Review the spec against the intent.', workdir, feature: FEATURE })
+    assert.equal(specJudge.includes('## Project skills'), false)
+    const exam = seats.seatPrompt({ seat: 'examiner', harness: 'agy', adapter: {}, message: 'Write the exam.', workdir, feature: FEATURE })
+    assert.equal(exam.includes('## Project skills'), false)
+    const once = seats.seatPrompt({ seat: 'writer', harness: 'agy', adapter: {}, message: `Write.\n\n${PROJECT_BLOCK}`, workdir, feature: FEATURE, doc: 'plan' })
+    assert.equal(once.split('## Project skills').length, 2)
+  } finally {
+    fs.rmSync(workdir, { recursive: true, force: true })
+  }
+})
+
+test('a round handed back or failed names the project skills of the checkout (R8)', (t) => {
+  const repo = seatRepo(t)
+  writeProjectSkill(repo.dir)
+  const expected = [{ name: 'direccion-de-arte', description: 'Paleta y tipografia' }]
+  const handed = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--author', 'sonnet'], { ...laneEnv(t), AETHER_SUPERDELEGATION: 'off' }, 'Review.\n')
+  assert.equal(handed.status, 3, handed.stdout + handed.stderr)
+  assert.deepEqual(handed.json.projectSkills, expected)
+  const failed = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--author', 'sonnet'], judgeEnv(t), 'FAKE-AGY: exit-error\n')
+  assert.equal(failed.status, 4, failed.stdout + failed.stderr)
+  assert.deepEqual(failed.json.projectSkills, expected)
+})

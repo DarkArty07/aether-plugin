@@ -1563,3 +1563,39 @@ test('the seatRound comment names the refused stop and run path (#232 12)', () =
   assert.match(text, /\bstop\b/)
   assert.match(text, /\brun\b/)
 })
+
+const PROJECT_SKILLS = [{ name: 'direccion-de-arte', description: 'Paleta y tipografia' }]
+const PROJECT_BLOCK = [
+  '## Project skills',
+  '',
+  'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
+  '- `direccion-de-arte`: Paleta y tipografia',
+].join('\n')
+
+function assertPlanRoundsGetSkills(run) {
+  const prompt = (label) => run.calls.find((c) => c.label === label).prompt
+  assert.equal(prompt('spec: writer write').includes('## Project skills'), false)
+  assert.equal(prompt('spec: judge review 1').includes('## Project skills'), false)
+  assert.ok(prompt('plan: writer write').includes(PROJECT_BLOCK))
+  assert.ok(prompt('plan: judge review 1').includes(PROJECT_BLOCK))
+}
+
+test('design.workflow.js passes the project skills of the exit-3 reply (no external pair) to the native plan Writer and plan Judge, and not to the spec rounds (R8, C4)', async () => {
+  const run = await go(ARGS, {
+    ops: (call, fallback) => {
+      if (call.command.verb === 'seat-wait') {
+        const seat = call.command.rest[0].split('-')[0]
+        return { done: true, exitCode: 3, value: { ...nativeSeat(seat), projectSkills: PROJECT_SKILLS } }
+      }
+      return fallback(call)
+    },
+  })
+  assertPlanRoundsGetSkills(run)
+})
+
+test('design.workflow.js also takes the project skills from the seat-start reply (R8, C4)', async () => {
+  const run = await go(ARGS, {
+    ops: (call, fallback) => (call.command.verb === 'seat-start' ? { ...fallback(call), projectSkills: PROJECT_SKILLS } : fallback(call)),
+  })
+  assertPlanRoundsGetSkills(run)
+})

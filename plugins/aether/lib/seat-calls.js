@@ -14,6 +14,7 @@ const autonomy = require('./autonomy.js')
 const lanes = require('./lanes.js')
 const { finishedResult } = require('./lane-calls.js')
 const seats = require('./seats.js')
+const { listProjectSkills } = require('./skill-brief.js')
 
 const BIN = path.join(__dirname, '..', 'bin', 'aether-lane')
 const SEAT_WAIT_SECONDS = 540
@@ -135,7 +136,7 @@ function start(cwd, flags, { env = process.env, now = Date.now() } = {}) {
   })
   runner.unref()
   fs.writeFileSync(paths.pid, `${runner.pid}\n`)
-  return { started: true, id, at: Date.now() }
+  return { started: true, id, at: Date.now(), projectSkills: listProjectSkills(top) }
 }
 
 // ---- The runner ----
