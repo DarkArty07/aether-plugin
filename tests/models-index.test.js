@@ -1040,3 +1040,12 @@ test('the index of models is built without levels, and its efforts for a model t
   const shipped = fs.readFileSync(path.join(ROOT, 'plugins', 'aether', 'config', 'models', 'models.json'), 'utf8')
   assert.doesNotMatch(shipped, /"levels"|"replaces"/)
 })
+
+test('snapshot index uses listed efforts and page figures without a global list', () => {
+  const builder = require('../scripts/build-models-index.js')
+  const snapshot = { pages: { 'acme-high': { readOn: '2026-11-13', name: 'Acme', figures: { intelligence: { value: 42, on: '2026-11-13' } } } } }
+  const listings = { capturedAt: '2026-11-13', harnesses: { agy: { effortVia: 'id', models: ['acme-high'] } } }
+  const index = builder.buildIndex({ lanes: {}, harnessModels: listings, pairs: [{ harness: 'agy', model: 'acme', effort: 'high', slug: 'acme-high' }], snapshot, harnesses: ['agy'] })
+  assert.equal(index.generatedAt, '2026-11-13')
+  assert.equal(builder.buildModels(index, {}).models[0].scores[0].intelligence, 42)
+})
