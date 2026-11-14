@@ -24,6 +24,10 @@ Every skill belongs to one of four types, each with its designated location and 
 
 ## Finding and Downloading Skills
 
+Search for a skill when the visible-signals notice fires (on the first Aether startup in a new project, or when writing `specs/NNN-<topic>/intent.md`) or whenever the Lead enters a new practical topic where step-by-step operational procedures matter (such as Machine Learning or Google Colab).
+
+Skills are for practical processes and repeatable procedures. The API documentation of a library is looked up with Context7, not by installing a skill.
+
 The Lead searches and installs external skills using the `skills.sh` ecosystem:
 - Search for available skills: `npx skills find <query>`
 - Download and install a skill: `npx skills add <source>`
@@ -54,6 +58,8 @@ The Lead creates skills in three circumstances:
 1. When an error repeats across multiple tasks.
 2. When the project requires a custom method, framework pattern, or specialized workflow.
 3. When the owner explicitly requests it.
+
+If searching returns no suitable skill, or none passes review, the Lead writes the project skill in `.agents/skills/<name>/SKILL.md` (with its symlink in `.claude/skills/<name>`) with what it learned.
 
 Scope determines where to create the skill:
 - **Project level (`.agents/skills/`):** Created autonomously by the Lead without prompting the owner; reported in the run brief.

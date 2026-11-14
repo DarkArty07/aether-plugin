@@ -77,6 +77,13 @@ test('models and designing skills exist with valid frontmatter and expected cont
   assert.doesNotMatch(designing, /`aether-exam store`/)
 })
 
+test('aether:skills explains when to search on practical topics, Context7 for library APIs, and writing the project skill when none fits (R14, C6)', () => {
+  const text = read('skills', 'skills', 'SKILL.md')
+  assert.ok(text.includes('Context7'), 'aether:skills names Context7 for library API documentation')
+  assert.match(text, /practical process|practical topic/i)
+  assert.match(text, /write the project skill|writes the project skill/i)
+})
+
 test('skills skill uses --author flag in aether-autonomy trust command', () => {
   const text = read('skills', 'skills', 'SKILL.md')
   assert.match(text, /aether-autonomy trust --author <author> --quote "<their words>"/)
