@@ -60,8 +60,63 @@ test('through the bin the notices of the skills reach the Lead as additionalCont
   const lead = JSON.parse(ask('s1').stdout)
   assert.equal(lead.hookSpecificOutput.hookEventName, 'PostToolUse')
   assert.ok(lead.hookSpecificOutput.additionalContext.includes('long-one'))
+  const afterLead = fs.readdirSync(path.join(w.data, 'skills')).sort()
+  assert.ok(afterLead.includes('created.jsonl'))
   const plain = ask('plain')
   assert.deepEqual([plain.status, plain.stdout], [0, ''])
-  assert.equal(fs.existsSync(path.join(w.data, 'skills', 'created.jsonl')), true)
-  assert.equal(fs.readdirSync(path.join(w.data, 'skills')).length, 1, 'the plain session wrote nothing')
+  assert.deepEqual(fs.readdirSync(path.join(w.data, 'skills')).sort(), afterLead, 'the plain session wrote nothing')
+})
+
+test('the real hooks.json PostToolUse entry selects Skill and bin/aether-continuity posttool records Lead loads without conversation text, with or without tool_response, while a plain session writes nothing (R3, R5, R6, R10, R11, R18, C2, C3, C5, C9)', (t) => {
+  const w = world(t)
+  const hooksJson = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8'))
+  const group = hooksJson.hooks.PostToolUse.find((g) => g.hooks.some((h) => h.command.endsWith('/bin/aether-continuity" posttool')))
+  assert.ok(group, 'hooks.json has a PostToolUse entry for aether-continuity posttool')
+  assert.equal(new RegExp(`^(?:${group.matcher})$`).test('Skill'), true)
+
+  markSession(w.data, 's-lead', 1000, { repo: w.repo.dir, claude: null })
+  const bin = path.join(PLUGIN, 'bin', 'aether-continuity')
+  const env = { ...process.env, AETHER_DATA_DIR: w.data, CLAUDE_CONFIG_DIR: w.home, HOME: w.home }
+  const skillCall = (session, extra = {}) =>
+    spawnSync(process.execPath, [bin, 'posttool'], {
+      input: JSON.stringify({ hook_event_name: 'PostToolUse', session_id: session, cwd: w.repo.dir, tool_name: 'Skill', tool_input: { skill: 'criterio-del-dueno', args: 'SECRET-CONVERSATION-TEXT' }, ...extra }),
+      encoding: 'utf8',
+      env,
+    })
+
+  const plain = skillCall('plain', { tool_response: { success: true, commandName: 'criterio-del-dueno' } })
+  assert.deepEqual([plain.status, plain.stdout], [0, ''])
+  assert.equal(reg.readUses(w.data).length, 0)
+
+  const lead = skillCall('s-lead', { tool_response: { success: true, commandName: 'criterio-del-dueno' } })
+  assert.equal(lead.status, 0)
+  const noResponse = skillCall('s-lead', { hook_event_name: 'PreToolUse' })
+  assert.equal(noResponse.status, 0)
+  const uses = reg.readUses(w.data)
+  assert.equal(uses.length, 2, 'the same entry records the load whichever event and payload it comes from')
+  assert.ok(uses.every((u) => u.kind === 'lead' && u.session === 's-lead'))
+  assert.deepEqual(uses[0].skills, ['criterio-del-dueno'])
+  assert.ok(!JSON.stringify(uses).includes('SECRET-CONVERSATION-TEXT'))
+
+  assert.equal(posttool.posttool({ session_id: 's-lead', agent_id: 'a1', cwd: w.repo.dir, tool_name: 'Skill', tool_input: { skill: 'x' } }, w.ctx), null)
+  assert.equal(reg.readUses(w.data).length, 2, 'a subagent load is not a Lead load')
+
+  const badFile = path.join(w.repo.dir, '.claude', 'skills', 'mal-ubicada', 'SKILL.md')
+  fs.mkdirSync(path.dirname(badFile), { recursive: true })
+  fs.writeFileSync(badFile, '---\nname: mal-ubicada\ndescription: Prueba\n---\nbody\n')
+  const out = posttool.posttool({ session_id: 's-lead', cwd: w.repo.dir, tool_name: 'Write', tool_input: { file_path: badFile } }, w.ctx)
+  assert.ok(out && out.additionalContext.includes('.agents/skills/'))
+  assert.ok(out.additionalContext.includes('aether:skills'))
+  assert.deepEqual(reg.readNotices(w.data).map((n) => n.kind).sort(), ['skill-location', 'skill-unloaded'])
+})
+
+test('writing specs/NNN-topic/intent.md with practical topic signals emits a search notice once per session (R12, R13, R16, C6)', (t) => {
+  const w = world(t)
+  const intent = path.join(w.repo.dir, 'specs', '001-ml', 'intent.md')
+  fs.mkdirSync(path.dirname(intent), { recursive: true })
+  fs.writeFileSync(intent, '# Intent\nEntrenar un modelo con PyTorch en Google Colab.\n')
+  const first = posttool.posttool({ session_id: 's-ml', cwd: w.repo.dir, tool_name: 'Write', tool_input: { file_path: intent } }, w.ctx)
+  assert.ok(first && first.additionalContext.includes('aether:skills'))
+  const second = posttool.posttool({ session_id: 's-ml', cwd: w.repo.dir, tool_name: 'Edit', tool_input: { file_path: intent } }, w.ctx)
+  assert.equal(second, null)
 })

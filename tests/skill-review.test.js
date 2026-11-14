@@ -56,7 +56,9 @@ test('after the Lead writes a skill the handler names its problems, records it a
   assert.equal(created.length, 1, 'the second edit does not record it again')
   assert.deepEqual([created[0].session, created[0].repo, created[0].name, created[0].path, created[0].type, created[0].time], ['s1', w.repo.dir, 'long-one', dir, 'project', 5000])
   const good = skill(w.repo.dir, 'fine')
-  assert.equal(review.posttool(write(w, path.join(good, 'SKILL.md')), w.ctx), null)
+  const fine = review.posttool(write(w, path.join(good, 'SKILL.md')), w.ctx)
+  assert.ok(fine && fine.includes('aether:skills'))
+  assert.ok(!fine.includes('.agents/skills/fine'))
 })
 
 test('a permanent skill is recorded without a repository, and writes outside the skill folders are ignored (R32)', (t) => {
