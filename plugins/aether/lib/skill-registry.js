@@ -7,7 +7,9 @@ const crypto = require('node:crypto')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { repoPaths } = require('./git.js')
+const { git, repoPaths } = require('./git.js')
+
+const CONFIG_FILE = path.join(__dirname, '..', 'config', 'skills.json')
 
 let skillRules = null
 try {
@@ -349,10 +351,358 @@ function posttool(input, ctx) {
   }
 }
 
+function skillsDir(dataDir) {
+  return path.join(dataDir, 'skills')
+}
+
+function createdFile(dataDir) {
+  return path.join(skillsDir(dataDir), 'created.jsonl')
+}
+
+function usesFile(dataDir) {
+  return path.join(skillsDir(dataDir), 'uses.jsonl')
+}
+
+function noticesFile(dataDir) {
+  return path.join(skillsDir(dataDir), 'notices.jsonl')
+}
+
+function readJsonl(file) {
+  try {
+    if (!fs.existsSync(file)) return []
+    const entries = []
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      try {
+        entries.push(JSON.parse(trimmed))
+      } catch {}
+    }
+    return entries
+  } catch {
+    return []
+  }
+}
+
+function appendJsonl(file, record) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.appendFileSync(file, JSON.stringify(record) + '\n')
+}
+
+function loadSkillsConfig(customPath = process.env.AETHER_SKILLS_CONFIG || CONFIG_FILE) {
+  const parsed = JSON.parse(fs.readFileSync(customPath, 'utf8'))
+  const repeat = parsed && parsed.repeat
+  if (!repeat || typeof repeat.minWordLength !== 'number' || typeof repeat.similarityThreshold !== 'number' || !Array.isArray(repeat.stopwords)) {
+    throw new Error(`skills config ${customPath} is missing repeat`)
+  }
+  if (!Array.isArray(parsed.topics)) {
+    throw new Error(`skills config ${customPath} is missing topics`)
+  }
+  return { repeat, topics: parsed.topics }
+}
+
+function recordCreated(dataDir, entry) {
+  const record = {
+    time: entry && entry.time,
+    session: entry && entry.session != null ? entry.session : null,
+    repo: entry && entry.repo != null ? entry.repo : null,
+    name: entry && entry.name,
+    path: entry && entry.path != null ? entry.path : null,
+    type: entry && entry.type ? entry.type : 'project',
+  }
+  appendJsonl(createdFile(dataDir), record)
+  return record
+}
+
+function readCreated(dataDir) {
+  return readJsonl(createdFile(dataDir))
+}
+
+function recordUse(dataDir, { session = null, kind = null, run = null, task = null, skills = [], time = Date.now(), repo = null } = {}) {
+  const record = { time, session, kind, run, task, skills, repo }
+  appendJsonl(usesFile(dataDir), record)
+  return true
+}
+
+function readUses(dataDir) {
+  return readJsonl(usesFile(dataDir))
+}
+
+function recordNotice(dataDir, input) {
+  if (!input || typeof input.kind !== 'string' || typeof input.name !== 'string') return null
+  const record = {
+    time: typeof input.time === 'number' ? input.time : Date.now(),
+    session: input.session != null ? input.session : null,
+    repo: input.repo != null ? input.repo : null,
+    kind: input.kind,
+    name: input.name,
+  }
+  try {
+    appendJsonl(noticesFile(dataDir), record)
+    return record
+  } catch {
+    return null
+  }
+}
+
+function readNotices(dataDir) {
+  return readJsonl(noticesFile(dataDir)).map((entry) => ({
+    time: entry.time,
+    session: entry.session != null ? entry.session : null,
+    repo: entry.repo != null ? entry.repo : null,
+    kind: entry.kind,
+    name: entry.name,
+  }))
+}
+
+function slash(value) {
+  return String(value).split('\\').join('/')
+}
+
+function skillRelPath(entryOrPath) {
+  const raw = typeof entryOrPath === 'string'
+    ? entryOrPath
+    : (entryOrPath && (entryOrPath.path || entryOrPath.dir))
+  if (!raw || typeof raw !== 'string') return null
+  const match = slash(raw).match(/(?:^|\/)(\.(?:agents|claude)\/skills\/[^/]+)(?:\/|$)/)
+  if (!match) return null
+  return match[1].split('/').join(path.sep)
+}
+
+function canonicalRepo(entry) {
+  const raw = typeof entry === 'string' ? entry : (entry && (entry.repo || entry.path))
+  if (!raw || typeof raw !== 'string') return null
+  let candidate = slash(raw)
+  candidate = candidate.replace(/\/\.aether\/(?:work|worktrees|lanes|exams|seats|delegates)(?:\/.*)?$/, '')
+  candidate = candidate.replace(/\/\.(?:worktrees|claude\/worktrees)(?:\/.*)?$/, '')
+  candidate = candidate.replace(/\/\.(?:agents|claude)\/skills(?:\/.*)?$/, '')
+  if (!candidate) return null
+  if (fs.existsSync(candidate)) {
+    try {
+      const mainRoot = repoPaths(candidate).mainRoot
+      if (mainRoot) return mainRoot
+    } catch {}
+  }
+  return candidate
+}
+
+function gitCommitTimes(repo, relPath) {
+  const rel = slash(relPath)
+  const result = git(['log', '--reverse', '--format=%ct', '--', rel], repo, { allowFail: true })
+  if (!result || result.status !== 0 || !result.stdout) return []
+  return result.stdout.split('\n').map((line) => Number.parseInt(line, 10)).filter((n) => Number.isFinite(n))
+}
+
+function alreadyInGitBefore(repo, relPath, beforeMs = null) {
+  try {
+    if (!repo || !relPath || typeof repo !== 'string' || typeof relPath !== 'string') return false
+    if (!fs.existsSync(repo)) return false
+    if (typeof beforeMs === 'number') {
+      if (!fs.existsSync(path.join(repo, relPath))) return false
+      const times = gitCommitTimes(repo, relPath)
+      return times.length > 0 && (times[0] + 1) * 1000 <= beforeMs
+    }
+    const rels = new Set()
+    const primary = slash(skillRelPath(relPath) || relPath)
+    rels.add(primary)
+    const name = path.posix.basename(primary)
+    if (name && name !== '.' && name !== '..') {
+      rels.add(`.agents/skills/${name}`)
+      rels.add(`.claude/skills/${name}`)
+    }
+    for (const rel of rels) {
+      if (gitCommitTimes(repo, rel).length > 0) return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+function shouldRecordCreated(dataDir, { repo, name, dir, type = 'project' } = {}) {
+  const existing = readCreated(dataDir)
+  if (type === 'owner') {
+    return !existing.some((entry) => entry.type === 'owner' && entry.name === name)
+  }
+  const canon = canonicalRepo({ repo, path: dir })
+  if (existing.some((entry) => entry.type !== 'owner' && entry.name === name && canonicalRepo(entry) === canon)) {
+    return false
+  }
+  const primary = skillRelPath(dir) || path.join('.agents', 'skills', name)
+  if (alreadyInGitBefore(canon, primary, null)) return false
+  const claude = path.join('.claude', 'skills', name)
+  if (slash(primary) !== slash(claude) && alreadyInGitBefore(canon, claude, null)) return false
+  return true
+}
+
+function pathSatInWorktree(entry) {
+  const raw = slash(`${entry && entry.path ? entry.path : ''}\n${entry && entry.repo ? entry.repo : ''}`)
+  return /\/\.aether\/(?:work|worktrees|lanes|exams|seats|delegates)(?:\/|$)/.test(raw)
+    || /\/\.(?:worktrees|claude\/worktrees)(?:\/|$)/.test(raw)
+}
+
+function dedupeCreated(entries) {
+  const seen = new Set()
+  const kept = []
+  for (const entry of entries) {
+    if (!entry || typeof entry.name !== 'string') continue
+    const owner = entry.type === 'owner'
+    const repo = owner ? null : canonicalRepo(entry)
+    const key = owner ? `owner\0${entry.name}` : `${repo}\0${entry.name}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const rel = skillRelPath(entry)
+    const next = { ...entry, repo: owner ? entry.repo ?? null : repo }
+    if (!owner && repo && rel && pathSatInWorktree(entry)) {
+      next.path = path.join(repo, rel)
+    }
+    if (!owner && alreadyInGitBefore(repo, rel, entry.time)) continue
+    kept.push(next)
+  }
+  return kept
+}
+
+function readCreatedDeduplicated(dataDir) {
+  return dedupeCreated(readCreated(dataDir))
+}
+
+function inWindow(entry, { since, until, session }) {
+  if (session != null && entry.session !== session) return false
+  if (since != null || until != null) {
+    if (typeof entry.time !== 'number') return false
+    if (since != null && entry.time < since) return false
+    if (until != null && entry.time > until) return false
+  }
+  return true
+}
+
+function sameRepo(entry, wanted) {
+  if (wanted == null) return true
+  return canonicalRepo(entry) === canonicalRepo({ repo: wanted, path: wanted })
+}
+
+function countSkills(lines, into) {
+  for (const line of lines) {
+    if (!Array.isArray(line.skills)) continue
+    for (const name of line.skills) {
+      if (typeof name !== 'string' || !name) continue
+      into[name] = (into[name] || 0) + 1
+    }
+  }
+}
+
+function blankProject() {
+  return {
+    created: [],
+    downloaded: [],
+    leadLoads: 0,
+    agentUses: 0,
+    delegateUses: 0,
+    swarmUses: 0,
+    notices: 0,
+    noticesByKind: {},
+  }
+}
+
+function projectOf(projects, repoKey) {
+  const key = repoKey || ''
+  if (!projects[key]) projects[key] = blankProject()
+  return projects[key]
+}
+
+function skillsReport(dataDir, { repo = null, since = null, until = null, session = null } = {}) {
+  const window = { since, until, session }
+  const createdRawEntries = readCreated(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
+  const created = readCreatedDeduplicated(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
+  const downloadedRaw = readInstalls(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
+  const downloadedSeen = new Set()
+  const downloaded = []
+  for (const entry of downloadedRaw) {
+    const key = `${canonicalRepo(entry)}\0${entry.name}`
+    if (downloadedSeen.has(key)) continue
+    downloadedSeen.add(key)
+    downloaded.push(entry)
+  }
+  const uses = readUses(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
+  const notices = readNotices(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
+  const leadLines = uses.filter((entry) => entry.kind === 'lead')
+  const delegateLines = uses.filter((entry) => entry.kind === 'delegate')
+  const swarmLines = uses.filter((entry) => entry.kind === 'run')
+  const leadLoadsBySkill = {}
+  const agentUsesBySkill = {}
+  countSkills(leadLines, leadLoadsBySkill)
+  countSkills(delegateLines, agentUsesBySkill)
+  countSkills(swarmLines, agentUsesBySkill)
+  const noticesByKind = {}
+  for (const notice of notices) {
+    if (typeof notice.kind !== 'string') continue
+    noticesByKind[notice.kind] = (noticesByKind[notice.kind] || 0) + 1
+  }
+  const projects = {}
+  for (const entry of created) projectOf(projects, entry.repo).created.push(entry)
+  for (const entry of downloaded) projectOf(projects, canonicalRepo(entry)).downloaded.push(entry)
+  for (const entry of leadLines) projectOf(projects, canonicalRepo(entry)).leadLoads += 1
+  for (const entry of delegateLines) {
+    const bucket = projectOf(projects, canonicalRepo(entry))
+    bucket.delegateUses += 1
+    bucket.agentUses += 1
+  }
+  for (const entry of swarmLines) {
+    const bucket = projectOf(projects, canonicalRepo(entry))
+    bucket.swarmUses += 1
+    bucket.agentUses += 1
+  }
+  for (const notice of notices) {
+    const bucket = projectOf(projects, canonicalRepo(notice))
+    bucket.notices += 1
+    if (typeof notice.kind === 'string') {
+      bucket.noticesByKind[notice.kind] = (bucket.noticesByKind[notice.kind] || 0) + 1
+    }
+  }
+  return {
+    mode: 'skills',
+    period: { since, until },
+    totals: {
+      created: created.length,
+      createdRaw: createdRawEntries.length,
+      downloaded: downloaded.length,
+      leadLoads: leadLines.length,
+      agentUses: delegateLines.length + swarmLines.length,
+      delegateUses: delegateLines.length,
+      swarmUses: swarmLines.length,
+      notices: notices.length,
+      noticesByKind,
+    },
+    created,
+    downloaded,
+    leadLoadsBySkill,
+    agentUsesBySkill,
+    projects,
+  }
+}
+
 module.exports = {
   computedHash,
+  CONFIG_FILE,
+  skillsDir,
+  createdFile,
   installsFile,
+  usesFile,
+  noticesFile,
+  loadSkillsConfig,
+  recordCreated,
+  readCreated,
   recordInstall,
   readInstalls,
+  recordUse,
+  readUses,
+  recordNotice,
+  readNotices,
+  canonicalRepo,
+  skillRelPath,
+  alreadyInGitBefore,
+  shouldRecordCreated,
+  readCreatedDeduplicated,
+  skillsReport,
   posttool
 }

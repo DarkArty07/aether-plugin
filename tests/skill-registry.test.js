@@ -87,3 +87,128 @@ test('other commands, other tools and a failed lookup record nothing and never t
   assert.deepEqual(reg.readInstalls(w.data), [])
   assert.deepEqual(reg.readInstalls(path.join(w.data, 'missing')), [])
 })
+
+test('readCreatedDeduplicated groups worktree entries by main repo and discards skills already committed in git before entry.time (R5, R6, R7, C3, C8)', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-skills-reg-')
+  const preDir = path.join(repo.dir, '.agents', 'skills', 'artificial-analysis')
+  fs.mkdirSync(preDir, { recursive: true })
+  fs.writeFileSync(path.join(preDir, 'SKILL.md'), '---\nname: artificial-analysis\ndescription: AA\n---\nbody\n')
+  repo.git('add', '.agents/skills/artificial-analysis/SKILL.md')
+  repo.git('commit', '-m', 'pre-existing skill')
+  const commitSec = Number.parseInt(repo.git('log', '-n', '1', '--format=%ct'), 10)
+  const afterCommitMs = (commitSec + 10) * 1000
+
+  for (const wt of ['wt-1', 'wt-2', 'wt-3']) {
+    reg.recordCreated(data, {
+      time: afterCommitMs + 100,
+      session: 's1',
+      repo: path.join(repo.dir, '.aether', 'work', 'delegates', wt, 'wt'),
+      name: 'artificial-analysis',
+      path: path.join(repo.dir, '.aether', 'work', 'delegates', wt, 'wt', '.agents', 'skills', 'artificial-analysis'),
+      type: 'project',
+    })
+  }
+  reg.recordCreated(data, { time: afterCommitMs + 200, session: 's1', repo: repo.dir, name: 'artificial-analysis', path: preDir, type: 'project' })
+  for (const p of [
+    path.join(repo.dir, '.aether', 'work', 'delegates', 'd1', 'wt', '.agents', 'skills', 'diseno-de-juego'),
+    path.join(repo.dir, '.agents', 'skills', 'diseno-de-juego'),
+  ]) {
+    reg.recordCreated(data, { time: afterCommitMs + 300, session: 's2', repo: path.dirname(path.dirname(path.dirname(p))), name: 'diseno-de-juego', path: p, type: 'project' })
+  }
+  reg.recordCreated(data, { time: afterCommitMs + 400, session: 's3', repo: '/gone/project-a', name: 'criterio-del-dueno', path: '/gone/project-a/.claude/skills/criterio-del-dueno', type: 'project' })
+  reg.recordCreated(data, { time: afterCommitMs + 500, session: 's4', repo: '/gone/project-b', name: 'direccion-de-arte', path: '/gone/project-b/.claude/skills/direccion-de-arte', type: 'project' })
+
+  assert.equal(reg.readCreated(data).length, 8)
+  const deduped = reg.readCreatedDeduplicated(data)
+  assert.deepEqual(deduped.map((e) => e.name), ['diseno-de-juego', 'criterio-del-dueno', 'direccion-de-arte'])
+  const game = deduped[0]
+  assert.equal(game.path.endsWith(path.join('.agents', 'skills', 'diseno-de-juego')), true)
+  assert.equal(game.path.includes('.aether'), false, 'the worktree path is rewritten to the main repo')
+  assert.equal(reg.shouldRecordCreated(data, { repo: repo.dir, name: 'artificial-analysis', dir: preDir }), false)
+  assert.equal(reg.shouldRecordCreated(data, { repo: repo.dir, name: 'diseno-de-juego', dir: path.join(repo.dir, '.agents', 'skills', 'diseno-de-juego') }), false)
+  assert.equal(reg.shouldRecordCreated(data, { repo: repo.dir, name: 'brand-new', dir: path.join(repo.dir, '.agents', 'skills', 'brand-new') }), true)
+
+  const rep = reg.skillsReport(data)
+  assert.equal(rep.totals.createdRaw, 8)
+  assert.equal(rep.totals.created, 3)
+  assert.equal(rep.totals.downloaded, 0)
+  assert.equal(rep.totals.agentUses, 0)
+})
+
+test('loadSkillsConfig reads repeat and topics, and notices store only metadata (R2, R12, R16)', (t) => {
+  const cfg = reg.loadSkillsConfig()
+  assert.equal(cfg.repeat.minWordLength, 3)
+  assert.equal(cfg.repeat.similarityThreshold, 0.35)
+  assert.ok(cfg.repeat.stopwords.includes('falta'))
+  assert.deepEqual(cfg.topics.slice(0, 6).map((topic) => topic.id), [
+    'machine-learning', 'google-colab', 'godot', 'containers', 'browser-automation', 'shaders',
+  ])
+  const data = tempDir(t, 'aether-skills-notice-')
+  const saved = reg.recordNotice(data, {
+    time: 9,
+    session: 's1',
+    repo: '/r',
+    kind: 'topic-search',
+    name: 'machine-learning',
+    detail: 'do not store this',
+  })
+  assert.deepEqual(saved, { time: 9, session: 's1', repo: '/r', kind: 'topic-search', name: 'machine-learning' })
+  assert.deepEqual(reg.readNotices(data), [saved])
+  reg.recordUse(data, { time: 9, session: 's1', kind: 'lead', skills: ['skills'], repo: '/r' })
+  reg.recordUse(data, { time: 10, session: 's1', kind: 'delegate', task: 't1', skills: ['pdf'], repo: '/r' })
+  reg.recordUse(data, { time: 11, session: 's2', kind: 'run', run: 'run-1', skills: ['pdf'], repo: '/other' })
+  const rep = reg.skillsReport(data, { repo: '/r', since: 9, until: 10 })
+  assert.equal(rep.mode, 'skills')
+  assert.deepEqual(rep.period, { since: 9, until: 10 })
+  assert.equal(rep.totals.leadLoads, 1)
+  assert.equal(rep.totals.delegateUses, 1)
+  assert.equal(rep.totals.swarmUses, 0)
+  assert.equal(rep.totals.agentUses, 1)
+  assert.equal(rep.totals.notices, 1)
+  assert.deepEqual(rep.leadLoadsBySkill, { skills: 1 })
+  assert.deepEqual(rep.agentUsesBySkill, { pdf: 1 })
+  assert.equal(rep.totals.noticesByKind['topic-search'], 1)
+})
+
+test('loadSkillsConfig reads AETHER_SKILLS_CONFIG when no path is passed (R2)', (t) => {
+  const dir = tempDir(t, 'aether-skills-cfg-')
+  const file = path.join(dir, 'skills.json')
+  fs.writeFileSync(file, JSON.stringify({
+    repeat: { minWordLength: 4, similarityThreshold: 0.5, stopwords: ['zz'] },
+    topics: [{ id: 'from-env' }],
+  }))
+  const previous = process.env.AETHER_SKILLS_CONFIG
+  process.env.AETHER_SKILLS_CONFIG = file
+  t.after(() => {
+    if (previous === undefined) delete process.env.AETHER_SKILLS_CONFIG
+    else process.env.AETHER_SKILLS_CONFIG = previous
+  })
+  const fromEnv = reg.loadSkillsConfig()
+  assert.equal(fromEnv.repeat.minWordLength, 4)
+  assert.equal(fromEnv.repeat.similarityThreshold, 0.5)
+  assert.deepEqual(fromEnv.topics.map((topic) => topic.id), ['from-env'])
+  const bundled = reg.loadSkillsConfig(reg.CONFIG_FILE)
+  assert.equal(bundled.repeat.similarityThreshold, 0.35)
+})
+
+test('skill paths include nested files and committed skills are detected from a vanished worktree', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-skills-reg-')
+  const dir = path.join(repo.dir, '.claude', 'skills', 'existing')
+  put(path.join(dir, 'SKILL.md'))
+  repo.git('add', '.claude/skills/existing/SKILL.md')
+  repo.git('commit', '-m', 'existing skill')
+  const worktree = path.join(repo.dir, '.aether', 'worktrees', 'gone')
+  assert.equal(reg.skillRelPath(path.join(dir, 'references', 'guide.md')), path.join('.claude', 'skills', 'existing'))
+  assert.equal(reg.shouldRecordCreated(data, { repo: worktree, name: 'existing', dir: path.join(worktree, '.claude', 'skills', 'existing') }), false)
+})
+
+test('report filters the deduplicated created records, not later duplicates', (t) => {
+  const data = tempDir(t, 'aether-skills-reg-')
+  reg.recordCreated(data, { time: 10, session: 'first', repo: '/gone/project', name: 'demo', path: '/gone/project/.agents/skills/demo' })
+  reg.recordCreated(data, { time: 20, session: 'second', repo: '/gone/project', name: 'demo', path: '/gone/project/.agents/skills/demo' })
+  const report = reg.skillsReport(data, { session: 'second' })
+  assert.equal(report.totals.createdRaw, 1)
+  assert.equal(report.totals.created, 0)
+})
