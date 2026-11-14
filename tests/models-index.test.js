@@ -198,14 +198,37 @@ test('lane-only entries and owner exclusions stay outside models in use; README 
   assert.ok(text.split('\n').length < 80)
 })
 
+test('lane-only models remain not offered when declared superseded or out of scope', (t) => {
+  const listings = AGY({ superseded: { old: { by: 'acme-1', on: '2026-11-13', reason: 'Replaced.' } }, outOfScope: { tiny: { on: '2026-11-13', reason: 'Out of scope.' } } })
+  const lanes = { harnesses: { agy: { models: { old: { roles: ['writer'] }, tiny: { roles: ['reviewer'] } } } } }
+  const w = work(t, { listings, lanes, pairs: ROWS, profiles: { 'acme-1': PROFILE('Acme 1'), old: PROFILE('Old'), tiny: PROFILE('Tiny') } })
+  const out = builder.main(w.args(['--write']))
+  assert.equal(out.exitCode, 0, out.stdout)
+  const file = built(w)
+  assert.deepEqual(file.notOffered.map((entry) => entry.model), ['old', 'tiny'])
+  assert.match(out.stdout, /Named by the lane table and not offered \(2\): agy\/old, agy\/tiny\./)
+})
+
 test('committed files retain the index shape, profiles, ordering and a short README', () => {
   const config = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models')
   const file = JSON.parse(fs.readFileSync(path.join(config, 'models.json'), 'utf8'))
   const listings = JSON.parse(fs.readFileSync(path.join(config, 'harness-models.json'), 'utf8'))
+  const profiles = JSON.parse(fs.readFileSync(path.join(config, 'profiles.json'), 'utf8')).profiles
   assert.deepEqual(fs.readdirSync(config).filter((name) => name !== 'aa-pages.json').sort(), ['harness-models.json', 'models.json', 'profiles.json'])
   assert.deepEqual(Object.keys(file.rules), ['newest', 'offered', 'profiled'])
   assert.deepEqual(missingListings(listings, file.harnesses), [])
   assert.deepEqual(missingProfiles(file), [])
+  const fields = ['purpose', 'contextTokens', 'maxOutputTokens', 'defaultEffort', 'price', 'knowledgeCutoff', 'availability', 'caveats', 'sources', 'checked']
+  for (const entry of file.models) {
+    const required = ['harness', 'model', 'family', 'name', 'maker', 'effortVia', 'efforts', 'scores', 'lane', 'profile']
+    const optional = ['alias', 'released', 'ids', 'fastIds']
+    assert.deepEqual(Object.keys(entry).filter((key) => !optional.includes(key)).sort(), required.sort())
+    const profile = profiles[entry.family] ?? profiles[entry.family.replace(/\./g, '-')] ?? profiles[entry.family.replace(/-/g, '.')]
+    assert.ok(profile, `profile for ${entry.harness}/${entry.model}`)
+    assert.deepEqual(entry.profile, Object.fromEntries(fields.map((field) => [field, profile[field] ?? null])))
+    assert.equal(entry.name, profile.name)
+    assert.equal(entry.maker, profile.maker)
+  }
   const order = ['claude', 'agy', 'codex', 'grok', 'cursor', 'muse']
   assert.deepEqual(file.models, [...file.models].sort((a, b) => order.indexOf(a.harness) - order.indexOf(b.harness) || (Object.hasOwn(file, 'since') ? 0 : a.model < b.model ? -1 : a.model > b.model ? 1 : 0)))
   for (const entry of [...file.models, ...file.excluded, ...file.withoutFigures, ...file.notOffered]) {

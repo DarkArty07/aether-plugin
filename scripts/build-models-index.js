@@ -60,7 +60,7 @@ function buildIndex({ lanes = {}, harnessModels = {}, pairs = [], snapshot = { p
   for (const entry of harnessEntries(lanes, harnessModels, harnesses, pairs)) {
     const { harness, model, detail } = entry
     const listing = harnessModels.harnesses?.[harness] ?? {}
-    if (!detail.excluded && (listing.superseded?.[model] || listing.outOfScope?.[model])) continue
+    if (detail.listing !== 'not-listed' && !detail.excluded && (listing.superseded?.[model] || listing.outOfScope?.[model])) continue
     const scores = []
     for (const effort of detail.efforts) {
       const pair = pairs.find((row) => row.harness === harness && (row.model === model || row.model === detail.alias) && row.effort === effort)
