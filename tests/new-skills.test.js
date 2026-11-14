@@ -13,6 +13,15 @@ function frontMatter(text) {
   return Object.fromEntries(m[1].split('\n').map((line) => [line.slice(0, line.indexOf(':')), line.slice(line.indexOf(':') + 1).trim().replace(/^"|"$/g, '')]))
 }
 
+function section(text, heading) {
+  const marker = `\n${heading}\n`
+  const start = text.indexOf(marker)
+  assert.ok(start >= 0, `missing section ${heading}`)
+  const body = text.slice(start + marker.length)
+  const next = body.indexOf('\n## ')
+  return next === -1 ? body : body.slice(0, next)
+}
+
 test('aether:skills has its cover and can be loaded by the Lead (C12, R34)', () => {
   const text = read('skills', 'skills', 'SKILL.md')
   const front = frontMatter(text)
@@ -82,6 +91,27 @@ test('aether:skills explains when to search on practical topics, Context7 for li
   assert.ok(text.includes('Context7'), 'aether:skills names Context7 for library API documentation')
   assert.match(text, /practical process|practical topic/i)
   assert.match(text, /write the project skill|writes the project skill/i)
+
+  const finding = section(text, '## Finding and Downloading Skills')
+  assert.match(finding, /visible-signals notice/, 'search when the visible-signals notice fires')
+  assert.match(finding, /first Aether startup in a new project/, 'search on the first Aether startup in a new project')
+  assert.match(finding, /writing `specs\/NNN-<topic>\/intent\.md`/, 'search when writing specs/NNN-<topic>/intent.md')
+  assert.match(finding, /enters a new practical topic/, 'search when the Lead enters a new practical topic')
+  assert.match(finding, /step-by-step operational procedures/, 'a practical topic is one where step-by-step procedures matter')
+  assert.match(finding, /Machine Learning/, 'practical topic example: Machine Learning')
+  assert.match(finding, /Google Colab/, 'practical topic example: Google Colab')
+  assert.match(
+    finding,
+    /Skills are for practical processes and repeatable procedures\.[\s\S]{0,160}The API documentation of a library is looked up with Context7/,
+    'skills are practical processes; library API documentation is looked up with Context7'
+  )
+
+  const creating = section(text, '## When to Create a Skill')
+  assert.match(
+    creating,
+    /no suitable skill[\s\S]{0,80}none passes review[\s\S]{0,200}writes the project skill in `\.agents\/skills\/<name>\/SKILL\.md` \(with its symlink in `\.claude\/skills\/<name>`\) with what it learned/,
+    'when no suitable skill is found or none passes review, write .agents/skills/<name>/SKILL.md and symlink .claude/skills/<name>'
+  )
 })
 
 test('skills skill uses --author flag in aether-autonomy trust command', () => {
