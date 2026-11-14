@@ -479,11 +479,36 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
         const { dataDir } = require('./run.js')
         const { isSpanish } = require('./continuity-store.js')
         const { idleSkills, idleLine } = require('./skill-idle.js')
+        const { recordNotice } = require('./skill-registry.js')
         const spanish = isSpanish(env)
-        const idle = idleSkills(dataDir(env), { repo: mainRoot, now })
+        const data = dataDir(env)
+        const idle = idleSkills(data, { repo: mainRoot, now })
         const line = idleLine(idle.map((s) => s.name), { spanish })
         if (line) {
           idleLines = [line]
+          for (const s of idle) {
+            recordNotice(data, { time: now, session: input.session_id, repo: mainRoot, kind: 'idle-skills', name: s.name })
+          }
+        }
+      } catch {}
+    }
+  }
+
+  let topicLines = []
+  if (source === 'startup' && firstSession && mainRoot !== null) {
+    const runsPath = path.join(mainRoot, '.aether', 'runs')
+    const autonomyPath = path.join(mainRoot, '.aether', 'autonomy')
+    if (!fs.existsSync(runsPath) && !fs.existsSync(autonomyPath)) {
+      try {
+        const { startupTopicNotice } = require('./skill-review.js')
+        const { dataDir } = require('./run.js')
+        const os = require('node:os')
+        const top = workRoot ?? cwd
+        const home = env.HOME || os.homedir()
+        const data = dataDir(env)
+        const notice = startupTopicNotice({ cwd: top, home, dataDir: data, session: input.session_id })
+        if (notice) {
+          topicLines.push(notice)
         }
       } catch {}
     }
@@ -516,7 +541,7 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
   // The continuity notice that goes to the Lead's context (none for a project's first session), and the whole context.
   const contextOf = (lines) => {
     const contextNotice = firstSession ? '' : lines.join('\n')
-    const additionalContext = [baseContext, contextNotice, tidyLines.join('\n'), idleLines.join('\n'), calibrationNote, runNote]
+    const additionalContext = [baseContext, contextNotice, tidyLines.join('\n'), idleLines.join('\n'), topicLines.join('\n'), calibrationNote, runNote]
       .filter(Boolean)
       .join('\n\n')
     return { contextNotice, additionalContext }
@@ -533,9 +558,11 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     return JSON.stringify(output) + '\n'
   }
 
-  // The payload holds the whole context, so its length is the one to check: the disorder and idle lines go first.
-  while ((tidyLines.length > 0 || idleLines.length > 0) && buildPayload(noticeLines).length > PART_LIMIT) {
-    if (idleLines.length > 0) {
+  // The payload holds the whole context, so its length is the one to check: the disorder, idle and topic lines go first.
+  while ((topicLines.length > 0 || idleLines.length > 0 || tidyLines.length > 0) && buildPayload(noticeLines).length > PART_LIMIT) {
+    if (topicLines.length > 0) {
+      topicLines.pop()
+    } else if (idleLines.length > 0) {
       idleLines.pop()
     } else {
       tidyLines.pop()
