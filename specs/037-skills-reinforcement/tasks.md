@@ -9,6 +9,7 @@
 - Outside a Lead session (`!isAetherSession`), every hook must exit 0 with 0 B stdout and 0 files written (R18). `aether-report --skills` must work in any shell and only read from `<dataDir>/skills/*.jsonl`.
 - Do not modify `plugins/aether/skills/using-aether/SKILL.md`: the three SessionStart bootstrap parts must remain within 9,800 characters and not grow above the 0.42.0 baseline (R19).
 - All notices are advisory and run without a model; none of the new checks blocks a tool call or a delegate launch.
+- A delegate verdict stores each finding as `{ file, line, what }` (`plugins/aether/lib/ladder.js:90`): every comparison of findings reads `what`, never a field named `detail`.
 
 ## Aether Execution
 
@@ -32,7 +33,7 @@
 
 **Aether:**
 - Area: skills-registry
-- Owns: `plugins/aether/config/skills.json`, `plugins/aether/lib/skill-registry.js`, `tests/skill-registry.test.js`, `tests/observe-calibrate.test.js`
+- Owns: `plugins/aether/config/skills.json`, `plugins/aether/lib/skill-registry.js`, `tests/skill-registry.test.js`
 - Depends on: none
 - Serves: R2, R5, R6, R7, R12, R16, R17, R21
 
@@ -50,8 +51,8 @@
    - `canonicalRepo(entry) -> string | null`: resolves the main repository root from `entry.repo` or `entry.path` by stripping any worktree suffix (`/.aether/(?:work|worktrees|lanes|exams|seats|delegates)(?:/.*)?$` or `/.(?:worktrees|claude/worktrees)(?:/.*)?$`) and any skill suffix (`/.(?:agents|claude)/skills(?:/.*)?$`), then returning `repoPaths(candidate).mainRoot` when `candidate` is an existing git checkout, or the stripped path when it no longer exists on disk.
    - `skillRelPath(entryOrPath) -> string | null`: extracts `.agents/skills/<name>` or `.claude/skills/<name>` from a path or entry.
    - `alreadyInGitBefore(repo, relPath, beforeMs = null) -> boolean`: read-only query via `git(['log', '--reverse', '--format=%ct', '--', relPath], repo, { allowFail: true })`. When `beforeMs === null`, returns `true` if `repo` exists on disk and `git log` returns at least one commit timestamp for `relPath` (or `.agents/skills/<name>` / `.claude/skills/<name>`). When `typeof beforeMs === 'number'`, returns `true` only when `repo` and `path.join(repo, relPath)` exist on disk and the earliest commit timestamp satisfies `(firstCommitSec + 1) * 1000 <= beforeMs`. Returns `false` when `repo` or `relPath` does not exist on disk or `git` fails.
-   - `shouldRecordCreated(dataDir, { repo, name, dir, type = 'project' }) -> boolean`: returns `false` when `readCreated(dataDir)` already contains an entry with the same `(canonicalRepo(e), e.name)` (or `type === 'owner'` with the same `name`), or when `type === 'project'` and `alreadyInGitBefore(repo, skillRelPath(dir) || `.agents/skills/${name}`, null)` (or `.claude/skills/${name}`) is `true`.
-   - `readCreatedDeduplicated(dataDir) -> Array<object>`: groups `readCreated(dataDir)` by `(canonicalRepo(entry), entry.name)` (or `('owner', entry.name)` for `type === 'owner'`), keeping the first entry of each pair with `repo: canonicalRepo(entry)`, and filters out any project entry where `alreadyInGitBefore(repo, skillRelPath(entry), entry.time)` is `true`.
+   - `shouldRecordCreated(dataDir, { repo, name, dir, type = 'project' }) -> boolean`: returns `false` when `readCreated(dataDir)` already contains an entry with the same `(canonicalRepo(e), e.name)` (or `type === 'owner'` with the same `name`), or when `type === 'project'` and `alreadyInGitBefore(repo, skillRelPath(dir) || ".agents/skills/" + name, null)` (or `.claude/skills/<name>`) is `true`.
+   - `readCreatedDeduplicated(dataDir) -> Array<object>`: groups `readCreated(dataDir)` by `(canonicalRepo(entry), entry.name)` (or `('owner', entry.name)` for `type === 'owner'`), keeping the first entry of each pair with `repo: canonicalRepo(entry)` and, for a project entry whose `path` sat in a worktree, `path` rewritten to `path.join(repo, skillRelPath(entry))` (so a consumer that checks that `path` exists, such as `idleSkills`, still finds the skill once the worktree is gone), and filters out any project entry where `alreadyInGitBefore(repo, skillRelPath(entry), entry.time)` is `true`.
    - `skillsReport(dataDir, { repo = null, since = null, until = null, session = null } = {}) -> object`: reads `created.jsonl`, `installs.jsonl`, `uses.jsonl` and `notices.jsonl` from `dataDir` (never reading conversation transcripts), applies optional `repo`, `since`, `until`, and `session` filters, deduplicates created skills via `readCreatedDeduplicated` and downloaded skills by `(canonicalRepo(entry), entry.name)`, and returns `{ mode: 'skills', period: { since, until }, totals: { created, createdRaw, downloaded, leadLoads, agentUses, delegateUses, swarmUses, notices, noticesByKind }, created, downloaded, leadLoadsBySkill, agentUsesBySkill, projects }`.
 
 **Tests (write first):**
@@ -91,6 +92,9 @@ test('readCreatedDeduplicated groups worktree entries by main repo and discards 
   assert.equal(reg.readCreated(data).length, 8)
   const deduped = reg.readCreatedDeduplicated(data)
   assert.deepEqual(deduped.map((e) => e.name), ['diseno-de-juego', 'criterio-del-dueno', 'direccion-de-arte'])
+  const game = deduped[0]
+  assert.equal(game.path.endsWith(path.join('.agents', 'skills', 'diseno-de-juego')), true)
+  assert.equal(game.path.includes('.aether'), false, 'the worktree path is rewritten to the main repo')
   assert.equal(reg.shouldRecordCreated(data, { repo: repo.dir, name: 'artificial-analysis', dir: preDir }), false)
   assert.equal(reg.shouldRecordCreated(data, { repo: repo.dir, name: 'diseno-de-juego', dir: path.join(repo.dir, '.agents', 'skills', 'diseno-de-juego') }), false)
   assert.equal(reg.shouldRecordCreated(data, { repo: repo.dir, name: 'brand-new', dir: path.join(repo.dir, '.agents', 'skills', 'brand-new') }), true)
@@ -106,7 +110,7 @@ test('readCreatedDeduplicated groups worktree entries by main repo and discards 
 **Acceptance:**
 - `plugins/aether/config/skills.json` exists with `repeat` and `topics` (`machine-learning`, `google-colab`, and practical topics) as editable JSON data (R2, R12).
 - `shouldRecordCreated` refuses duplicate `(repo, name)` entries across worktrees and skills already committed in `git` (R5, R6).
-- `readCreatedDeduplicated` collapses worktree duplicates to `(repo, name)` and filters out skills that already had a commit in `repo` before `entry.time`, while preserving entries whose repo or path no longer exists on disk (R7).
+- `readCreatedDeduplicated` collapses worktree duplicates to `(repo, name)` with the path in the main repository and filters out skills that already had a commit in `repo` before `entry.time`, while preserving entries whose repo or path no longer exists on disk (R7).
 - `recordNotice`, `readNotices` and `skillsReport` work without reading conversation transcripts (R16, R17).
 
 ### Task 2: Listado de skills del proyecto y coincidencia con encargos de delegados en `lib/skill-brief.js`
@@ -121,13 +125,14 @@ test('readCreatedDeduplicated groups worktree entries by main repo and discards 
 
 `plugins/aether/lib/skill-brief.js` additional exports (preserving `MAX_SKILLS`, `parseFrontmatter`, `resolveSkill`, `loadSkills`, `formatSkillsSection`):
 - `listProjectSkills(cwd) -> Array<{ name: string, description: string }>`: scans `.agents/skills/*/SKILL.md` and `.claude/skills/*/SKILL.md` under `cwd`, parses `name` and `description` from frontmatter (falling back to directory name for `name`), deduplicates by `name` preferring `.agents/skills/`, sorted alphabetically by `name`.
-- `formatProjectSkills(skills) -> string`: returns `''` when `!Array.isArray(skills) || skills.length === 0`; otherwise returns:
+- `formatProjectSkills(skills) -> string`: returns `''` when `!Array.isArray(skills) || skills.length === 0`; otherwise returns these lines joined by `\n`, with no trailing newline, one `- \`<name>\`: <description>` line per skill:
   ```markdown
   ## Project skills
 
   Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):
   - `<name>`: <description>
   ```
+  The workflow in Task 6 emits this same text; both tests pin the same literal block.
 - `matchDelegateSkills(cwd, { prompt = '', description = '', owns = [] } = {}) -> string[]`: compares `listProjectSkills(cwd)` without a model against `prompt`, `description` and `owns`, returning the names of matching project skills (matching when the skill's `name` appears in the text/owns, or when all kebab-case parts of `name` of length `>= 4` appear, or when at least 2 significant words of length `>= 4` from `name` and `description` appear in the normalized words of `prompt`, `description` and `owns`).
 
 **Tests (write first):**
@@ -144,9 +149,17 @@ test('listProjectSkills, formatProjectSkills and matchDelegateSkills discover an
 
   const skills = sb.listProjectSkills(dir)
   assert.deepEqual(skills.map((s) => s.name), ['direccion-de-arte', 'diseno-de-juego'])
-  const formatted = sb.formatProjectSkills(skills)
-  assert.ok(formatted.includes('## Project skills'))
-  assert.ok(formatted.includes('`- Skills: <name>`'))
+  assert.equal(
+    sb.formatProjectSkills(skills),
+    [
+      '## Project skills',
+      '',
+      'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
+      '- `direccion-de-arte`: Paleta, tipografia y composicion visual',
+      '- `diseno-de-juego`: Balance de economia, niveles y combate del juego',
+    ].join('\n'),
+  )
+  assert.equal(sb.formatProjectSkills([]), '')
   assert.deepEqual(
     sb.matchDelegateSkills(dir, { prompt: 'Ajusta el balance de economia y combate del juego', description: 'balance', owns: ['src/game.js'] }),
     ['diseno-de-juego'],
@@ -160,7 +173,7 @@ test('listProjectSkills, formatProjectSkills and matchDelegateSkills discover an
 
 **Acceptance:**
 - `listProjectSkills` discovers project skills from `.agents/skills/` and `.claude/skills/` without duplicates (R8).
-- `formatProjectSkills` formats the `## Project skills` section for the Writer and the Judge (R8).
+- `formatProjectSkills` formats the `## Project skills` section for the Writer and the Judge, with the exact text above (R8).
 - `matchDelegateSkills` matches project skills against a delegate brief's words and `owns` paths without a model (R15).
 
 ### Task 3: Reglas del campo `Skills:` en `agents/writer.md`, `agents/judge.md`, `skills/tasks/SKILL.md` y `speckit/commands/speckit.tasks.md`
@@ -176,7 +189,7 @@ test('listProjectSkills, formatProjectSkills and matchDelegateSkills discover an
 1. `plugins/aether/agents/writer.md`:
    - In `## Aether plan rules`, adds `- **Skills** is optional: up to 3 project or installed skills that help the task, separated by commas, such as \`- Skills: direccion-de-arte, patron-api\`. Put \`Skills:\` on the tasks where one of the project skills applies (at most 3 per task); omit it when none applies.`
 2. `plugins/aether/skills/tasks/SKILL.md` and `plugins/aether/speckit/commands/speckit.tasks.md`:
-   - In step 3 (`The fields are:`), adds `- **Skills:** optional. Up to 3 skills that help the task, separated by commas, such as \`- Skills: direccion-de-arte, patron-api\`. When the project has skills that fit a task, list them here (at most 3 per task); \`aether-plan check\` fails on more than 3 or on a skill that is not installed.`
+   - In step 3 (`The fields are:`), adds `- **Skills:** optional. Up to 3 skills that help the task, separated by commas, such as \`- Skills: direccion-de-arte, patron-api\`. When the project has skills that fit a task, list them here (at most 3 per task); \`aether-plan check\` fails on more than 3 or on a skill that does not exist.` (`aether-plan check` already does both: `plugins/aether/lib/plan-compile.js` reports `Skills lists N skills (at most 3)` and `skill "<name>" does not exist`.)
 3. `plugins/aether/agents/judge.md`:
    - In step 4 (`**On a plan and its tasks:**`), adds `- when the project has skills, check that the tasks where a project skill applies carry it in \`- Skills:\` (at most 3 skills per task) and that no task lists an unrelated skill.`
 
@@ -239,10 +252,11 @@ test('aether:skills explains when to search on practical topics, Context7 for li
 **Interfaces:**
 
 1. `plugins/aether/lib/report.js`:
-   - Re-exports or delegates `skillsReport(dataDir, options)` from `./skill-registry.js`, aggregating across `run.installDirs(dataDir)` when `AETHER_DATA_DIR` is not explicitly pinned to a single directory, or reading `dataDir` directly when `AETHER_DATA_DIR` is set.
+   - Re-exports `skillsReport(dataDir, options)` from `./skill-registry.js`, reading the resolved `dataDir` directly (`<dataDir>/skills/*.jsonl`); it does not aggregate other install directories.
 2. `plugins/aether/bin/aether-report`:
    - Usage header adds `//   aether-report --skills [--repo <path>] [--since <ms|iso>] [--until <ms|iso>] [--session <id>]`.
    - Parses `--skills`, optional `--repo`, `--since`, `--until` and `--session`, and prints `JSON.stringify(skillsReport(dataDir, { repo, since, until, session })) + '\n'`.
+3. `tests/aether-report.test.js`: add `makeRepo` to the existing import of `./helpers.js` (the file already imports `PLUGIN`, `runBin`, `tempDir`) and `const reg = require('../plugins/aether/lib/skill-registry.js')`.
 
 **Tests (write first):**
 
@@ -258,7 +272,6 @@ test('aether-report --skills reports per project and period and reproduces the #
   const commitSec = Number.parseInt(repo.git('log', '-n', '1', '--format=%ct'), 10)
   const t0 = (commitSec + 10) * 1000
 
-  const reg = require('../plugins/aether/lib/skill-registry.js')
   for (let i = 0; i < 4; i++) {
     reg.recordCreated(data, { time: t0 + i, session: 's1', repo: repo.dir, name: 'artificial-analysis', path: preDir, type: 'project' })
   }
@@ -267,15 +280,18 @@ test('aether-report --skills reports per project and period and reproduces the #
   reg.recordCreated(data, { time: t0 + 20, session: 's3', repo: '/gone/a', name: 'criterio-del-dueno', path: '/gone/a/.claude/skills/criterio-del-dueno', type: 'project' })
   reg.recordCreated(data, { time: t0 + 30, session: 's4', repo: '/gone/b', name: 'direccion-de-arte', path: '/gone/b/.claude/skills/direccion-de-arte', type: 'project' })
 
-  const r = spawnSync(process.execPath, [REPORT_BIN, '--skills'], { encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: data } })
+  const r = runBin(REPORT_BIN, ['--skills'], repo.dir, { AETHER_DATA_DIR: data })
   assert.equal(r.status, 0, r.stderr)
-  const out = JSON.parse(r.stdout)
+  const out = r.json
   assert.equal(out.mode, 'skills')
   assert.equal(out.totals.createdRaw, 8)
   assert.equal(out.totals.created, 3)
   assert.deepEqual(out.created.map((s) => s.name), ['diseno-de-juego', 'criterio-del-dueno', 'direccion-de-arte'])
   assert.equal(out.totals.downloaded, 0)
   assert.equal(out.totals.agentUses, 0)
+
+  const later = runBin(REPORT_BIN, ['--skills', '--since', String(t0 + 25)], repo.dir, { AETHER_DATA_DIR: data })
+  assert.deepEqual(later.json.created.map((s) => s.name), ['direccion-de-arte'])
 })
 ```
 
@@ -294,37 +310,56 @@ test('aether-report --skills reports per project and period and reproduces the #
 
 1. `plugins/aether/lib/seats.js`:
    - `seatPrompt({ seat, harness, adapter, message, workdir, feature, doc = 'plan' })`: when `workdir` has project skills (`listProjectSkills(workdir)`) and `(seat === 'writer' && doc !== 'spec') || (seat === 'judge' && doc !== 'spec' && !/^Review the spec\b/.test(String(message || '')))`, includes `formatProjectSkills(skills)` in the prompt if `message` does not already contain `## Project skills`.
-   - `seatCommand`: includes `projectSkills: listProjectSkills(top)` on `value` when returning `unavailable` (exit 3) or `failed` (exit 4).
+   - `seatCommand`: includes `projectSkills: listProjectSkills(top)` on `value` when returning `unavailable` (exit 3) or `failed` (exit 4). With no external pair (lanes off, or `superdelegation` off) the round ends in exit 3, so this is how a native-only design gets the list.
 2. `plugins/aether/lib/seat-calls.js`:
    - `start(cwd, flags)` includes `projectSkills: listProjectSkills(top)` in `{ started: true, id, at, projectSkills }`.
-3. `plugins/aether/workflows/design.workflow.js`:
-   - `formatProjectSkills(skills)`: formats `[{ name, description }]` into the `## Project skills` block.
-   - `awaitSeat` and `seatRound`: read `projectSkills` from `started.projectSkills` or `waited.reply.value.projectSkills`; when `doc === 'plan'` and `(seat === 'writer' || seat === 'judge')` and `projectSkills` is non-empty, append `formatProjectSkills(projectSkills)` to `nativeText` before calling `nativeAnswer`.
+3. `plugins/aether/workflows/design.workflow.js` (it does not import `lib/`):
+   - `formatProjectSkills(skills)`: its own copy, which emits the exact same text as `skill-brief.formatProjectSkills(skills)` (the block fixed in Task 2: `## Project skills`, a blank line, the sentence `Available project skills in this repository (use \`- Skills: <name>\` in tasks where one applies, at most 3 per task):`, then one `- \`<name>\`: <description>` line per skill, joined by `\n`, no trailing newline).
+   - `awaitSeat` keeps `projectSkills` from `started.projectSkills` or from `waited.reply.value.projectSkills` and hands it to `seatRound`; `seat-start` runs on every round of the flow, so a design with no external pair still receives the list from the exit-3 reply. When `doc === 'plan'` and `(seat === 'writer' || seat === 'judge')`, and the round goes to the native agent, `seatRound` appends `\n\n` + `formatProjectSkills(projectSkills)` to `nativeText` before `nativeAnswer` when the list is non-empty. Rounds of `doc === 'spec'` and of the Examiner never get it.
 
 **Tests (write first):**
 
 ```js
-test('design.workflow.js passes projectSkills to the native plan Writer and plan Judge, and not to the spec rounds (R8, C4)', async () => {
-  const projectSkills = [{ name: 'direccion-de-arte', description: 'Paleta y tipografia' }]
+const PROJECT_SKILLS = [{ name: 'direccion-de-arte', description: 'Paleta y tipografia' }]
+const PROJECT_BLOCK = [
+  '## Project skills',
+  '',
+  'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
+  '- `direccion-de-arte`: Paleta y tipografia',
+].join('\n')
+
+function assertPlanRoundsGetSkills(run) {
+  const prompt = (label) => run.calls.find((c) => c.label === label).prompt
+  assert.equal(prompt('spec: writer write').includes('## Project skills'), false)
+  assert.equal(prompt('spec: judge review 1').includes('## Project skills'), false)
+  assert.ok(prompt('plan: writer write').includes(PROJECT_BLOCK))
+  assert.ok(prompt('plan: judge review 1').includes(PROJECT_BLOCK))
+}
+
+test('design.workflow.js passes the project skills of the exit-3 reply (no external pair) to the native plan Writer and plan Judge, and not to the spec rounds (R8, C4)', async () => {
   const run = await go(ARGS, {
     ops: (call, fallback) => {
-      const res = fallback(call)
-      if (call.command.verb === 'seat-start') return { ...res, projectSkills }
-      return res
+      if (call.command.verb === 'seat-wait') {
+        const seat = call.command.rest[0].split('-')[0]
+        return { done: true, exitCode: 3, value: { ...nativeSeat(seat), projectSkills: PROJECT_SKILLS } }
+      }
+      return fallback(call)
     },
   })
-  assert.equal(run.error, null)
-  const specWriter = run.calls.find((c) => c.label === 'spec: writer write')
-  const planWriter = run.calls.find((c) => c.label === 'plan: writer write')
-  const planJudge = run.calls.find((c) => c.label === 'plan: judge review 1')
-  assert.equal(specWriter.prompt.includes('direccion-de-arte'), false)
-  assert.ok(planWriter.prompt.includes('## Project skills') && planWriter.prompt.includes('direccion-de-arte: Paleta y tipografia'))
-  assert.ok(planJudge.prompt.includes('## Project skills') && planJudge.prompt.includes('direccion-de-arte: Paleta y tipografia'))
+  assertPlanRoundsGetSkills(run)
+})
+
+test('design.workflow.js also takes the project skills from the seat-start reply (R8, C4)', async () => {
+  const run = await go(ARGS, {
+    ops: (call, fallback) => (call.command.verb === 'seat-start' ? { ...fallback(call), projectSkills: PROJECT_SKILLS } : fallback(call)),
+  })
+  assertPlanRoundsGetSkills(run)
 })
 ```
 
 **Acceptance:**
-- External seats (`seatPrompt`) and native agents (`design.workflow.js`) receive the available project skills (`name` and `description`) during `plan` writing, `plan` revision, and `plan` review (R8).
+- External seats (`seatPrompt`) and native agents (`design.workflow.js`) receive the available project skills (`name` and `description`) during `plan` writing, `plan` revision, and `plan` review, in the exact block above (R8).
+- A design with no external pair (every round handed back in exit 3) still gives them to the native plan Writer and Judge (R8, C4).
 - Existing tests in `tests/seats.test.js`, `tests/seat-calls.test.js` and `tests/workflow-design.test.js` pass.
 
 ### Task 7: Similitud de palabras entre hallazgos de tareas y sesiones del mismo proyecto y sugerencia de skill en `lib/delegate-task.js` y `lib/skill-repeat.js`
@@ -339,64 +374,75 @@ test('design.workflow.js passes projectSkills to the native plan Writer and plan
 **Interfaces:**
 
 1. `plugins/aether/lib/delegate-task.js`:
-   - In `verdict`: resolves `let repo = null; try { repo = repoPaths(r.cwd).mainRoot } catch {}` and writes `repo` on the `kind: 'verdict'` entry in `delegates/log.jsonl` (R22).
-   - In `begin`: resolves `let repo = null; try { repo = repoPaths(r.cwd).mainRoot } catch {}`; passes `repo` to `recordUse` when `loadedSkills.length > 0`; when `brief.skills.length === 0`, calls `matchDelegateSkills(r.cwd, { prompt, description, owns: brief.owns })`, appends `Aether delegate task ${id}: project skill(s) ${matched.join(', ')} match this brief; add AETHER-SKILLS: ${matched.slice(0, 3).join(', ')} if it helps.` to `notes` (`plan.notes`) without modifying `args.prompt` or `externalPrompt`, and records each suggested skill with `recordNotice(r.dataDir, { time, session, repo, kind: 'delegate-skill', name })` (R15, R16).
+   - In `verdict`: resolves `let repo = null; try { repo = repoPaths(r.cwd).mainRoot } catch {}` and writes `repo` on the `kind: 'verdict'` entry in `delegates/log.jsonl` (R22). `r.cwd` is `deps.cwd`, or `process.cwd()` for the bin.
+   - In `begin` (`begin({ session, event: { description, prompt } }, deps)`): resolves `let repo = null; try { repo = repoPaths(r.cwd).mainRoot } catch {}`; passes `repo` to `recordUse` when `loadedSkills.length > 0`; when `brief.skills.length === 0`, calls `matchDelegateSkills(r.cwd, { prompt, description, owns: brief.owns })`, appends `Aether delegate task ${id}: project skill(s) ${matched.join(', ')} match this brief; add AETHER-SKILLS: ${matched.slice(0, 3).join(', ')} if it helps.` to `notes` (`plan.notes`) without modifying `args.prompt` or `externalPrompt`, and records each suggested skill with `recordNotice(r.dataDir, { time, session, repo, kind: 'delegate-skill', name })` (R15, R16).
 2. `plugins/aether/lib/skill-repeat.js`:
-   - `wordSimilarity(detailA, detailB, config = null) -> number` and `findingsMatch(detailA, detailB, config = null) -> boolean`: read `repeat` (`minWordLength`, `similarityThreshold`, `stopwords`) from `loadSkillsConfig()` (or `config` override, R2), normalize words (lowercase, stripped diacritics, length `>= minWordLength`, not in `stopwords`), treat words as equal when identical or when both have length `>= 5` and share a 5-character prefix, and compare Jaccard similarity against `similarityThreshold`.
-   - `repeatedFindings(dataDir, { session = null, task = null, repo = null, config = null } = {}) -> Array<{ file: string, detail: string, tasks: string[] }>`: compares findings of the target task `(session, task)` against `verdict === 'fix'` entries of other tasks `(entry.session, entry.task)` in the same project (`entry.repo === targetRepo` across sessions when both have `repo`, or `entry.session === session && entry.task !== task` when `repo` is absent on legacy entries, R1, R22).
-   - `posttool(input, ctx)`: resolves `repo` from `input.cwd`, runs `repeatedFindings`, records each repeated file with `recordNotice(dataDir, { session: input.session_id, repo, kind: 'repeated-finding', name: item.file })` (R16), and returns the notice string.
+   - `wordSimilarity(whatA, whatB, config = null) -> number` and `findingsMatch(whatA, whatB, config = null) -> boolean`: read `repeat` (`minWordLength`, `similarityThreshold`, `stopwords`) from `loadSkillsConfig()` (or the `config` override, R2), take the words of `finding.what` (the text of a finding `{ file, line, what }` as `aether-delegate verdict --finding` stores it, `ladder.js:90`; lowercase, stripped diacritics, length `>= minWordLength`, not in `stopwords`), treat words as equal when identical or when both have length `>= 5` and share a 5-character prefix, and compare Jaccard similarity against `similarityThreshold`.
+   - `repeatedFindings(dataDir, { session = null, task = null, repo = null, config = null } = {}) -> Array<{ finding: string, tasks: string[] }>`: keeps the return shape and the finding text `"${file}: ${what}"` of the target task's finding that `tests/skill-repeat.test.js:17` asserts (those tests and the notice text asserted at `:38-55` do not change). It compares `finding.what` of the target task `(session, task)` against the `verdict === 'fix'` entries of other tasks `(entry.session, entry.task)` on the same file, in the same project: `entry.repo === targetRepo` across sessions when both have `repo` (`targetRepo` is the `repo` option or the target entry's `repo`), or `entry.session === session && entry.task !== task` when `repo` is absent on a legacy entry (R1, R22).
+   - `posttool(input, ctx)`: resolves `repo` from `input.cwd`, runs `repeatedFindings`, records each repeated file with `recordNotice(dataDir, { session: input.session_id, repo, kind: 'repeated-finding', name: r.finding.split(':')[0] })` (R16), and returns the existing notice format (`The finding "${r.finding}" already came up in ${taskNoun} ${r.tasks.join(', ')}. Consider a skill for it: load aether:skills.`).
+3. Test files: `tests/skill-repeat.test.js` adds `makeRepo` and `runBin` to its imports from `./helpers.js`, `PLUGIN`, `path`, `delegate-task.js` as `task`, `skill-registry.js` as `reg`; `tests/delegate-skills.test.js` adds `reg`. The first test uses the file's existing `world(t)`, `BRIEF` and `log`.
 
 **Tests (write first):**
 
 ```js
-test('repeatedFindings matches similar words across tasks and sessions of the same project, reads threshold from config, and keeps legacy entries without repo inside their own session (R1, R2, R22, C1)', (t) => {
+// tests/skill-repeat.test.js (imports added: path, PLUGIN, makeRepo, runBin from ./helpers.js, task, reg)
+// A real begin makes each launch; one verdict goes through the library and one through the real bin, so the findings
+// are stored as { file, line, what } exactly as in production.
+test('repeatedFindings matches similar words of finding.what across sessions of one project, through the real verdict path, and respects the config threshold (R1, R2, R22, C1)', async (t) => {
+  const repo = makeRepo(t)
   const data = tempDir(t, 'aether-repeat-sim-')
-  log.appendEntry(data, {
-    kind: 'verdict',
-    session: 's1',
-    repo: '/repo/alpha',
-    task: 't1',
-    verdict: 'fix',
-    input: { kind: 'fix', findings: [{ file: 'src/foo.js', detail: 'falta validar el borde cuando la lista viene vacía' }] },
-  })
-  log.appendEntry(data, {
-    kind: 'verdict',
-    session: 's2',
-    repo: '/repo/alpha',
-    task: 't1',
-    verdict: 'fix',
-    input: { kind: 'fix', findings: [{ file: 'src/foo.js', detail: 'no valida la lista vacía en el borde' }] },
-  })
-  const across = repeat.repeatedFindings(data, { session: 's2', task: 't1', repo: '/repo/alpha' })
-  assert.equal(across.length, 1)
-  assert.equal(across[0].file, 'src/foo.js')
+  const deps = { dataDir: data, cwd: repo.dir, home: tempDir(t, 'aether-home-'), settings: { lanes: false, harnesses: [], deadlines: { quotaMs: 1 } }, pickPair: async () => ({ pick: null, quota: [] }) }
+  const launch = (session) => task.begin({ session, event: { subagent_type: 'general-purpose', description: 'd', prompt: 'AETHER-TASK: t1\nDo the work.' } }, deps)
+  assert.equal((await launch('s1')).kind, 'first')
+  const v1 = await task.verdict({ task: 't1', verdict: 'fix', session: 's1', findings: ['src/foo.js:10:falta validar el borde cuando la lista viene vacía'] }, deps)
+  assert.equal(v1.ok, true, JSON.stringify(v1))
+  assert.equal((await launch('s2')).kind, 'first')
+  const BIN = path.join(PLUGIN, 'bin', 'aether-delegate')
+  const v2 = runBin(BIN, ['verdict', '--task', 't1', '--verdict', 'fix', '--session', 's2', '--finding', 'src/foo.js:18:no valida la lista vacía en el borde'], repo.dir, { AETHER_DATA_DIR: data })
+  assert.equal(v2.json.ok, true, v2.stdout + v2.stderr)
 
-  const strict = repeat.repeatedFindings(data, {
-    session: 's2',
-    task: 't1',
-    repo: '/repo/alpha',
-    config: { minWordLength: 3, similarityThreshold: 0.99, stopwords: [] },
-  })
+  const verdicts = log.readEntries(data, { task: 't1' }).filter((e) => e.kind === 'verdict')
+  assert.deepEqual(verdicts.map((e) => [e.session, e.repo]), [['s1', repo.dir], ['s2', repo.dir]])
+  assert.deepEqual(Object.keys(verdicts[1].input.findings[0]).sort(), ['file', 'line', 'what'])
+
+  const across = repeat.repeatedFindings(data, { session: 's2', task: 't1' })
+  assert.deepEqual(across, [{ finding: 'src/foo.js: no valida la lista vacía en el borde', tasks: ['t1'] }])
+  const notice = repeat.posttool(
+    { tool_name: 'Bash', session_id: 's2', cwd: repo.dir, tool_input: { command: 'aether-delegate verdict --task t1 --verdict fix --finding "src/foo.js:18:no valida la lista vacía en el borde"' } },
+    { env: {}, home: '/h', now: 1, dataDir: data },
+  )
+  assert.equal(notice, 'The finding "src/foo.js: no valida la lista vacía en el borde" already came up in task t1. Consider a skill for it: load aether:skills.')
+  assert.deepEqual(reg.readNotices(data).map((n) => [n.kind, n.name, n.session, n.repo]), [['repeated-finding', 'src/foo.js', 's2', repo.dir]])
+
+  log.appendEntry(data, { kind: 'verdict', time: 1, session: 's9', task: 'legacy', attempt: 1, step: 'haiku', verdict: 'fix', input: { kind: 'fix', findings: [{ file: 'src/foo.js', line: 1, what: 'no valida la lista vacía en el borde' }], reason: null, fromScratch: false } })
+  assert.deepEqual(repeat.repeatedFindings(data, { session: 's2', task: 't1' }).map((r) => r.tasks), [['t1']], 'a legacy entry with no repo is not compared across sessions')
+
+  const strict = repeat.repeatedFindings(data, { session: 's2', task: 't1', config: { minWordLength: 3, similarityThreshold: 0.99, stopwords: [] } })
   assert.deepEqual(strict, [])
 })
+```
 
+```js
+// tests/delegate-skills.test.js
 test('aether-delegate begin without AETHER-SKILLS suggests a matching project skill in notes without changing the brief (R15, R16, C7)', async (t) => {
   const w = world(t)
-  writeSkill(path.join(w.repo.dir, '.agents', 'skills', 'diseno-de-juego'), 'diseno-de-juego', 'Balance de economia, niveles y combate del juego')
-  const res = await task.begin({
-    session: 's-suggest',
-    description: 'balance del juego',
-    prompt: 'AETHER-TASK: d-sug\nAETHER-OWNS: src/game.js\nAETHER-TESTS: node -e "process.exit(0)"\n\nAjusta el balance de economia y combate del juego en src/game.js.',
-  }, deps(w))
-  assert.equal(res.error, null)
-  assert.ok(res.notes.some((n) => n.includes('diseno-de-juego')))
-  assert.ok(!res.args.prompt.includes('## Skills for this task'))
+  skill(w.cwd, 'diseno-de-juego')
+  const plan = await task.begin(call('AETHER-TASK: d-sug\nAjusta el diseno y balance del juego en src/game.js.'), w.deps)
+  assert.equal(plan.kind, 'first')
+  assert.ok(plan.notes.some((n) => n.includes('project skill(s) diseno-de-juego') && n.includes('AETHER-SKILLS: diseno-de-juego')), plan.notes.join('\n'))
+  assert.equal(plan.args.prompt, undefined, 'the call is not changed')
+  assert.equal(entries(w.dataDir, 'd-sug').find((e) => e.kind === 'launch').skills, undefined)
+  assert.deepEqual(reg.readNotices(w.dataDir).map((n) => [n.kind, n.name]), [['delegate-skill', 'diseno-de-juego']])
+
+  const other = await task.begin(call('AETHER-TASK: d-none\nActualiza el parser de JSON en src/json.js.'), w.deps)
+  assert.equal(other.notes.some((n) => n.includes('diseno-de-juego')), false)
 })
 ```
 
 **Acceptance:**
 - `aether-delegate verdict` saves `repo` on every verdict entry (R22).
-- `skill-repeat.js` matches findings on the same file with similar words across tasks in the same or different sessions of the same project, respects the threshold in `config/skills.json`, ignores legacy entries without `repo` across sessions, and logs `repeated-finding` in `notices.jsonl` (R1, R2, R16, R22).
+- `skill-repeat.js` compares `what` and matches findings on the same file with similar words across tasks in the same or different sessions of the same project, respects the threshold in `config/skills.json`, ignores legacy entries without `repo` across sessions, and logs `repeated-finding` in `notices.jsonl` (R1, R2, R16, R22).
+- The existing assertions of `tests/skill-repeat.test.js` (return shape `{ finding, tasks }` and the exact notice text) pass unchanged.
 - `aether-delegate begin` without `AETHER-SKILLS:` adds a non-blocking skill suggestion to `plan.notes` and logs `delegate-skill` in `notices.jsonl` when a project skill matches, without changing `args.prompt` (R15, R16).
 
 ### Task 8: Registro de cargas de `Skill` del Lead, deduplicación al crear skills, avisos de ubicación y falta de `aether:skills`, y detector de temas en `intent.md`
@@ -411,8 +457,10 @@ test('aether-delegate begin without AETHER-SKILLS suggests a matching project sk
 
 1. `plugins/aether/hooks/hooks.json`:
    - `PostToolUse` entry for `aether-continuity posttool` uses matcher `"Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash|Skill"`.
+   - Source check without a model (A3): the types of Claude Code 2.1.325 list `Skill` as a built-in tool (input `{ skill, args? }`) and give `PostToolUseHookInput` a free `tool_name: string`, so `PostToolUse` is the source; the live firing is not observed (plan Risks). The handler must not depend on `tool_response` or `hook_event_name`, so that the fallback of A3 (a `PreToolUse` entry with matcher `Skill` to the same `aether-continuity posttool`, or the mod's `on('tool.call', { tool: 'Skill' })`) would be a `hooks.json` change only. The test below pins that independence through the real bin.
+   - `tests/continuity-hook.test.js`: line 221 changes to assert the matcher `'Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash|Skill'`, and the tool list at line 273 gains `'Skill'` (`WebFetch`, `Agent` and `ScheduleWakeup` still do not reach it).
 2. `plugins/aether/lib/skill-review.js`:
-   - `recordLeadSkillLoad(input, ctx) -> null`: when `input.tool_name === 'Skill'` and `!input.agent_id`, extracts the skill name from `input.tool_input?.skill || input.tool_input?.name || input.tool_input?.skill_name` (stripping whitespace/arguments so no conversation text is ever stored) and calls `recordUse(dataDir, { session: input.session_id, repo: mainRoot, kind: 'lead', skills: [skillName] })` (R3).
+   - `recordLeadSkillLoad(input, ctx) -> null`: when `input.tool_name === 'Skill'` and `!input.agent_id`, extracts the skill name from `input.tool_input?.skill || input.tool_input?.name || input.tool_input?.skill_name` (first token, so `args` and no conversation text is ever stored) and calls `recordUse(dataDir, { session: input.session_id, repo: mainRoot, kind: 'lead', skills: [skillName] })` (R3). It reads only `tool_name`, `tool_input.skill`, `session_id`, `cwd` and `agent_id`.
    - `detectUncoveredTopics({ cwd, home, dataDir, session = null, intentPath = null, config = null }) -> Array<{ id: string, label: string }>`: checks visible signals (`files`, `dependencies`, and `words` in `intentPath`) from `loadSkillsConfig().topics` against installed skills in `.agents/skills/`, `.claude/skills/`, `~/.agents/skills/`, `~/.claude/skills/` and `skills/installs.jsonl` (`name` and `description` of `SKILL.md`), filtering out topics already notified for `(session, mainRoot, topic.id)` in `notices.jsonl` (R12, R13, A2, A5).
    - `startupTopicNotice({ cwd, home, dataDir, session, config = null }) -> string | null`: runs `detectUncoveredTopics`, records `kind: 'topic-search'` in `notices.jsonl` for each uncovered topic, and returns the non-blocking notice line (or `null` when none).
    - In `posttool(input, ctx)`:
@@ -425,45 +473,66 @@ test('aether-delegate begin without AETHER-SKILLS suggests a matching project sk
 **Tests (write first):**
 
 ```js
-test('PostToolUse on Skill records Lead usage without conversation text, and editing a project skill outside .agents/skills or without aether:skills emits non-blocking notices (R3, R5, R6, R10, R11, C2, C3, C5)', (t) => {
+// tests/continuity-posttool-skills.test.js uses its own world(t) -> { repo, home, data, ctx }, and already imports
+// fs, path, spawnSync, PLUGIN, tempDir, makeRepo, posttool, reg, log and markSession.
+test('the real hooks.json PostToolUse entry selects Skill and bin/aether-continuity posttool records Lead loads without conversation text, with or without tool_response, while a plain session writes nothing (R3, R5, R6, R10, R11, R18, C2, C3, C5, C9)', (t) => {
   const w = world(t)
-  const ctx = { env: w.env, home: w.home, dataDir: w.data }
-  posttool.posttool({
-    session_id: 's-lead',
-    cwd: w.repo.dir,
-    tool_name: 'Skill',
-    tool_input: { skill: 'criterio-del-dueno', args: 'SECRET-CONVERSATION-TEXT' },
-  }, ctx)
+  const hooksJson = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8'))
+  const group = hooksJson.hooks.PostToolUse.find((g) => g.hooks.some((h) => h.command.endsWith('/bin/aether-continuity" posttool')))
+  assert.ok(group, 'hooks.json has a PostToolUse entry for aether-continuity posttool')
+  assert.equal(new RegExp(`^(?:${group.matcher})$`).test('Skill'), true)
+
+  markSession(w.data, 's-lead', 1000, { repo: w.repo.dir, claude: null })
+  const bin = path.join(PLUGIN, 'bin', 'aether-continuity')
+  const env = { ...process.env, AETHER_DATA_DIR: w.data, CLAUDE_CONFIG_DIR: w.home, HOME: w.home }
+  const skillCall = (session, extra = {}) =>
+    spawnSync(process.execPath, [bin, 'posttool'], {
+      input: JSON.stringify({ hook_event_name: 'PostToolUse', session_id: session, cwd: w.repo.dir, tool_name: 'Skill', tool_input: { skill: 'criterio-del-dueno', args: 'SECRET-CONVERSATION-TEXT' }, ...extra }),
+      encoding: 'utf8',
+      env,
+    })
+
+  const plain = skillCall('plain', { tool_response: { success: true, commandName: 'criterio-del-dueno' } })
+  assert.deepEqual([plain.status, plain.stdout], [0, ''])
+  assert.equal(reg.readUses(w.data).length, 0)
+
+  const lead = skillCall('s-lead', { tool_response: { success: true, commandName: 'criterio-del-dueno' } })
+  assert.equal(lead.status, 0)
+  const noResponse = skillCall('s-lead', { hook_event_name: 'PreToolUse' })
+  assert.equal(noResponse.status, 0)
   const uses = reg.readUses(w.data)
-  assert.equal(uses.length, 1)
-  assert.equal(uses[0].kind, 'lead')
+  assert.equal(uses.length, 2, 'the same entry records the load whichever event and payload it comes from')
+  assert.ok(uses.every((u) => u.kind === 'lead' && u.session === 's-lead'))
   assert.deepEqual(uses[0].skills, ['criterio-del-dueno'])
   assert.ok(!JSON.stringify(uses).includes('SECRET-CONVERSATION-TEXT'))
+
+  assert.equal(posttool.posttool({ session_id: 's-lead', agent_id: 'a1', cwd: w.repo.dir, tool_name: 'Skill', tool_input: { skill: 'x' } }, w.ctx), null)
+  assert.equal(reg.readUses(w.data).length, 2, 'a subagent load is not a Lead load')
 
   const badFile = path.join(w.repo.dir, '.claude', 'skills', 'mal-ubicada', 'SKILL.md')
   fs.mkdirSync(path.dirname(badFile), { recursive: true })
   fs.writeFileSync(badFile, '---\nname: mal-ubicada\ndescription: Prueba\n---\nbody\n')
-  const out = posttool.posttool({ session_id: 's-lead', cwd: w.repo.dir, tool_name: 'Write', tool_input: { file_path: badFile } }, ctx)
+  const out = posttool.posttool({ session_id: 's-lead', cwd: w.repo.dir, tool_name: 'Write', tool_input: { file_path: badFile } }, w.ctx)
   assert.ok(out && out.additionalContext.includes('.agents/skills/'))
   assert.ok(out.additionalContext.includes('aether:skills'))
+  assert.deepEqual(reg.readNotices(w.data).map((n) => n.kind).sort(), ['skill-location', 'skill-unloaded'])
 })
 
 test('writing specs/NNN-topic/intent.md with practical topic signals emits a search notice once per session (R12, R13, R16, C6)', (t) => {
   const w = world(t)
-  const ctx = { env: w.env, home: w.home, dataDir: w.data }
   const intent = path.join(w.repo.dir, 'specs', '001-ml', 'intent.md')
   fs.mkdirSync(path.dirname(intent), { recursive: true })
   fs.writeFileSync(intent, '# Intent\nEntrenar un modelo con PyTorch en Google Colab.\n')
-  const first = posttool.posttool({ session_id: 's-ml', cwd: w.repo.dir, tool_name: 'Write', tool_input: { file_path: intent } }, ctx)
+  const first = posttool.posttool({ session_id: 's-ml', cwd: w.repo.dir, tool_name: 'Write', tool_input: { file_path: intent } }, w.ctx)
   assert.ok(first && first.additionalContext.includes('aether:skills'))
-  const second = posttool.posttool({ session_id: 's-ml', cwd: w.repo.dir, tool_name: 'Edit', tool_input: { file_path: intent } }, ctx)
+  const second = posttool.posttool({ session_id: 's-ml', cwd: w.repo.dir, tool_name: 'Edit', tool_input: { file_path: intent } }, w.ctx)
   assert.equal(second, null)
 })
 ```
 
 **Acceptance:**
-- `hooks/hooks.json` includes `Skill` in the `PostToolUse` matcher for `aether-continuity posttool`, and outside a Lead session exits 0 with 0 B stdout and 0 files written (R3, R18).
-- Lead `Skill` calls are logged in `skills/uses.jsonl` (`kind: 'lead'`) without conversation text (R3).
+- `hooks/hooks.json` includes `Skill` in the `PostToolUse` matcher for `aether-continuity posttool`, and outside a Lead session exits 0 with 0 B stdout and 0 files written (R3, R18); `tests/continuity-hook.test.js` asserts the new matcher.
+- Lead `Skill` calls are logged in `skills/uses.jsonl` (`kind: 'lead'`) without conversation text, whichever hook event or payload carries them (R3).
 - Project skill creation in `skill-review.js` uses `shouldRecordCreated` with `repo: mainRoot` (R5, R6) and emits non-blocking notices when placed outside `.agents/skills/` (R10) or when `aether:skills` was not loaded in the session (R11).
 - Writing or editing `specs/NNN-<topic>/intent.md` emits a non-blocking search notice once per `(session, repo, topic)` when visible signals of an uncovered topic in `config/skills.json` are detected (R12, R13, R16).
 
@@ -479,39 +548,45 @@ test('writing specs/NNN-topic/intent.md with practical topic signals emits a sea
 **Interfaces:**
 
 1. `plugins/aether/lib/skill-idle.js`:
-   - `idleSkills(dataDir, { repo, days = 30, now = Date.now() } = {}) -> string[]`: reads created project skills via `readCreatedDeduplicated(dataDir)` (R7) and marks as used any skill present in `readUses(dataDir)` within `days * 86400000` ms across all `kind` values (`lead`, `delegate`, `run`), normalizing `aether:<name>` to `<name>` (R4).
+   - `idleSkills(dataDir, { repo, days = 30, now = Date.now() } = {}) -> Array<{ name: string, path: string|null, since: number }>` (the return shape does not change): takes the project candidates from `readCreatedDeduplicated(dataDir)` (R7) instead of the raw `created.jsonl` (downloaded skills still come from `readInstalls`), and marks as used any skill present in `readUses(dataDir)` within `days * 86400000` ms across all `kind` values (`lead`, `delegate`, `run`), normalizing `aether:<name>` to `<name>` (R4).
 2. `plugins/aether/lib/session-start.js`:
-   - When `idleLine` is non-null (`idle.length > 0`), records each idle skill via `recordNotice(data, { time: now, session, repo: mainRoot, kind: 'idle-skills', name })` (R16).
-   - When `source === 'startup'` and `firstSession === true` and `<mainRoot>/.aether/runs` and `<mainRoot>/.aether/autonomy` do not exist on disk (first Aether startup in a new project, A1), calls `startupTopicNotice({ cwd: top, home, dataDir: data, session })` and appends any non-null notice to `optional` (R13, R16).
+   - When `idleLine` is non-empty, records each idle skill (`idle.map((s) => s.name)`) via `recordNotice(data, { time: now, session, repo: mainRoot, kind: 'idle-skills', name })` (R16).
+   - When `source === 'startup'` and `firstSession === true` and `<mainRoot>/.aether/runs` and `<mainRoot>/.aether/autonomy` do not exist on disk (first Aether startup in a new project, A1), calls `startupTopicNotice({ cwd: top, home, dataDir: data, session })`, stores any non-null notice in a new `topicLines` list, adds `topicLines.join('\n')` to the list in `contextOf` (`session-start.js:519`, next to `tidyLines` and `idleLines`), and trims `topicLines` first in the `PART_LIMIT` loop (`session-start.js:537`), before `idleLines` and `tidyLines` (R13, R16, R19).
 
 **Tests (write first):**
 
 ```js
-test('idleSkills excludes skills loaded by the Lead in the last 30 days and uses readCreatedDeduplicated (R4, R7, C2)', (t) => {
+// tests/skill-idle.test.js (adds: const { makeRepo } = require('./helpers.js'), const reg = require('../plugins/aether/lib/skill-registry.js'))
+test('idleSkills excludes skills loaded by the Lead in the last 30 days, with or without the aether: prefix, and reads readCreatedDeduplicated (R4, R7, C2)', (t) => {
   const repo = makeRepo(t)
   const data = tempDir(t, 'aether-idle-lead-')
   const now = Date.now()
   const skillDir = path.join(repo.dir, '.agents', 'skills', 'criterio-del-dueno')
   fs.mkdirSync(skillDir, { recursive: true })
   fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: criterio-del-dueno\ndescription: d\n---\nbody\n')
-  reg.recordCreated(data, { time: now - 45 * 86400000, session: 's0', repo: repo.dir, name: 'criterio-del-dueno', path: skillDir, type: 'project' })
-  assert.deepEqual(idle.idleSkills(data, { repo: repo.dir, now }), ['criterio-del-dueno'])
+  const wt = path.join(repo.dir, '.aether', 'work', 'delegates', 'd1', 'wt')
+  reg.recordCreated(data, { time: now - 45 * 86400000, session: 's0', repo: wt, name: 'criterio-del-dueno', path: path.join(wt, '.agents', 'skills', 'criterio-del-dueno'), type: 'project' })
+  assert.deepEqual(idle.idleSkills(data, { repo: repo.dir, now }).map((s) => s.name), ['criterio-del-dueno'], 'the worktree is gone, the skill in the main repo is found')
 
-  reg.recordUse(data, { time: now - 5 * 86400000, session: 's1', repo: repo.dir, kind: 'lead', skills: ['criterio-del-dueno'] })
+  reg.recordUse(data, { time: now - 5 * 86400000, session: 's1', repo: repo.dir, kind: 'lead', skills: ['aether:criterio-del-dueno'] })
   assert.deepEqual(idle.idleSkills(data, { repo: repo.dir, now }), [])
 })
+```
 
+```js
+// tests/session-start-tidy.test.js
 test('first Aether startup in a new project with practical topic signals emits the topic search notice in additionalContext (R13, R16, C6)', (t) => {
   const w = world(t)
   put(path.join(w.repo.dir, 'notebook.ipynb'), '{}\n')
   const { status, out } = w.start('startup')
   assert.equal(status, 0)
   assert.ok(out.hookSpecificOutput.additionalContext.includes('aether:skills'))
+  assert.ok(out.hookSpecificOutput.additionalContext.length <= PART_LIMIT)
 })
 ```
 
 **Acceptance:**
-- `idleSkills` uses `readCreatedDeduplicated` and never names or proposes removing a skill loaded by the Lead or passed to an agent in the last 30 days (R4, R7).
+- `idleSkills` uses `readCreatedDeduplicated` and never names or proposes removing a skill loaded by the Lead or passed to an agent in the last 30 days (R4, R7); the existing tests of `tests/skill-idle.test.js` and the idle test of `tests/session-start-tidy.test.js` pass unchanged.
 - `session-start.js` records `idle-skills` in `notices.jsonl` when `idleLine` fires, and emits `startupTopicNotice` on the first Aether startup in a new project with uncovered practical-topic signals (R13, R16).
 - All 3 SessionStart bootstrap parts remain within 9,800 characters and do not grow above the 0.42.0 baseline (`tests/session-start-parts.test.js` passes, R19).
 
@@ -522,6 +597,9 @@ test('first Aether startup in a new project with practical topic signals emits t
 - Owns: `docs/guide/project-files-and-skills.md`, `docs/es/guias/archivos-skills-y-continuidad.md`, `docs/reference/components.md`, `tests/project-files-docs.test.js`, `tests/docs-030.test.js`, `tests/docs-facts.test.js`
 - Depends on: Task 3 — documents Skills: in plans
 - Depends on: Task 5 — documents aether-report --skills and config/skills.json
+- Depends on: Task 7 — documents repeated-finding word similarity and delegate-skill suggestion notices
+- Depends on: Task 8 — documents Skill PostToolUse, skill-location, skill-unloaded and intent topic-search notices
+- Depends on: Task 9 — documents 30-day idle-skills with Lead loads and startup topic-search notices
 - Serves: R18, R20, R21
 
 **Interfaces:**
