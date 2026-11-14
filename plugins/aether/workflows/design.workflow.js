@@ -470,12 +470,10 @@ function formatProjectSkills(skills) {
   return lines.join('\n')
 }
 
-// Skills named by seat-start, or by the exit-3 or exit-4 value when the start reply has none.
+// The project skills a round names: the list in the reply's value when it is not empty, else the list seat-start named.
 function skillsFrom(started, reply) {
-  const fromReply = isObject(reply) && isObject(reply.value) && Array.isArray(reply.value.projectSkills) ? reply.value.projectSkills : null
-  if (fromReply !== null && fromReply.length > 0) return fromReply
-  if (Array.isArray(started.projectSkills) && started.projectSkills.length > 0) return started.projectSkills
-  if (fromReply !== null) return fromReply
+  const fromReply = isObject(reply) && isObject(reply.value) && Array.isArray(reply.value.projectSkills) ? reply.value.projectSkills : []
+  if (fromReply.length > 0) return fromReply
   return Array.isArray(started.projectSkills) ? started.projectSkills : []
 }
 
@@ -541,7 +539,8 @@ function seeNative(stage) {
 // stopped for 10 minutes with no change, or, before its first write, at its first-write cap. A Judge, and a Writer or
 // Examiner reply with no changedMs key, keeps the document's total cap. A stop for one of those comes back as
 // { id, note, capped: true, pair, durationMs }, with the pair seat-stop names. `id` is the round's, once it started.
-// seatRound sends a capped round to the native agent and does not ask for the next pair.
+// seatRound sends a capped round to the native agent and does not ask for the next pair. Every reply that has an `id`
+// also has `projectSkills`: the list the reply's value names, else the list seat-start named.
 async function awaitSeat({ seat, doc, base, flags, exclude, text, phase }) {
   const excluding = exclude.length > 0 ? ` --exclude ${exclude.join(',')}` : ''
   const started = await ops(`aether-lane seat-start ${seat} ${flags}${excluding} --digest ${digest(text)}`, {
@@ -749,6 +748,7 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
     nativeText = `${text}\n\n${examinerPartialForNative(examPartial)}`
     record.continued = true
   }
+  // The native plan Writer and Judge get the project's skills as an external seat does; a spec round and the Examiner do not.
   if (doc === 'plan' && (seat === 'writer' || seat === 'judge')) {
     const block = formatProjectSkills(projectSkills)
     if (block && !nativeText.includes('## Project skills')) nativeText = `${nativeText}\n\n${block}`
