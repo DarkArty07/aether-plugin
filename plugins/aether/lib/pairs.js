@@ -33,8 +33,9 @@ function validatePair(pair, index) {
   if (!isText(pair.model)) fail('model', 'must be a non-empty string')
   if (!EFFORTS.includes(pair.effort)) fail('effort', `must be one of ${EFFORTS.join(', ')}`)
   if (!isText(pair.family)) fail('family', 'must be a non-empty string')
+  if ((pair.harness === NATIVE_HARNESS || Object.hasOwn(pair, 'code')) &&
+      (!isNumber(pair.code) || pair.code < 0 || pair.code > 100)) fail('code', 'must be a number from 0 to 100')
   if (pair.harness === NATIVE_HARNESS) {
-    if (!isNumber(pair.code) || pair.code < 0 || pair.code > 100) fail('code', 'must be a number from 0 to 100')
     for (const field of ['codeCostPerTaskUsd', 'codeMinutesPerTask']) {
       if (!isNumber(pair[field]) || pair[field] < 0) fail(field, 'must be a number of at least 0')
     }

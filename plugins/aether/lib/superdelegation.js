@@ -57,7 +57,7 @@ function allowsRole(pair, role, lanes) {
 
 // The reason a pair is not a candidate before dominance, in the order of precedence, or null.
 // Under authorRule 'reserve' the author's family is not barred here: it sorts after every other family.
-function firstBar(pair, { harnesses, exclude, authors, floor, authorRule, role, lanes }) {
+function firstBar(pair, { harnesses, exclude, authors, floor, codeFloor, authorRule, role, lanes }) {
   if (!Object.hasOwn(harnesses, pair.harness)) return 'harness-off'
   const view = harnesses[pair.harness]
   if (!view || view.installed !== true) return 'not-installed'
@@ -65,14 +65,15 @@ function firstBar(pair, { harnesses, exclude, authors, floor, authorRule, role, 
   if (role !== undefined && !allowsRole(pair, role, lanes)) return 'role'
   if (authorRule !== 'reserve' && authors.includes(pair.family)) return 'author'
   if (isDry(quotaOf(pair, harnesses))) return 'dry'
-  return measureBar(pair, floor)
+  return measureBar(pair, floor, codeFloor)
 }
 
 // The reason a pair's own figures keep it out: no cost per task without the owner's decision, or fewer points
 // than the floor of the call (in tenths). null when its figures let it in.
-function measureBar(pair, floor) {
+function measureBar(pair, floor, codeFloor = null) {
   if (!hasCost(pair) && !pair.ownerDecision) return 'no-cost'
   if (!isNumber(pair.intelligence) || tenths(pair.intelligence) < floor) return 'below'
+  if (codeFloor !== null && isNumber(pair.code) && tenths(pair.code) < codeFloor) return 'below-code'
   return null
 }
 
@@ -129,8 +130,9 @@ function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativ
   const ref = referenceOf(pairs, reference)
   const requested = ref.intelligence
   const floor = tenths(requested) - (role === 'supervisor' ? 0 : TOLERANCE_TENTHS)
+  const codeFloor = role === 'implementer' && isNumber(ref.code) ? tenths(ref.code) - TOLERANCE_TENTHS : null
   const external = pairs.map((pair, index) => ({ pair, index })).filter(({ pair }) => pair.harness !== NATIVE_HARNESS)
-  const context = { harnesses: harnesses || {}, exclude, authors, floor, authorRule, role, lanes }
+  const context = { harnesses: harnesses || {}, exclude, authors, floor, codeFloor, authorRule, role, lanes }
   const barred = external.map((entry) => ({ ...entry, why: firstBar(entry.pair, context) }))
   const open = barred.filter((entry) => entry.why === null).map((entry) => entry.pair)
   for (const entry of barred) {
@@ -163,7 +165,7 @@ function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativ
     reason = `native ${native.pair.id}: no external model allows the role ${role}`
   } else {
     // A quota is eligible when one of its pairs would be a candidate but for its dry quota.
-    const dryOnly = passed.some((entry) => entry.why === 'dry' && measureBar(entry.pair, floor) === null)
+    const dryOnly = passed.some((entry) => entry.why === 'dry' && measureBar(entry.pair, floor, codeFloor) === null)
     reason = dryOnly
       ? `native ${native.pair.id}: every quota with a pair that reaches ${minimum} points is dry`
       : `native ${native.pair.id}: no external pair is a candidate for ${requested} points (at least ${minimum})`
@@ -171,6 +173,9 @@ function choose({ pairs, reference, harnesses, exclude = [], authors = [], nativ
   if (native.swapped) reason += `; the native fallback is ${native.pair.model}, not ${ref.model}, which is an author`
   if (native.weaker) reason += `; the native fallback stays ${ref.model}: the Claude models free of the authors give fewer points than the level`
   if (native.none) reason += `; no other Claude model is free of the authors, so the native fallback stays ${ref.model}`
+  const belowCode = passed.filter((entry) => entry.why === 'below-code')
+  if (belowCode.length) reason += `; below the code floor of ${codeFloor / 10} (the reference's code ${ref.code} minus ${TOLERANCE_POINTS}): ${belowCode.map((entry) => entry.pair.id).join(', ')}`
+  if (picked && codeFloor !== null && !isNumber(picked.code)) reason += `; ${picked.id} has no code figure, so it was judged by intelligence alone`
 
   return {
     requested,
