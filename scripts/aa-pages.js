@@ -40,9 +40,13 @@ function parsePage(html, slug) {
   const text = html.replace(/\\"/g, '"')
   const starts = [...text.matchAll(/"slug":"([a-z0-9.-]+)","name":"((?:[^"\\]|\\.)*)","shortName":"(?:[^"\\]|\\.)*"/g)]
   let start
+  let distance = Infinity
   for (const b of text.matchAll(/"briefcaseBreakdown":\{"overall":\{"elo":/g)) {
     const nearest = [...starts].reverse().find((s) => s.index < b.index)
-    if (nearest && nearest[1] === slug) { start = nearest; break }
+    if (nearest && nearest[1] === slug && b.index - nearest.index < distance) {
+      start = nearest
+      distance = b.index - nearest.index
+    }
   }
   if (!start) return null
   const end = starts.find((s) => s.index > start.index)?.index ?? text.length

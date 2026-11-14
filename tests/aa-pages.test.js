@@ -28,6 +28,15 @@ const run = (files, args, fetch, extra = {}) =>
 const read = (files) => JSON.parse(fs.readFileSync(files.snapshot, 'utf8'))
 const row = (id, over = {}) => ({ id, slug: over.slug ?? id.replace(/[/@.]/g, '-'), harness: id.split('/')[0], ...over })
 
+test('parsePage selects the matching start whose briefcase is closest', () => {
+  const slug = 'same-model'
+  const farther = block(slug, NEIGHBOUR).replace('"briefcaseBreakdown":', `"padding":"${'x'.repeat(1000)}","briefcaseBreakdown":`)
+  const closer = block(slug, OWN)
+  const found = reader.parsePage(page(farther, closer), slug)
+  assert.equal(found.figures.intelligence, 51.8)
+  assert.equal(found.figures.code, 56.57)
+})
+
 test('parsePage reads the block of the page\'s own model, never a neighbour\'s or the first of the page, rounded as the tables keep them', () => {
   const html = page(block('claude-other-5-5', NEIGHBOUR), block('claude-opus-5-5-high', OWN), block('claude-next-5-5', NEIGHBOUR))
   const found = reader.parsePage(html, 'claude-opus-5-5-high')
