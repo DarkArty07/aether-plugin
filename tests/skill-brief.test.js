@@ -204,3 +204,37 @@ test('matchDelegateSkills matches accented kebab names the same way as the brief
     [],
   )
 })
+
+test('project skills read quoted and block frontmatter values for discovery, formatting and matching', (t) => {
+  const dir = tempDir(t, 'aether-proj-frontmatter-')
+  function write(folder, name, front) {
+    const target = path.join(dir, folder, 'skills', name)
+    fs.mkdirSync(target, { recursive: true })
+    fs.writeFileSync(path.join(target, 'SKILL.md'), `---\n${front}\n---\nbody\n`)
+  }
+  write('.agents', 'ui-kit', 'name: "ui-kit"\ndescription: "Build \\"visual\\" components"')
+  write('.claude', 'duplicate', 'name: ui-kit\ndescription: Wrong duplicate')
+  write('.claude', 'game-design', "name: 'game-design'\ndescription: >-\n  Balance the economy\n  and combat systems")
+  write('.agents', 'notes', "name: 'notes'\ndescription: 'Owner''s notes: useful # text'")
+  write('.agents', 'literal', 'name: literal\ndescription: |2-\n  First line\n  Second line')
+  write('.agents', 'paragraphs', 'name: paragraphs\ndescription: >-\n  First paragraph\n\n  Second paragraph')
+  const skills = sb.listProjectSkills(dir)
+  assert.deepEqual(skills, [
+    { name: 'game-design', description: 'Balance the economy and combat systems' },
+    { name: 'literal', description: 'First line\nSecond line' },
+    { name: 'notes', description: "Owner's notes: useful # text" },
+    { name: 'paragraphs', description: 'First paragraph\nSecond paragraph' },
+    { name: 'ui-kit', description: 'Build "visual" components' },
+  ])
+  assert.equal(sb.formatProjectSkills(skills), [
+    '## Project skills', '',
+    'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
+    '- `game-design`: Balance the economy and combat systems',
+    '- `literal`: First line\nSecond line',
+    "- `notes`: Owner's notes: useful # text",
+    '- `paragraphs`: First paragraph\nSecond paragraph',
+    '- `ui-kit`: Build "visual" components',
+  ].join('\n'))
+  assert.deepEqual(sb.matchDelegateSkills(dir, { prompt: 'Use ui-kit' }), ['ui-kit'])
+  assert.deepEqual(sb.matchDelegateSkills(dir, { prompt: 'Improve economy and combat' }), ['game-design'])
+})

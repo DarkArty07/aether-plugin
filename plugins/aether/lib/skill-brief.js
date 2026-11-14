@@ -94,12 +94,43 @@ function parseFrontMatter(text) {
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
   if (!match) return {}
   const entries = {}
-  for (const line of match[1].split(/\r?\n/)) {
-    const colon = line.indexOf(':')
-    if (colon !== -1) {
-      const key = line.slice(0, colon).trim()
-      const val = line.slice(colon + 1).trim()
-      entries[key] = val
+  const lines = match[1].split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const field = lines[i].match(/^([^\s:#][^:]*):(?:\s+|$)(.*)$/)
+    if (!field) continue
+    const key = field[1].trim()
+    const value = field[2].trim()
+    if (/^[|>](?:[+-][1-9]?|[1-9][+-]?)?(?:\s+#.*)?$/.test(value)) {
+      const block = []
+      while (i + 1 < lines.length && (/^\s/.test(lines[i + 1]) || lines[i + 1] === '')) {
+        block.push(lines[++i])
+      }
+      const specifiedIndent = value.match(/[1-9]/)
+      const indent = specifiedIndent ? Number(specifiedIndent[0]) : Math.min(...block.filter((line) => line.trim()).map((line) => line.match(/^ */)[0].length))
+      const content = block.map((line) => line.slice(Number.isFinite(indent) ? indent : 0))
+      entries[key] = value[0] === '|' ? content.join('\n') : content.reduce((out, line, index) => {
+        if (index === 0) return line
+        const prev = content[index - 1]
+        if (prev && !line && !/^\s/.test(prev)) return out
+        return out + (prev && line && !/^\s/.test(prev) && !/^\s/.test(line) ? ' ' : '\n') + line
+      }, '')
+    } else if (value.startsWith("'")) {
+      const quoted = value.match(/^'((?:[^']|'')*)'(?:\s+#.*)?\s*$/)
+      entries[key] = quoted ? quoted[1].replace(/''/g, "'") : value
+    } else if (value.startsWith('"')) {
+      const quoted = value.match(/^"((?:[^"\\]|\\.)*)"(?:\s+#.*)?\s*$/)
+      if (!quoted) {
+        entries[key] = value
+      } else {
+        const escapes = { '0': '\0', a: '\x07', b: '\b', t: '\t', n: '\n', v: '\v', f: '\f', r: '\r', e: '\x1b', ' ': ' ', '"': '"', '/': '/', '\\': '\\', N: '\u0085', _: '\u00a0', L: '\u2028', P: '\u2029' }
+        entries[key] = quoted[1].replace(/\\(?:([0abtnvfre "\/\\N_LP])|x([\da-fA-F]{2})|u([\da-fA-F]{4})|U([\da-fA-F]{8}))/g, (whole, simple, x, u, upper) => {
+          if (simple) return escapes[simple]
+          const code = parseInt(x || u || upper, 16)
+          return code <= 0x10ffff ? String.fromCodePoint(code) : whole
+        })
+      }
+    } else {
+      entries[key] = value.replace(/\s+#.*$/, '').trimEnd()
     }
   }
   return entries
