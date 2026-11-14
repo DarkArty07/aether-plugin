@@ -859,6 +859,7 @@ test('the skill and its brief send the reader to scripts/aa-pages.js and name no
 - Area: aa-snapshot
 - Owns: `plugins/aether/config/models/aa-pages.json`, `tests/aa-snapshot-shipped.test.js`
 - Depends on: Task 1 — el lector es lo que escribe la foto
+- Depends on: Task 3 — `tests/models-index.test.js` filtra `aa-pages.json` de `readdirSync(CONFIG)` para que `npm test` siga en verde cuando esta tarea escribe la foto
 - Serves: C3, C8
 
 **Interfaces:**
