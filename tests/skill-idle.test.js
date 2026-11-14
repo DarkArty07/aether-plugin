@@ -3,8 +3,9 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { tempDir } = require('./helpers.js')
+const { tempDir, makeRepo } = require('./helpers.js')
 const idle = require('../plugins/aether/lib/skill-idle.js')
+const reg = require('../plugins/aether/lib/skill-registry.js')
 
 const NOW = Date.parse('2026-11-07T12:00:00Z')
 const DAY = 86400000
@@ -54,4 +55,19 @@ test('idleLine names the skills in English and in Spanish, and says nothing for 
   assert.equal(idle.idleLine(['a', 'b'], { spanish: false }), "Skills nobody used in 30 days: a, b. Consider removing them, with the owner's yes (aether:skills).")
   assert.equal(idle.idleLine(['a'], { spanish: true }), 'Skills que nadie usó en 30 días: a. Considera quitarlas, con el sí del dueño (aether:skills).')
   assert.equal(idle.idleLine([], { spanish: false }), '')
+})
+
+test('idleSkills excludes skills loaded by the Lead in the last 30 days, with or without the aether: prefix, and reads readCreatedDeduplicated (R4, R7, C2)', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-idle-lead-')
+  const now = Date.now()
+  const skillDir = path.join(repo.dir, '.agents', 'skills', 'criterio-del-dueno')
+  fs.mkdirSync(skillDir, { recursive: true })
+  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: criterio-del-dueno\ndescription: d\n---\nbody\n')
+  const wt = path.join(repo.dir, '.aether', 'work', 'delegates', 'd1', 'wt')
+  reg.recordCreated(data, { time: now - 45 * 86400000, session: 's0', repo: wt, name: 'criterio-del-dueno', path: path.join(wt, '.agents', 'skills', 'criterio-del-dueno'), type: 'project' })
+  assert.deepEqual(idle.idleSkills(data, { repo: repo.dir, now }).map((s) => s.name), ['criterio-del-dueno'], 'the worktree is gone, the skill in the main repo is found')
+
+  reg.recordUse(data, { time: now - 5 * 86400000, session: 's1', repo: repo.dir, kind: 'lead', skills: ['aether:criterio-del-dueno'] })
+  assert.deepEqual(idle.idleSkills(data, { repo: repo.dir, now }), [])
 })
