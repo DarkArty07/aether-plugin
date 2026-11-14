@@ -31,6 +31,7 @@ const AETHER_VARIABLES = [
   'AETHER_OBSERVE',
   'AETHER_PAIRS_CONFIG',
   'AETHER_PERMISSION_MODE',
+  'AETHER_SKILLS_CONFIG',
   'AETHER_SUPERDELEGATION',
 ]
 // Every child process gets process.env, so this covers the environment the helper hands to children and the

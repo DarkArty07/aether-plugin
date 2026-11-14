@@ -170,3 +170,24 @@ test('loadSkillsConfig reads repeat and topics, and notices store only metadata 
   assert.deepEqual(rep.agentUsesBySkill, { pdf: 1 })
   assert.equal(rep.totals.noticesByKind['topic-search'], 1)
 })
+
+test('loadSkillsConfig reads AETHER_SKILLS_CONFIG when no path is passed (R2)', (t) => {
+  const dir = tempDir(t, 'aether-skills-cfg-')
+  const file = path.join(dir, 'skills.json')
+  fs.writeFileSync(file, JSON.stringify({
+    repeat: { minWordLength: 4, similarityThreshold: 0.5, stopwords: ['zz'] },
+    topics: [{ id: 'from-env' }],
+  }))
+  const previous = process.env.AETHER_SKILLS_CONFIG
+  process.env.AETHER_SKILLS_CONFIG = file
+  t.after(() => {
+    if (previous === undefined) delete process.env.AETHER_SKILLS_CONFIG
+    else process.env.AETHER_SKILLS_CONFIG = previous
+  })
+  const fromEnv = reg.loadSkillsConfig()
+  assert.equal(fromEnv.repeat.minWordLength, 4)
+  assert.equal(fromEnv.repeat.similarityThreshold, 0.5)
+  assert.deepEqual(fromEnv.topics.map((topic) => topic.id), ['from-env'])
+  const bundled = reg.loadSkillsConfig(reg.CONFIG_FILE)
+  assert.equal(bundled.repeat.similarityThreshold, 0.35)
+})
