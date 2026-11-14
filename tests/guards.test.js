@@ -90,9 +90,10 @@ test('R21: the retired document folders are gone and the last handoff stays', ()
   assert.ok(handoffs.length > 0)
   assert.deepEqual(handoffs.filter((f) => !/^docs\/handoff\/\d{4}-\d{2}-\d{2}-.+\.md$/.test(f)), [])
   // The evidence a spec names as its source stays tracked (spec 032, R17; spec 036, whose card and spec cite the copies of
-  // their issues and the triage of their minor findings; spec 037, whose card and spec cite evidence/issue-NNN.md);
+  // their issues and the triage of their minor findings; spec 037, whose card and spec cite evidence/issue-NNN.md;
+  // spec 038, whose evidence records the model pages);
   // no other evidence folder under specs/ does.
-  const KEPT_EVIDENCE = /^specs\/(032-pareto-ladder\/evidence\/aa-pages-(claude|other-harnesses)-2026-11-10\.json|036-open-issues-8\/evidence\/(issue-\d+|triage-[\d-]+)\.md|037-skills-reinforcement\/evidence\/issue-\d+\.md)$/
+  const KEPT_EVIDENCE = /^specs\/(032-pareto-ladder\/evidence\/aa-pages-(claude|other-harnesses)-2026-11-10\.json|036-open-issues-8\/evidence\/(issue-\d+|triage-[\d-]+)\.md|037-skills-reinforcement\/evidence\/issue-\d+\.md|038-aa-pages-hydrogen\/evidence\/(README\.md|aa-extract-2026-11-13\.json))$/
   const evidence = tracked('specs').filter((f) => /\/evidence\//.test(f))
   assert.deepEqual(evidence.filter((f) => !KEPT_EVIDENCE.test(f)), [])
   assert.ok(evidence.includes('specs/032-pareto-ladder/evidence/aa-pages-claude-2026-11-10.json'))

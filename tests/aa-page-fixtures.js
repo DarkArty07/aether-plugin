@@ -5,4 +5,17 @@
 // (reasoningTokens, contextWindowTokens); a reader that only matches intelligenceIndex as the first key of scalars misses it.
 const block = (slug, f) => `{"slug":"${slug}","name":"Model ${slug}","shortName":"Model ${slug}","scalars":{"reasoningTokens":128,"contextWindowTokens":200000,"intelligenceIndex":${f.intelligence},"terminalBench40":${f.code}},"intelligenceIndexCostPerTask":{"cost":{"total":${f.cost}}},"evals":[{"slug":"terminalbench-4-0","score":${f.code},"outputTokensPerTask":1000.5,"costPerTask":${f.codeCost},"timePerTask":${f.seconds}}],"briefcaseBreakdown":{"overall":{"elo":1100,"lower95ci":1,"upper95ci":2},"rubricPassRate":0.3,"analyticalQuality":{"elo":1200,"lower95ci":1,"upper95ci":2},"presentation":{"elo":990}}}`
 const page = (...blocks) => `<html><body><script>self.__next_f.push([1,"${blocks.join(',').replace(/"/g, '\\"')}"])</script></body></html>`
-module.exports = { block, page }
+
+function pageFromExtract(entry) {
+  const evals = Object.entries(entry.evals).map(([slug, e]) => ({ slug, score: e.score, outputTokensPerTask: e.outputTokens, costPerTask: e.costUsd, timePerTask: e.seconds }))
+  const { briefcaseBreakdown, ...objects } = entry.objects
+  return page(JSON.stringify({ slug: entry.slug, name: entry.name, shortName: entry.shortName, scalars: entry.scalars, ...objects, evals, briefcaseBreakdown }))
+}
+
+function snapshotOf(pages, on = '2026-11-13') {
+  return { pages: Object.fromEntries(Object.entries(pages).map(([slug, entry]) => [slug, {
+    readOn: entry.readOn ?? on, name: entry.name ?? `Model ${slug}`,
+    figures: Object.fromEntries(Object.entries(entry.figures).map(([key, value]) => [key, typeof value === 'number' ? { value, on } : { ...value }]))
+  }])) }
+}
+module.exports = { block, page, pageFromExtract, snapshotOf }
