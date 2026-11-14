@@ -191,3 +191,24 @@ test('loadSkillsConfig reads AETHER_SKILLS_CONFIG when no path is passed (R2)', 
   const bundled = reg.loadSkillsConfig(reg.CONFIG_FILE)
   assert.equal(bundled.repeat.similarityThreshold, 0.35)
 })
+
+test('skill paths include nested files and committed skills are detected from a vanished worktree', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-skills-reg-')
+  const dir = path.join(repo.dir, '.claude', 'skills', 'existing')
+  put(path.join(dir, 'SKILL.md'))
+  repo.git('add', '.claude/skills/existing/SKILL.md')
+  repo.git('commit', '-m', 'existing skill')
+  const worktree = path.join(repo.dir, '.aether', 'worktrees', 'gone')
+  assert.equal(reg.skillRelPath(path.join(dir, 'references', 'guide.md')), path.join('.claude', 'skills', 'existing'))
+  assert.equal(reg.shouldRecordCreated(data, { repo: worktree, name: 'existing', dir: path.join(worktree, '.claude', 'skills', 'existing') }), false)
+})
+
+test('report filters the deduplicated created records, not later duplicates', (t) => {
+  const data = tempDir(t, 'aether-skills-reg-')
+  reg.recordCreated(data, { time: 10, session: 'first', repo: '/gone/project', name: 'demo', path: '/gone/project/.agents/skills/demo' })
+  reg.recordCreated(data, { time: 20, session: 'second', repo: '/gone/project', name: 'demo', path: '/gone/project/.agents/skills/demo' })
+  const report = reg.skillsReport(data, { session: 'second' })
+  assert.equal(report.totals.createdRaw, 1)
+  assert.equal(report.totals.created, 0)
+})

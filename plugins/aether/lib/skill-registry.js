@@ -464,7 +464,7 @@ function skillRelPath(entryOrPath) {
     ? entryOrPath
     : (entryOrPath && (entryOrPath.path || entryOrPath.dir))
   if (!raw || typeof raw !== 'string') return null
-  const match = slash(raw).match(/(?:^|\/)(\.(?:agents|claude)\/skills\/[^/]+)\/?$/)
+  const match = slash(raw).match(/(?:^|\/)(\.(?:agents|claude)\/skills\/[^/]+)(?:\/|$)/)
   if (!match) return null
   return match[1].split('/').join(path.sep)
 }
@@ -529,9 +529,9 @@ function shouldRecordCreated(dataDir, { repo, name, dir, type = 'project' } = {}
     return false
   }
   const primary = skillRelPath(dir) || path.join('.agents', 'skills', name)
-  if (alreadyInGitBefore(repo, primary, null)) return false
+  if (alreadyInGitBefore(canon, primary, null)) return false
   const claude = path.join('.claude', 'skills', name)
-  if (slash(primary) !== slash(claude) && alreadyInGitBefore(repo, claude, null)) return false
+  if (slash(primary) !== slash(claude) && alreadyInGitBefore(canon, claude, null)) return false
   return true
 }
 
@@ -613,7 +613,7 @@ function projectOf(projects, repoKey) {
 function skillsReport(dataDir, { repo = null, since = null, until = null, session = null } = {}) {
   const window = { since, until, session }
   const createdRawEntries = readCreated(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
-  const created = dedupeCreated(createdRawEntries)
+  const created = readCreatedDeduplicated(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
   const downloadedRaw = readInstalls(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
   const downloadedSeen = new Set()
   const downloaded = []
