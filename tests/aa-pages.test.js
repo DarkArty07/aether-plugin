@@ -214,3 +214,58 @@ test('parsePage finds a benchmark object wherever the page places it in the mode
   const html = page(block('a', OWN).replace('"evals":[', '"benchmarks":['))
   assert.equal(reader.parsePage(html, 'a').figures.code, 56.57)
 })
+
+
+test('parsePage reads all figures after briefcaseBreakdown through the next model start', () => {
+  const own = JSON.parse(block('a', OWN))
+  const { briefcaseBreakdown, ...rest } = own
+  const html = page(block('a', NEIGHBOUR).replace('"briefcaseBreakdown"', '"comparisonBreakdown"'), JSON.stringify({
+    slug: 'a', name: 'Own model', shortName: 'Own', briefcaseBreakdown,
+    ...Object.fromEntries(Object.entries(rest).filter(([key]) => !['slug', 'name', 'shortName'].includes(key))),
+    omniscienceHallucinationRate: 0.12356, intelligenceIndexTimePerTask: 123.6,
+    price1mInputTokens: 1.23456, price1mOutputTokens: 7.65436, cacheHitPrice: 0.07656,
+    medianOutputSpeed: 45.67, medianTimeToFirstAnswerToken: 1.236
+  }), block('next', NEIGHBOUR))
+  assert.deepEqual(reader.parsePage(html, 'a'), { name: 'Own model', figures: {
+    intelligence: 51.8, costPerTaskUsd: 3.465, code: 56.57, codeCostPerTaskUsd: 5.119,
+    codeMinutesPerTask: 15.9, terminalBench: 0.566, briefcaseElo: 1100, briefcaseRubricPassRate: 0.3,
+    hallucinationRate: 0.124, timePerTaskSeconds: 124, priceInput: 1.2346, priceOutput: 7.6544,
+    cacheReadPrice: 0.0766, outputTokensPerSecond: 45.7, timeToFirstTokenS: 1.24
+  } })
+  const empty = JSON.stringify({ slug: 'empty', name: 'Empty', shortName: 'Empty', briefcaseBreakdown })
+  const figures = reader.parsePage(page(empty, block('next', OWN)), 'empty').figures
+  assert.deepEqual(figures, { briefcaseElo: 1100, briefcaseRubricPassRate: 0.3 })
+})
+
+test('loadSnapshot returns an empty missing snapshot and rejects invalid JSON or pages', (t) => {
+  const files = setup(t)
+  assert.deepEqual(reader.loadSnapshot(files.snapshot), { pages: {} })
+  for (const text of ['{', 'null', '{}', '{"pages":null}', '{"pages":[]}', '{"pages":1}']) {
+    fs.writeFileSync(files.snapshot, text)
+    assert.throws(() => reader.loadSnapshot(files.snapshot), undefined, text)
+  }
+  const snapshot = snapshotOf({ a: { figures: { intelligence: 1 } } })
+  fs.writeFileSync(files.snapshot, reader.serializeSnapshot(snapshot))
+  assert.deepEqual(reader.loadSnapshot(files.snapshot), snapshot)
+})
+
+test('readPages counts network attempts and cached reads, including failed requests', async (t) => {
+  const files = setup(t)
+  fs.mkdirSync(files.cache)
+  fs.writeFileSync(path.join(files.cache, 'cached.html'), page(block('cached', OWN)))
+  const report = {}
+  const asked = []
+  const pauses = []
+  const options = { cacheDir: files.cache, report, pause: async (ms) => pauses.push(ms), fetch: async (url) => {
+    asked.push(url)
+    return url === URL_OF('failed') ? answer(503) : ok(page(block('fresh', OWN)))
+  } }
+  const results = await reader.readPages(['cached', '../bad', 'fresh', 'failed'], options)
+  assert.deepEqual(report, { network: 2, cached: 1 })
+  assert.deepEqual(asked, [URL_OF('fresh'), URL_OF('failed')])
+  assert.deepEqual(pauses, [1500])
+  assert.equal(results.get('failed').cause, 'http 503')
+  await reader.readPages(['cached', 'fresh'], options)
+  assert.deepEqual(report, { network: 2, cached: 3 })
+  assert.equal(fs.existsSync(path.join(files.cache, 'failed.html')), false)
+})

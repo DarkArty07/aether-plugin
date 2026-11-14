@@ -39,14 +39,15 @@ function field(text, key) {
 function parsePage(html, slug) {
   const text = html.replace(/\\"/g, '"')
   const starts = [...text.matchAll(/"slug":"([a-z0-9.-]+)","name":"((?:[^"\\]|\\.)*)","shortName":"(?:[^"\\]|\\.)*"/g)]
-  let start, end
+  let start
   for (const b of text.matchAll(/"briefcaseBreakdown":\{"overall":\{"elo":/g)) {
     const nearest = [...starts].reverse().find((s) => s.index < b.index)
-    if (nearest && nearest[1] === slug) { start = nearest; end = b.index; break }
+    if (nearest && nearest[1] === slug) { start = nearest; break }
   }
   if (!start) return null
+  const end = starts.find((s) => s.index > start.index)?.index ?? text.length
   const segment = text.slice(start.index, end)
-  const briefcase = field(text.slice(end), 'briefcaseBreakdown')
+  const briefcase = field(segment, 'briefcaseBreakdown')
   const evaluation = /\{"slug":"terminalbench-4-0","score":[^{}]*\}/.exec(segment)
   let tb
   if (evaluation) { try { tb = JSON.parse(evaluation[0]) } catch {} }
