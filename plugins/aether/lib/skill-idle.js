@@ -5,35 +5,21 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { readInstalls } = require('./skill-registry.js')
+const { readCreatedDeduplicated, readInstalls, readUses } = require('./skill-registry.js')
 
 const IDLE_DAYS = 30
 const DAY_MS = 86400000
 
-function readLogLines(filePath) {
-  try {
-    if (!fs.existsSync(filePath)) return []
-    const raw = fs.readFileSync(filePath, 'utf8')
-    const items = []
-    for (const chunk of raw.split('\n')) {
-      const clean = chunk.trim()
-      if (!clean) continue
-      try {
-        items.push(JSON.parse(clean))
-      } catch {}
-    }
-    return items
-  } catch {
-    return []
-  }
+function normalizeSkillName(name) {
+  if (typeof name !== 'string') return ''
+  return name.startsWith('aether:') ? name.slice('aether:'.length) : name
 }
 
 function idleSkills(dataDir, { repo, now = Date.now(), days = IDLE_DAYS } = {}) {
   try {
     if (!dataDir || typeof dataDir !== 'string') return []
 
-    const createdPath = path.join(dataDir, 'skills', 'created.jsonl')
-    const createdEntries = readLogLines(createdPath)
+    const createdEntries = readCreatedDeduplicated(dataDir)
     const installEntries = readInstalls(dataDir)
 
     const candidates = new Map()
@@ -66,8 +52,7 @@ function idleSkills(dataDir, { repo, now = Date.now(), days = IDLE_DAYS } = {}) 
 
     if (candidates.size === 0) return []
 
-    const usesPath = path.join(dataDir, 'skills', 'uses.jsonl')
-    const useEntries = readLogLines(usesPath)
+    const useEntries = readUses(dataDir)
 
     const windowMs = days * DAY_MS
     const recentlyUsed = new Set()
@@ -76,8 +61,12 @@ function idleSkills(dataDir, { repo, now = Date.now(), days = IDLE_DAYS } = {}) 
       if (!use || typeof use.time !== 'number') continue
       if (now - use.time <= windowMs) {
         if (Array.isArray(use.skills)) {
-          for (const skillName of use.skills) {
-            if (typeof skillName === 'string') recentlyUsed.add(skillName)
+          for (const rawName of use.skills) {
+            if (typeof rawName === 'string') {
+              recentlyUsed.add(rawName)
+              const clean = normalizeSkillName(rawName)
+              if (clean) recentlyUsed.add(clean)
+            }
           }
         }
       }
@@ -87,7 +76,8 @@ function idleSkills(dataDir, { repo, now = Date.now(), days = IDLE_DAYS } = {}) 
     for (const candidate of candidates.values()) {
       if (now - candidate.since <= windowMs) continue
       if (!candidate.path || !fs.existsSync(candidate.path)) continue
-      if (recentlyUsed.has(candidate.name)) continue
+      const cleanCandidate = normalizeSkillName(candidate.name)
+      if (recentlyUsed.has(candidate.name) || (cleanCandidate && recentlyUsed.has(cleanCandidate))) continue
       idle.push(candidate)
     }
 

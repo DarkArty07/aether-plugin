@@ -162,3 +162,71 @@ test('a session that is not the Lead prints nothing (R40)', (t) => {
   const r = w.start('startup', null)
   assert.deepEqual([r.status, r.stdout], [0, ''])
 })
+
+test('first Aether startup in a new project with practical topic signals emits the topic search notice in additionalContext (R13, R16, C6)', (t) => {
+  const w = world(t)
+  put(path.join(w.repo.dir, 'notebook.ipynb'), '{}\n')
+  const { status, out } = w.start('startup')
+  assert.equal(status, 0)
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('aether:skills'))
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('Machine Learning'))
+  assert.ok(out.hookSpecificOutput.additionalContext.length <= PART_LIMIT)
+  const reg = require('../plugins/aether/lib/skill-registry.js')
+  const notices = reg.readNotices(w.data).filter((n) => n.kind === 'topic-search' && n.session === 's1' && n.repo === w.repo.dir)
+  assert.ok(notices.some((n) => n.name === 'machine-learning'))
+})
+
+test('idle skills notice is recorded in notices.jsonl when idleLine fires (R16)', (t) => {
+  const w = world(t)
+  const dir = path.join(w.repo.dir, '.agents', 'skills', 'old-method')
+  put(path.join(dir, 'SKILL.md'), '---\nname: old-method\ndescription: d\n---\nrules\n')
+  put(path.join(w.data, 'skills', 'created.jsonl'), JSON.stringify({ time: Date.now() - 40 * 86400000, session: 'x', repo: w.repo.dir, name: 'old-method', path: dir, type: 'project' }) + '\n')
+  const { status, out } = w.start('startup')
+  assert.equal(status, 0)
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('Skills nobody used in 30 days: old-method'))
+  const reg = require('../plugins/aether/lib/skill-registry.js')
+  const notices = reg.readNotices(w.data).filter((n) => n.kind === 'idle-skills' && n.session === 's1' && n.repo === w.repo.dir)
+  assert.deepEqual(notices.map((n) => n.name), ['old-method'])
+})
+
+test('oversized startup payload trims topic search notice before idle and tidy notices (R13, R16, R19)', (t) => {
+  const w = world(t)
+  put(path.join(w.repo.dir, 'notebook.ipynb'), '{}\n')
+  put(path.join(w.repo.dir, 'AGENTS.md'), 'map\n')
+  put(path.join(w.repo.dir, 'CLAUDE.md'), 'claude only\n')
+  const dir = path.join(w.repo.dir, '.agents', 'skills', 'old-method')
+  put(path.join(dir, 'SKILL.md'), '---\nname: old-method\ndescription: d\n---\nrules\n')
+  put(path.join(w.data, 'skills', 'created.jsonl'), JSON.stringify({ time: Date.now() - 40 * 86400000, session: 'x', repo: w.repo.dir, name: 'old-method', path: dir, type: 'project' }) + '\n')
+
+  const baseline = w.start('startup')
+  assert.equal(baseline.status, 0)
+  assert.ok(baseline.out.hookSpecificOutput.additionalContext.includes('aether:skills'), 'baseline has topic notice')
+  assert.ok(baseline.out.hookSpecificOutput.additionalContext.includes('Skills nobody used in 30 days:'), 'baseline has idle notice')
+  assert.ok(baseline.out.hookSpecificOutput.additionalContext.includes('Tidy:'), 'baseline has tidy notice')
+
+  // Create a customized plugin root that pads version in plugin.json so output slightly exceeds PART_LIMIT
+  const fakePlugin = tempDir(t, 'aether-plugin-pad-')
+  fs.cpSync(PLUGIN, fakePlugin, { recursive: true })
+  const pluginJsonPath = path.join(fakePlugin, '.claude-plugin', 'plugin.json')
+  const pj = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'))
+
+  const topicNotice = baseline.out.hookSpecificOutput.additionalContext.split('\n\n').find((l) => l.includes('aether:skills'))
+  const topicLen = JSON.stringify(`\n\n${topicNotice}`).length - 2
+  const padding = PART_LIMIT - baseline.stdout.length + Math.floor(topicLen / 2)
+  pj.version = `${pj.version}-${'x'.repeat(padding)}`
+  fs.writeFileSync(pluginJsonPath, JSON.stringify(pj))
+
+  // Clear continuity notes so the second run is also treated as the first session
+  const store = require('../plugins/aether/lib/continuity-store.js')
+  const cdir = store.continuityDir({ cwd: w.repo.dir, env: { CLAUDE_CONFIG_DIR: w.configDir }, home: w.home })
+  fs.rmSync(cdir, { recursive: true, force: true })
+
+  const env = { ...process.env, CLAUDE_PLUGIN_ROOT: fakePlugin, AETHER_DATA_DIR: w.data, CLAUDE_CONFIG_DIR: w.configDir, HOME: w.home, LANG: 'en_US.UTF-8' }
+  const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: w.repo.dir, input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 's2', source: 'startup', agent_type: 'aether:lead' }), encoding: 'utf8', env })
+  assert.equal(r.status, 0)
+  const out = JSON.parse(r.stdout)
+  assert.ok(r.stdout.length <= PART_LIMIT, `stdout length ${r.stdout.length} must be <= ${PART_LIMIT}`)
+  assert.ok(!out.hookSpecificOutput.additionalContext.includes('visible signals of'), 'topic notice was trimmed first')
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('Skills nobody used in 30 days:'), 'idle notice is preserved')
+  assert.ok(out.hookSpecificOutput.additionalContext.includes('Tidy:'), 'tidy notice is preserved')
+})
