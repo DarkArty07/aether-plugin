@@ -74,9 +74,22 @@ Para descargar skills externas se utiliza `npx skills add`. Como medida de segur
 
 ### Asignar skills a una tarea
 
+Durante el diseño del plan, `/aether:design` pasa las skills disponibles en el proyecto (`name` y `description` desde `.agents/skills/` y `.claude/skills/`) al Writer y al Judge para que las tareas en `tasks.md` lleven `Skills:` (hasta 3 por tarea) donde resulte pertinente.
+
 El Lead puede asignar hasta 3 skills a cada tarea de un agente o delegado externo:
 - En `tasks.md`, se indican las skills con el campo `Skills:` (por ejemplo, `Skills: erebus-ui, patron-api`).
 - Al compilar briefs o delegar la tarea, se genera la línea `AETHER-SKILLS:` y se adjunta el contenido completo de las skills directamente en el encargo para que cualquier harness disponga de ellas.
+
+### Refuerzo y desempeño de skills
+
+Todos los avisos de refuerzo de skills son mensajes informativos no bloqueantes que corren sin llamar a modelos. Ninguno de estos avisos detiene llamadas a herramientas, ediciones ni el lanzamiento de delegados:
+
+- **Búsqueda por señales visibles en temas prácticos:** Al redactar una tarjeta de intención (`specs/NNN-<tema>/intent.md`) o durante el primer arranque de Aether en un proyecto nuevo, se detectan señales visibles (archivos de cuadernos, dependencias o palabras clave configuradas en `config/skills.json`). Si no hay una skill instalada que cubra ese tema práctico, el Lead recibe un aviso informativo que le sugiere cargar `aether:skills` y buscar o crear una skill antes del plan.
+- **Ubicación de skills y carga de aether:skills:** Cuando el Lead crea o edita una skill de proyecto como carpeta real fuera de `.agents/skills/` (por ejemplo en `.claude/skills/`), o sin haber cargado `aether:skills` en la sesión, recibe un aviso que le recuerda que la carpeta real debe residir en `.agents/skills/` (con enlace en `.claude/skills/`) y le indica cargar `aether:skills`.
+- **Hallazgos repetidos en delegados entre tareas y sesiones:** Tras un veredicto de corrección en una tarea de delegado, Aether compara los hallazgos sobre el mismo archivo entre distintas tareas y sesiones mediante similitud de palabras normalizadas contra el umbral fijado en `config/skills.json`. Si el mismo fallo se repite, el Lead recibe un aviso para valorar crear una skill de proyecto que resuelva ese problema recurrente.
+- **Skills sugeridas al lanzar un delegado:** Al lanzar un delegado con `aether-delegate begin` sin `AETHER-SKILLS:`, Aether comprueba si alguna skill del proyecto coincide con el encargo o con las rutas de `AETHER-OWNS`. De ser así, una nota informativa sugiere pasar esa skill, manteniendo el brief intacto y sin bloquear el lanzamiento.
+- **Skills sin uso a 30 días computando cargas del Lead:** El aviso de arranque sobre skills inactivas identifica skills de proyecto sin uso en los últimos 30 días. Este cómputo incluye tanto las skills pasadas a agentes (`Skills:` o `AETHER-SKILLS:`) como las cargas directas de la herramienta `Skill` por parte del Lead, garantizando que las skills cargadas habitualmente por el Lead nunca se marquen para retirar.
+- **Inspección del desempeño con `aether-report --skills`:** Ejecuta `aether-report --skills` en cualquier terminal para examinar las skills creadas, descargadas, cargadas por el Lead y usadas por agentes (delegados y enjambre), junto con los avisos emitidos, agrupados por proyecto y periodo. Funciona en modo de solo lectura sobre `<dataDir>/skills/*.jsonl`, nunca lee transcripciones de conversación y deduplica copias de worktrees y skills confirmadas previamente en git.
 
 ## Continuidad
 

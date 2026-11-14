@@ -73,9 +73,22 @@ Skills from internet registries are installed using `npx skills add`. To protect
 
 ### Assigning skills to tasks
 
+During plan design, `/aether:design` passes the project's available skills (`name` and `description` from `.agents/skills/` and `.claude/skills/`) to the Writer and the Judge so tasks in `tasks.md` carry `Skills:` (up to 3 per task) where relevant.
+
 The Lead can equip agents and external harness delegates with up to 3 relevant skills per task:
 - In `tasks.md`, specify skills using the `Skills:` field (e.g., `Skills: erebus-ui, patron-api`).
 - When compiling briefs or delegating tasks, the `AETHER-SKILLS:` line is injected, and the full content of each skill is embedded directly into the brief so any harness has access.
+
+### Skill reinforcement and performance
+
+All skill reinforcement notices are non-blocking advisory messages that run without invoking a model. None of these checks halts a tool call, an edit, or a delegate launch:
+
+- **Practical-topic search on visible signals:** When writing an intent card (`specs/NNN-<topic>/intent.md`) or on the first startup of Aether in a new project, Aether scans for visible signals of practical topics (such as notebook files, framework dependencies, or domain keywords configured in `config/skills.json`). If no installed skill covers the topic, the Lead receives an advisory notice prompting it to load `aether:skills` and locate or create a practical skill before generating the plan.
+- **Skill location and guidance on creation:** When the Lead creates or edits a project skill as a real folder outside `.agents/skills/` (for example, in `.claude/skills/`), or without having loaded `aether:skills` in the session, it receives a non-blocking notice reminding it that the real directory must reside in `.agents/skills/` (with a symlink in `.claude/skills/`) and advising it to load `aether:skills`.
+- **Repeated delegate findings across tasks and sessions:** When a delegate attempt fails with corrective findings, Aether compares findings on the same file across tasks and sessions using normalized word similarity against the threshold configured in `config/skills.json`. If a similar defect recurs, the Lead receives an advisory notice suggesting that the recurring problem be captured as a project skill.
+- **Suggested project skills on delegate launch:** When launching a delegate with `aether-delegate begin` without `AETHER-SKILLS:`, Aether checks whether any project skill matches the delegate's prompt or owned paths (`AETHER-OWNS`). If so, an advisory note suggests passing that skill, while leaving the delegate's brief unaltered and without blocking execution.
+- **30-day idle skills counting Lead loads:** The startup check for unused skills identifies project skills with no activity in the last 30 days. This check counts both skills assigned to agents (`Skills:` or `AETHER-SKILLS:`) and direct `Skill` tool loads by the Lead, preventing frequently loaded skills from being flagged for removal.
+- **Inspecting skill performance with `aether-report --skills`:** Run `aether-report --skills` in any shell to inspect created, downloaded, Lead-loaded, and agent-used skills (delegates and swarm) alongside emitted notices, grouped by project and time period. It operates in read-only mode over `<dataDir>/skills/*.jsonl`, never touches conversation transcripts, and deduplicates worktree copies and previously committed git skills.
 
 ## Continuity
 

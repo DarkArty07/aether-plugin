@@ -49,3 +49,14 @@ test('the guide gives the four kinds of skill, where they are downloaded, the tr
   assert.ok(read(ES).includes('empieza vacía'))
   assert.ok(read(EN).includes('starts empty'))
 })
+
+test('the guides and components reference document aether-report --skills, config/skills.json and the reinforced skill notices (R18, R20, C8, C9)', () => {
+  for (const rel of [EN, ES]) {
+    const text = read(rel)
+    assert.ok(text.includes('`aether-report --skills`'), `${rel} names aether-report --skills`)
+    assert.ok(text.includes('`config/skills.json`'), `${rel} names config/skills.json`)
+  }
+  const comp = read('docs/reference/components.md')
+  assert.ok(comp.includes('`--skills`'))
+  assert.ok(comp.includes('`config/skills.json`'))
+})
