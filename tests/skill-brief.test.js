@@ -284,3 +284,44 @@ test('multiline quoted frontmatter folds whitespace and blank lines and preserve
     'backslash-flow', 'double-flow', 'escaped-flow', 'single-flow', 'space-flow',
   ])
 })
+
+test('function words of skill descriptions do not make a skill match an unrelated brief', (t) => {
+  const dir = tempDir(t, 'aether-proj-stopwords-')
+  skill(dir, 'writing-node-tests', { body: 1, description: 'Use when writing tests with node:test in this repository' })
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Fix the parser so it handles empty input with this format', description: '', owns: [] }),
+    [],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Write node tests for the parser', description: '', owns: [] }),
+    ['writing-node-tests'],
+  )
+})
+
+test('a skill still matches a brief that shares two real topic words with it', (t) => {
+  const dir = tempDir(t, 'aether-proj-topic-')
+  skill(dir, 'godot-scenes', { body: 1, description: 'Build Godot scenes and signals for the player' })
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Add a jump signal to the Godot player scene', description: '', owns: [] }),
+    ['godot-scenes'],
+  )
+})
+
+test('the stop words are data: a word listed in the config that AETHER_SKILLS_CONFIG names is ignored', (t) => {
+  const dir = tempDir(t, 'aether-proj-stopcfg-')
+  const cfgDir = tempDir(t, 'aether-skills-stopcfg-')
+  const file = path.join(cfgDir, 'skills.json')
+  const bundled = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'config', 'skills.json'), 'utf8'))
+  fs.writeFileSync(file, JSON.stringify({ ...bundled, stopWords: ['godot'] }))
+  skill(dir, 'godot-scenes', { body: 1, description: 'Build Godot scenes and signals for the player' })
+  const previous = process.env.AETHER_SKILLS_CONFIG
+  process.env.AETHER_SKILLS_CONFIG = file
+  t.after(() => {
+    if (previous === undefined) delete process.env.AETHER_SKILLS_CONFIG
+    else process.env.AETHER_SKILLS_CONFIG = previous
+  })
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Add a jump signal to the Godot player scene', description: '', owns: [] }),
+    [],
+  )
+})

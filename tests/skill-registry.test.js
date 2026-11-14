@@ -212,3 +212,24 @@ test('report filters the deduplicated created records, not later duplicates', (t
   assert.equal(report.totals.createdRaw, 1)
   assert.equal(report.totals.created, 0)
 })
+
+test('skillsReport resolves the repository once per distinct path, not once per log line', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-skills-perf-')
+  const gitLib = require('../plugins/aether/lib/git.js')
+  const realRepoPaths = gitLib.repoPaths
+  const resolved = []
+  gitLib.repoPaths = (cwd, ...rest) => {
+    resolved.push(cwd)
+    return realRepoPaths(cwd, ...rest)
+  }
+  t.after(() => { gitLib.repoPaths = realRepoPaths })
+  for (let i = 0; i < 200; i++) reg.recordUse(data, { time: i, session: 's1', kind: 'lead', skills: ['skills'], repo: repo.dir })
+  for (let i = 0; i < 50; i++) reg.recordNotice(data, { time: i, session: 's1', repo: repo.dir, kind: 'topic-search', name: 'godot' })
+
+  const report = reg.skillsReport(data, { repo: repo.dir })
+  assert.equal(report.totals.leadLoads, 200)
+  assert.equal(report.totals.notices, 50)
+  assert.equal(report.projects[repo.dir].leadLoads, 200)
+  assert.deepEqual(resolved, [repo.dir], 'one resolution for the one path, the filter included')
+})

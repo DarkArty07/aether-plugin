@@ -7,7 +7,8 @@ const crypto = require('node:crypto')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { git, repoPaths } = require('./git.js')
+// The git helpers are read through the module object, so a test can count the git processes a report starts.
+const gitLib = require('./git.js')
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'skills.json')
 
@@ -249,7 +250,7 @@ function extractNamedSkill(source) {
 
 function repoRootOf(cwd) {
   try {
-    const { mainRoot } = repoPaths(cwd || '.')
+    const { mainRoot } = gitLib.repoPaths(cwd || '.')
     if (mainRoot) return mainRoot
   } catch {}
   return path.resolve(cwd || '.')
@@ -398,7 +399,8 @@ function loadSkillsConfig(customPath = process.env.AETHER_SKILLS_CONFIG || CONFI
   if (!Array.isArray(parsed.topics)) {
     throw new Error(`skills config ${customPath} is missing topics`)
   }
-  return { repeat, topics: parsed.topics }
+  const stopWords = Array.isArray(parsed.stopWords) ? parsed.stopWords.filter((word) => typeof word === 'string') : []
+  return { repeat, topics: parsed.topics, stopWords }
 }
 
 function recordCreated(dataDir, entry) {
@@ -469,9 +471,32 @@ function skillRelPath(entryOrPath) {
   return match[1].split('/').join(path.sep)
 }
 
+// While a top-level read is running (a report, the dedupe, the record check), the canonical repository of each raw
+// path and the first-commit times of each skill path are looked up once and then reused. Outside such a read,
+// nothing is kept, so a later call always sees the repository as it is now.
+let resolutionMemo = null
+
+function withResolutionMemo(fn) {
+  if (resolutionMemo) return fn()
+  resolutionMemo = { canonical: new Map(), commits: new Map() }
+  try {
+    return fn()
+  } finally {
+    resolutionMemo = null
+  }
+}
+
 function canonicalRepo(entry) {
   const raw = typeof entry === 'string' ? entry : (entry && (entry.repo || entry.path))
   if (!raw || typeof raw !== 'string') return null
+  const memo = resolutionMemo ? resolutionMemo.canonical : null
+  if (memo && memo.has(raw)) return memo.get(raw)
+  const resolved = resolveRepo(raw)
+  if (memo) memo.set(raw, resolved)
+  return resolved
+}
+
+function resolveRepo(raw) {
   let candidate = slash(raw)
   candidate = candidate.replace(/\/\.aether\/(?:work|worktrees|lanes|exams|seats|delegates)(?:\/.*)?$/, '')
   candidate = candidate.replace(/\/\.(?:worktrees|claude\/worktrees)(?:\/.*)?$/, '')
@@ -479,7 +504,7 @@ function canonicalRepo(entry) {
   if (!candidate) return null
   if (fs.existsSync(candidate)) {
     try {
-      const mainRoot = repoPaths(candidate).mainRoot
+      const mainRoot = gitLib.repoPaths(candidate).mainRoot
       if (mainRoot) return mainRoot
     } catch {}
   }
@@ -488,9 +513,15 @@ function canonicalRepo(entry) {
 
 function gitCommitTimes(repo, relPath) {
   const rel = slash(relPath)
-  const result = git(['log', '--reverse', '--format=%ct', '--', rel], repo, { allowFail: true })
-  if (!result || result.status !== 0 || !result.stdout) return []
-  return result.stdout.split('\n').map((line) => Number.parseInt(line, 10)).filter((n) => Number.isFinite(n))
+  const memo = resolutionMemo ? resolutionMemo.commits : null
+  const key = `${repo}\0${rel}`
+  if (memo && memo.has(key)) return memo.get(key)
+  const result = gitLib.git(['log', '--reverse', '--format=%ct', '--', rel], repo, { allowFail: true })
+  const times = (!result || result.status !== 0 || !result.stdout)
+    ? []
+    : result.stdout.split('\n').map((line) => Number.parseInt(line, 10)).filter((n) => Number.isFinite(n))
+  if (memo) memo.set(key, times)
+  return times
 }
 
 function alreadyInGitBefore(repo, relPath, beforeMs = null) {
@@ -519,7 +550,11 @@ function alreadyInGitBefore(repo, relPath, beforeMs = null) {
   }
 }
 
-function shouldRecordCreated(dataDir, { repo, name, dir, type = 'project' } = {}) {
+function shouldRecordCreated(dataDir, options) {
+  return withResolutionMemo(() => decideRecordCreated(dataDir, options))
+}
+
+function decideRecordCreated(dataDir, { repo, name, dir, type = 'project' } = {}) {
   const existing = readCreated(dataDir)
   if (type === 'owner') {
     return !existing.some((entry) => entry.type === 'owner' && entry.name === name)
@@ -563,7 +598,7 @@ function dedupeCreated(entries) {
 }
 
 function readCreatedDeduplicated(dataDir) {
-  return dedupeCreated(readCreated(dataDir))
+  return withResolutionMemo(() => dedupeCreated(readCreated(dataDir)))
 }
 
 function inWindow(entry, { since, until, session }) {
@@ -576,9 +611,15 @@ function inWindow(entry, { since, until, session }) {
   return true
 }
 
-function sameRepo(entry, wanted) {
-  if (wanted == null) return true
-  return canonicalRepo(entry) === canonicalRepo({ repo: wanted, path: wanted })
+// The canonical form of the wanted repository, computed once per report; null when no repository is wanted.
+function repoFilter(wanted) {
+  if (wanted == null) return null
+  return { canonical: canonicalRepo({ repo: wanted, path: wanted }) }
+}
+
+function sameRepo(entry, filter) {
+  if (filter == null) return true
+  return canonicalRepo(entry) === filter.canonical
 }
 
 function countSkills(lines, into) {
@@ -610,11 +651,16 @@ function projectOf(projects, repoKey) {
   return projects[key]
 }
 
-function skillsReport(dataDir, { repo = null, since = null, until = null, session = null } = {}) {
+function skillsReport(dataDir, options) {
+  return withResolutionMemo(() => buildSkillsReport(dataDir, options))
+}
+
+function buildSkillsReport(dataDir, { repo = null, since = null, until = null, session = null } = {}) {
   const window = { since, until, session }
-  const createdRawEntries = readCreated(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
-  const created = readCreatedDeduplicated(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
-  const downloadedRaw = readInstalls(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
+  const filter = repoFilter(repo)
+  const createdRawEntries = readCreated(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, filter))
+  const created = readCreatedDeduplicated(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, filter))
+  const downloadedRaw = readInstalls(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, filter))
   const downloadedSeen = new Set()
   const downloaded = []
   for (const entry of downloadedRaw) {
@@ -623,8 +669,8 @@ function skillsReport(dataDir, { repo = null, since = null, until = null, sessio
     downloadedSeen.add(key)
     downloaded.push(entry)
   }
-  const uses = readUses(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
-  const notices = readNotices(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, repo))
+  const uses = readUses(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, filter))
+  const notices = readNotices(dataDir).filter((entry) => inWindow(entry, window) && sameRepo(entry, filter))
   const leadLines = uses.filter((entry) => entry.kind === 'lead')
   const delegateLines = uses.filter((entry) => entry.kind === 'delegate')
   const swarmLines = uses.filter((entry) => entry.kind === 'run')

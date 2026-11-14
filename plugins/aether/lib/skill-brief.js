@@ -7,6 +7,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { git } = require('./git.js')
+const { loadSkillsConfig } = require('./skill-registry.js')
 
 const MAX_SKILLS = 3
 const MAX_SKILL_LINES = 500
@@ -300,7 +301,12 @@ function foldedWords(text) {
   return foldToken(text).split(/[^a-z0-9]+/).filter(Boolean)
 }
 
-function skillMatchesBrief(skill, words, raw) {
+// The stop words of config/skills.json (stopWords), folded like the brief's words. A missing key means none.
+function briefStopWords() {
+  return new Set(loadSkillsConfig().stopWords.map((word) => foldToken(word)))
+}
+
+function skillMatchesBrief(skill, words, raw, stop = new Set()) {
   const name = String(skill.name || '').toLowerCase()
   if (!name) return false
   if (words.has(name) || raw.includes(name)) return true
@@ -308,10 +314,11 @@ function skillMatchesBrief(skill, words, raw) {
     .split('-')
     .filter((part) => part.length >= 4)
     .map((part) => foldToken(part))
+    .filter((part) => !stop.has(part))
   if (parts.length > 0 && parts.every((part) => words.has(part))) return true
   const significant = new Set()
   for (const word of [...foldedWords(skill.name), ...foldedWords(skill.description)]) {
-    if (word.length >= 4) significant.add(word)
+    if (word.length >= 4 && !stop.has(word)) significant.add(word)
   }
   let hits = 0
   for (const word of significant) {
@@ -324,8 +331,9 @@ function matchDelegateSkills(cwd, { prompt = '', description = '', owns = [] } =
   const owned = Array.isArray(owns) ? owns.join(' ') : ''
   const raw = `${prompt}\n${description}\n${owned}`.toLowerCase()
   const words = new Set(foldedWords(raw))
+  const stop = briefStopWords()
   return listProjectSkills(cwd)
-    .filter((skill) => skillMatchesBrief(skill, words, raw))
+    .filter((skill) => skillMatchesBrief(skill, words, raw, stop))
     .map((skill) => skill.name)
 }
 
