@@ -11,6 +11,10 @@
 
 delete process.env.NODE_USE_ENV_PROXY
 
+// A runner that sets FORCE_COLOR makes console.log color booleans (yellow true/false). Tests that
+// compare a child's stdout to the plain word then fail. A pipe is uncolored unless this is set.
+delete process.env.FORCE_COLOR
+
 // NODE_OPTIONS is picked up by every node process; a --use-env-proxy entry there switches the proxy agent on
 // for each child even when the variable above is gone. Only that token goes: the rest of NODE_OPTIONS stays
 // byte-for-byte, so a runner's own flags (for example --test-reporter) keep working.
