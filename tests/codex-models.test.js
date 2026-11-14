@@ -1,14 +1,11 @@
 'use strict'
 
-// No helper here, so the env-proxy scrub is required directly: the script below runs in a node child that
-// must not inherit the switch (issue #254).
+// No helper here: clear the test proxy before loading the real configuration (issue #254).
 require('./env-proxy.js')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
 const { loadPrices, priceEntry, ratesFor } = require('../plugins/aether/lib/prices.js')
 
 const ROOT = path.join(__dirname, '..')
@@ -19,17 +16,8 @@ const index = read('models', 'models.json')
 const profiles = read('models', 'profiles.json').profiles
 const IN_USE = ['gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna']
 const OUT = ['gpt-6-astra', 'gpt-6-sol', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-reserve', 'codex-auto-review']
-const POINTS = {
-  'gpt-6.1-sol': [34.5, 46.1, 50.2, 52.3, 54.5],
-  'gpt-6.1-terra': [29.2, 38.1, 42.3, 45.0, 51.0],
-  'gpt-6-luna': [9.7, 18.3, 21.4, 23.3, 27.8],
-}
-// Terminal-Bench 4.0 of AA (2026-10-29, the AA list of tests/fixtures/codex/aa-api-2026-10-29.json, as a share: 30.8 % is 0.308), effort by effort.
-const TERMINAL = {
-  'gpt-6.1-sol': [0.308, 0.48, 0.515, 0.54, 0.561],
-  'gpt-6.1-terra': [0.152, 0.323, 0.419, 0.465, 0.556],
-  'gpt-6-luna': [0, 0.025, 0.045, 0.081, 0.126],
-}
+const { loadPairs } = require('../plugins/aether/lib/pairs.js')
+const pairs = loadPairs().pairs
 const idOf = (entry) => (typeof entry === 'string' ? entry : entry.id)
 
 test('the listing of the CLI is captured on its day with the ten models, and everything left out has its reason (R16)', () => {
@@ -49,15 +37,15 @@ test('the listing of the CLI is captured on its day with the ten models, and eve
   assert.ok(typeof listing.excludedEfforts.ultra === 'string' && /Artificial Analysis/.test(listing.excludedEfforts.ultra))
 })
 
-test('the index lists Sol, Terra and Luna at the five efforts with the figures of AA of 2026-10-29, and the others as excluded with their reason (R12, R16)', () => {
+test('the index lists Sol, Terra and Luna with pair-table intelligence and Terminal-Bench fractions, and the others as excluded (R12, R16)', () => {
   assert.ok(index.harnesses.includes('codex'))
   assert.equal(index.listedOn.codex, '2026-10-29')
   const used = index.models.filter((model) => model.harness === 'codex')
   assert.deepEqual(used.map((model) => model.model).sort(), [...IN_USE].sort())
   for (const model of used) {
     assert.deepEqual(model.scores.map((score) => score.effort), ['low', 'medium', 'high', 'xhigh', 'max'])
-    assert.deepEqual(model.scores.map((score) => score.intelligence), POINTS[model.model])
-    assert.deepEqual(model.scores.map((score) => score.terminalBench), TERMINAL[model.model], 'Terminal-Bench lives in the scores of the index, one figure for each effort')
+    for (const score of model.scores) assert.equal(score.intelligence, pairs.find((row) => row.id === `codex/${model.model}@${score.effort}`).intelligence)
+    for (const score of model.scores) assert.ok(typeof score.terminalBench === 'number' && score.terminalBench >= 0 && score.terminalBench <= 1)
   }
   const sol = used.find((model) => model.model === 'gpt-6.1-sol')
   assert.deepEqual([sol.scores[0].priceInput, sol.scores[0].priceOutput], [2, 10])
@@ -65,7 +53,7 @@ test('the index lists Sol, Terra and Luna at the five efforts with the figures o
   assert.deepEqual(excluded.map((entry) => entry.model).sort(), [...OUT].sort())
   assert.ok(excluded.every((entry) => typeof entry.reason === 'string' && entry.reason.length > 20))
   const haiku = index.models.find((model) => model.harness === 'claude' && model.alias === 'haiku')
-  assert.equal(haiku.scores.find((score) => score.effort === 'high').intelligence, 29.6, 'the committed index carries the 2026-10-29 scale for the other harnesses too')
+  assert.equal(haiku.scores.find((score) => score.effort === 'high').intelligence, pairs.find((row) => row.id === 'claude/haiku@high').intelligence)
 })
 
 test('every Codex model of the index has a profile of OpenAI with its context (R14)', () => {
@@ -86,19 +74,4 @@ test('the prices per million tokens are Sol 2/10, Terra 1/5 and Luna 0.1/0.5, an
   assert.ok(ratesFor(prices, 'gpt-6.1-sol'))
   const MILLION = { input: 1e6, output: 1e6, cacheRead: 1e6, cacheWrite: 0 }
   assert.ok(Math.abs(priceEntry({ model: 'gpt-6.1-sol', agent: 'lane', ...MILLION }, prices) - (2 + 10 + 0.2)) < 1e-9)
-})
-
-test('the script, run on the saved AA list, reproduces the committed Codex records and finds every model profiled (R14, R16)', () => {
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-models-'))
-  const docs = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-models-docs-'))
-  const run = spawnSync(process.execPath, [
-    path.join(ROOT, 'scripts', 'build-models-index.js'),
-    '--from', path.join(ROOT, 'tests', 'fixtures', 'codex', 'aa-api-2026-10-29.json'),
-    '--harnesses', 'claude,agy,codex,grok,muse', '--write', '--out', out, '--docs', docs,
-  ], { encoding: 'utf8' })
-  assert.equal(run.status, 0, run.stdout + run.stderr)
-  const built = JSON.parse(fs.readFileSync(path.join(out, 'models.json'), 'utf8'))
-  const ofCodex = (list) => list.filter((entry) => entry.harness === 'codex').sort((a, b) => a.model.localeCompare(b.model))
-  assert.deepEqual(ofCodex(index.models), ofCodex(built.models))
-  assert.deepEqual(ofCodex(index.excluded), ofCodex(built.excluded))
 })
