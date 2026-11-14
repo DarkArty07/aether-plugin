@@ -47,6 +47,7 @@ Never stop to ask. Where a choice is open, pick a reasonable default and write i
    - **Depends on:** required. `none` for an independent task, or one line per dependency in the form `- Depends on: Task N — reason`. Every dependency needs its reason.
    - **Merges with:** optional, `none` or a list such as `- Merges with: Task 13, Task 19`; naming it on one side is enough. Use it only when the tasks cannot be green alone, because each changes something that a test owned by another still holds: `aether-plan` builds them as one unit, which one agent builds in sequence. Otherwise give one task the file and its test, and make the other depend on it.
    - **Serves:** the requirements of the spec that the task builds, such as `- Serves: R1, R3`. Every task serves at least one requirement of the spec, and every requirement has a task. aether-plan check fails on a task that serves none, and on one that names a requirement the spec does not have. It warns about a requirement that no task serves.
+   - **Skills:** optional. Up to 3 skills that help the task, separated by commas, such as `- Skills: direccion-de-arte, patron-api`. When the project has skills that fit a task, list them here (at most 3 per task); `aether-plan check` fails on more than 3 or on a skill that does not exist.
 
    The fields are one list with no blank line between them. A blank line ends the block.
 
