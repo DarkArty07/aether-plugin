@@ -1,4 +1,4 @@
-# Evidencia de la spec 037
+# Evidencia de la spec 038
 
 Leída el 2026-11-13.
 

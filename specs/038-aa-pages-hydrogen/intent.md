@@ -1,6 +1,6 @@
-# Tarjeta de intención 037: fuera la API de Artificial Analysis, las páginas como única fuente, y Gemini 4 Hydrogen
+# Tarjeta de intención 038: fuera la API de Artificial Analysis, las páginas como única fuente, y Gemini 4 Hydrogen
 
-Issues: #267 (Hydrogen no se detecta) y #268 (sacar la API). Etapa 1 de tres; las etapas 2 y 3 (harnesses como extras) son las specs 038 y 039 y quedan fuera de esta tarjeta.
+Issues: #267 (Hydrogen no se detecta) y #268 (sacar la API). Etapa 1 de tres; las etapas 2 y 3 (harnesses como extras) son las specs 039 y 040 y quedan fuera de esta tarjeta. Esta spec nació como 037 y pasó a 038 el 2026-11-13: otra sesión construye a la vez `specs/037-skills-reinforcement`; los issues #267 y #268 la nombran con el número viejo.
 
 ## Palabras del dueño (2026-11-13)
 
