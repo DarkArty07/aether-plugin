@@ -1599,3 +1599,26 @@ test('design.workflow.js also takes the project skills from the seat-start reply
   })
   assertPlanRoundsGetSkills(run)
 })
+
+// A plan correction is a later Writer seat round, and the exam is a later seat. Both must see the same list the
+// write and the first review saw: the revision gets the block, the Examiner does not.
+test('design.workflow.js passes the project skills to a native plan Writer revision, and the native Examiner gets none (R8, C4)', async () => {
+  const run = await go(ARGS, {
+    ops: (call, fallback) => {
+      if (call.command.verb !== 'seat-wait') return fallback(call)
+      const out = fallback(call)
+      if (!out || !out.value) return out
+      return { ...out, value: { ...out.value, projectSkills: PROJECT_SKILLS } }
+    },
+    judge: (call, fallback) => (call.label === 'plan: judge review 1'
+      ? { verdict: 'revise', findings: [finding('gap')], openQuestions: [] }
+      : fallback(call)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const prompt = (label) => run.calls.find((c) => c.label === label).prompt
+  assert.ok(prompt('plan: writer revision 1').includes(PROJECT_BLOCK))
+  assert.ok(prompt('plan: judge review 2').includes(PROJECT_BLOCK))
+  assert.equal(prompt('exam: examiner').includes('## Project skills'), false)
+  assert.equal(prompt('spec: writer write').includes('## Project skills'), false)
+  assert.equal(prompt('spec: judge review 1').includes('## Project skills'), false)
+})
