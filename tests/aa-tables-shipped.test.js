@@ -16,14 +16,10 @@ test('the shipped table agrees with the photo: the refresh finds no figure to ch
   assert.match(out.stdout, /Stored ladder: unchanged/)
 })
 
-test('every row with a page carries its code figures, the external rows too, dated by the photo', () => {
-  for (const pair of loadPairs().pairs.filter((row) => !Object.hasOwn(row, 'estimateOf'))) {
-    const figures = SNAPSHOT.pages[pair.slug].figures
-    if (!figures.code) continue
-    assert.deepEqual([pair.code, pair.codeChecked], [figures.code.value, figures.code.on], pair.id)
-    // Since 2026-11-14 the pages may not give the code cost and minutes: when the photo has them they are the row's; when not, the row keeps its earlier ones.
-    if (figures.codeCostPerTaskUsd) assert.equal(pair.codeCostPerTaskUsd, figures.codeCostPerTaskUsd.value, pair.id)
-    if (figures.codeMinutesPerTask) assert.equal(pair.codeMinutesPerTask, figures.codeMinutesPerTask.value, pair.id)
+test('no row of the shipped pairs table carries a code figure: the choice reads the index and its cost per task only (A127)', () => {
+  const rows = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json'), 'utf8')).pairs
+  for (const pair of rows) {
+    for (const field of ['code', 'codeChecked', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) assert.equal(Object.hasOwn(pair, field), false, `${pair.id} ${field}`)
   }
 })
 

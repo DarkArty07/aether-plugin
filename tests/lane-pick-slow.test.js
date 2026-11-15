@@ -99,7 +99,7 @@ test('a slow mark holds its pair for an hour, and a mark that has run out holds 
   const held = pick(args, live, SONNET_XHIGH)
   assert.equal(held.status, 0, held.stdout + held.stderr)
   assert.equal(whyOf(held)[opusHighId], 'excluded')
-  assert.equal(held.json.picked, null, 'no other implementer pair reaches Sonnet xhigh')
+  assert.equal(held.json.picked.id, 'agy/gemini-4-hydrogen@high', 'the other pair that reaches Sonnet xhigh by intelligence takes the call')
 
   const expired = agyEnv(t, { quota: claudeFirst })
   slow.markSlow(expired.AETHER_DATA_DIR, opusHigh, { now: Date.now() - 61 * MIN })

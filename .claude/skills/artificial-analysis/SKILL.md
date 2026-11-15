@@ -28,7 +28,8 @@ The model pages are the **only source** by the owner's decision: the owner wants
 
 ## Reading it for a role
 
-- **Code in a terminal (the implementer):** Terminal-Bench 4.0, with its cost.
+- **The rule (A127, issue #286):** a decision about which model or effort a role runs on rests only on the Intelligence Index and its cost per task. Terminal-Bench and the other secondary benchmarks are information, never a criterion, because AA moves them often.
+- **Code in a terminal (the implementer):** the index and its cost per task, as for every role. Terminal-Bench 4.0 is information: read it, never choose by it.
 - **Documents, analysis and reports (the Writer, the Judge):** AA-Briefcase, the rubric pass rate and the analytical-quality Elo.
 - **Reading a long text:** LCR. It barely moves with the effort.
 - **Nothing measures "finding what is missing"**, which is what the Judge, the supervisor and the final review do. Use Aether's own cases (the errors that went through) for that.

@@ -7,7 +7,7 @@ const { tempDir } = require('./helpers.js')
 const { main } = require('../scripts/refresh-lanes.js')
 const { snapshotOf } = require('./aa-page-fixtures.js')
 const row = (id, slug, extra = {}) => { const [harness, rest] = id.split('/'); const [model, effort] = rest.split('@'); return { id, slug, harness, model, family: model, effort, group: harness === 'claude' ? null : harness, intelligence: 20, costPerTaskUsd: 0.1, ...extra } }
-const haikuHigh = row('claude/haiku@high', 'claude-haiku-5-5-high', { intelligence: 29.6, checked: '2026-11-10', code: 21.72, codeCostPerTaskUsd: 0.331, codeMinutesPerTask: 12.1, codeChecked: '2026-11-10' })
+const haikuHigh = row('claude/haiku@high', 'claude-haiku-5-5-high', { intelligence: 29.6, checked: '2026-11-10' })
 const argonHigh = row('agy/gemini-4-argon@high', 'gemini-4-argon', { intelligence: 50, costPerTaskUsd: 7 })
 const spaced = r => `{ ${Object.entries(r).map(([k,v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(', ')} }`
 function setup(t, rows = [haikuHigh, argonHigh]) {
@@ -20,7 +20,6 @@ function setup(t, rows = [haikuHigh, argonHigh]) {
 const writeSnapshot = (files, shot) => fs.writeFileSync(files.snapshot, JSON.stringify(shot))
 const run = (files, extra = []) => main(['--pairs', files.pairs, '--ladder', files.ladder, '--snapshot', files.snapshot, ...extra])
 const rowsOf = files => JSON.parse(fs.readFileSync(files.pairs, 'utf8')).pairs
-const code = { code: 21.72, codeCostPerTaskUsd: 0.331, codeMinutesPerTask: 12.3 }
 
 test('the script asks nothing of the network and holds no key', () => {
   const source = fs.readFileSync(path.join(__dirname, '../scripts/refresh-lanes.js'), 'utf8')
@@ -32,44 +31,39 @@ test('the script asks nothing of the network and holds no key', () => {
 })
 test('figure dates come from the snapshot rather than today', t => {
   const f = setup(t, [haikuHigh])
-  writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { intelligence: { value: 29.9, on: '2026-11-13' }, costPerTaskUsd: 0.159, code: { value: 21.72, on: '2026-11-12' }, codeCostPerTaskUsd: 0.331, codeMinutesPerTask: 12.3 } } }))
+  writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { intelligence: { value: 29.9, on: '2026-11-13' }, costPerTaskUsd: 0.159 } } }))
   const out = main(['--pairs', f.pairs, '--ladder', f.ladder, '--snapshot', f.snapshot, '--write'], { now: () => Date.UTC(2030, 0, 1) })
   assert.equal(out.exitCode, 0, out.stdout)
-  const r = rowsOf(f)[0]; assert.deepEqual([r.intelligence, r.checked, r.codeMinutesPerTask, r.codeChecked], [29.9, '2026-11-13', 12.3, '2026-11-12'])
+  const r = rowsOf(f)[0]; assert.deepEqual([r.intelligence, r.checked, r.costPerTaskUsd], [29.9, '2026-11-13', 0.159])
 })
-test('patches every page row in place only with --write, including external code and null cost', t => {
+test('patches every page row in place only with --write, including external rows and null cost', t => {
   const f = setup(t, [haikuHigh, { ...argonHigh, costPerTaskUsd: null }]); const before = fs.readFileSync(f.pairs, 'utf8')
-  writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { intelligence: 29.9, costPerTaskUsd: 0.159, ...code } }, [argonHigh.slug]: { figures: { intelligence: 50.4, costPerTaskUsd: 4.973, code: 57.07, codeCostPerTaskUsd: 6.78, codeMinutesPerTask: 42.7 } } }))
+  writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { intelligence: 29.9, costPerTaskUsd: 0.159 } }, [argonHigh.slug]: { figures: { intelligence: 50.4, costPerTaskUsd: 4.973 } } }))
   assert.match(run(f).stdout, /intelligence 29.6 → 29.9/); assert.equal(fs.readFileSync(f.pairs, 'utf8'), before)
   assert.equal(run(f, ['--write']).exitCode, 0)
-  const [a,b] = rowsOf(f); assert.deepEqual([a.intelligence,a.checked,a.codeMinutesPerTask], [29.9,'2026-11-13',12.3]); assert.deepEqual([b.costPerTaskUsd,b.code,b.codeCostPerTaskUsd,b.codeMinutesPerTask,b.codeChecked], [null,57.07,6.78,42.7,'2026-11-13'])
+  const [a,b] = rowsOf(f); assert.deepEqual([a.intelligence,a.checked], [29.9,'2026-11-13']); assert.equal(b.intelligence, 50.4); assert.equal(b.costPerTaskUsd, null)
   assert.equal(a.costPerTaskUsd, 0.159, 'an existing numeric cost updates from the snapshot')
   const expected = before
     .replace('"intelligence": 29.6', '"intelligence": 29.9')
     .replace('"costPerTaskUsd": 0.1', '"costPerTaskUsd": 0.159')
     .replace('"checked": "2026-11-10"', '"checked": "2026-11-13"')
-    .replace('"codeMinutesPerTask": 12.1', '"codeMinutesPerTask": 12.3')
-    .replace('"codeChecked": "2026-11-10"', '"codeChecked": "2026-11-13"')
-    .replace('"intelligence": 50, "costPerTaskUsd": null }', '"intelligence": 50.4, "costPerTaskUsd": null, "code": 57.07, "codeCostPerTaskUsd": 6.78, "codeMinutesPerTask": 42.7, "checked": "2026-11-13", "codeChecked": "2026-11-13" }')
+    .replace('"intelligence": 50, "costPerTaskUsd": null }', '"intelligence": 50.4, "costPerTaskUsd": null, "checked": "2026-11-13" }')
   assert.equal(fs.readFileSync(f.pairs, 'utf8'), expected, 'patches only the intended values in each row without duplicate fields')
   const text = fs.readFileSync(f.pairs, 'utf8'); const again = run(f, ['--write']); assert.match(again.stdout, /^No figure changed\./); assert.doesNotMatch(again.stdout, /written to/); assert.equal(fs.readFileSync(f.pairs, 'utf8'), text)
 })
 test('a 0.3 Claude scale shift preserves the recalculated rung order and stored ladder', t => {
   const rows = [
     haikuHigh,
-    row('claude/haiku@xhigh', 'haiku-xhigh', { intelligence: 34.3, costPerTaskUsd: 0.248, code: 29.29, codeCostPerTaskUsd: 0.46 }),
-    row('claude/sonnet@high', 'sonnet-high', { intelligence: 41.1, costPerTaskUsd: 1.636, code: 43.94, codeCostPerTaskUsd: 2.186 }),
-    row('claude/opus@high', 'opus-high', { intelligence: 51.7, costPerTaskUsd: 3.465, code: 56.57, codeCostPerTaskUsd: 5.119 }),
-    row('claude/opus@xhigh', 'opus-xhigh', { intelligence: 57, costPerTaskUsd: 6.047, code: 59.6, codeCostPerTaskUsd: 8.778 }),
+    row('claude/haiku@xhigh', 'haiku-xhigh', { intelligence: 34.3, costPerTaskUsd: 0.248 }),
+    row('claude/sonnet@high', 'sonnet-high', { intelligence: 41.1, costPerTaskUsd: 1.636 }),
+    row('claude/opus@high', 'opus-high', { intelligence: 51.7, costPerTaskUsd: 3.465 }),
+    row('claude/opus@xhigh', 'opus-xhigh', { intelligence: 57, costPerTaskUsd: 6.047 }),
   ]
   const f = setup(t, rows)
   const stored = fs.readFileSync(f.ladder, 'utf8')
   const shot = shift => snapshotOf(Object.fromEntries(rows.map(r => [r.slug, { figures: {
     intelligence: Math.round((r.intelligence + shift) * 10) / 10,
     costPerTaskUsd: r.costPerTaskUsd,
-    code: r.code,
-    codeCostPerTaskUsd: r.codeCostPerTaskUsd,
-    codeMinutesPerTask: 12.3,
   } }])))
   const expected = 'Recalculated ladder: haiku high > haiku xhigh > sonnet high > opus high > opus xhigh'
   writeSnapshot(f, shot(0))
@@ -94,7 +88,7 @@ test('warns only when latest read dates differ', t => {
   writeSnapshot(f, shot('2026-11-12')); assert.match(run(f).stdout, /Read dates differ: agy was read on 2026-11-12, claude on 2026-11-13\./)
   writeSnapshot(f, shot('2026-11-13')); assert.doesNotMatch(run(f).stdout, /Read dates differ/)
 })
-test('missing code preserves code fields and estimate follows its reference', t => {
+test('an estimate follows its reference, and the refresh adds no code field to a row', t => {
   const spark = row('muse/spark@high', 'spark', { intelligence: 28.7, estimateOf: haikuHigh.id, estimateDistance: -0.9 })
   const f = setup(t, [haikuHigh, spark]); const ladder = fs.readFileSync(f.ladder, 'utf8')
   const { choose } = require('../plugins/aether/lib/superdelegation.js')
@@ -102,25 +96,25 @@ test('missing code preserves code fields and estimate follows its reference', t 
   const pick = pairs => choose({ pairs, reference: { model: 'haiku', effort: 'high' }, harnesses }).picked?.id
   assert.equal(pick(rowsOf(f)), spark.id)
   writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { intelligence: 29.9 } } }))
-  const out = run(f, ['--write']); assert.match(out.stdout, /the page of claude-haiku-5-5-high has no code figure/); const [a,b] = rowsOf(f); assert.deepEqual([a.code,a.codeCostPerTaskUsd,a.codeMinutesPerTask,a.codeChecked], [21.72,0.331,12.1,'2026-11-10']); assert.deepEqual([a.intelligence, a.checked], [29.9, '2026-11-13']); assert.equal(b.intelligence, 29); assert.equal(pick(rowsOf(f)), spark.id); assert.equal(fs.readFileSync(f.ladder, 'utf8'), ladder)
+  const out = run(f, ['--write']); assert.equal(out.exitCode, 0, out.stdout)
+  const [a, b] = rowsOf(f); assert.deepEqual([a.intelligence, a.checked], [29.9, '2026-11-13']); assert.equal(a.code, undefined); assert.equal(b.intelligence, 29)
+  assert.equal(pick(rowsOf(f)), spark.id); assert.equal(fs.readFileSync(f.ladder, 'utf8'), ladder)
 })
-test('missing intelligence keeps checked, while code updates', t => {
-  const f = setup(t, [haikuHigh]); writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: code } })); run(f, ['--write']); const r = rowsOf(f)[0]; assert.deepEqual([r.intelligence,r.checked,r.codeMinutesPerTask,r.codeChecked], [29.6,'2026-11-10',12.3,'2026-11-13'])
+test('a page with no intelligence keeps the intelligence and checked of the row', t => {
+  const f = setup(t, [haikuHigh]); writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: {} } })); run(f, ['--write'])
+  const r = rowsOf(f)[0]; assert.deepEqual([r.intelligence, r.checked], [29.6, '2026-11-10'])
 })
-test('last numeric field retains its space and ladder changes are shown but never written', t => {
-  const last = { ...haikuHigh }; delete last.codeMinutesPerTask; last.codeMinutesPerTask = 12.1
-  const f = setup(t, [last]); const before = fs.readFileSync(f.ladder, 'utf8'); writeSnapshot(f, snapshotOf({ [last.slug]: { figures: { intelligence: 29.9, ...code } } }))
-  const out = run(f, ['--write']); assert.match(out.stdout, /Recalculated ladder: haiku high/); assert.match(out.stdout, /Stored ladder: changed\n  extra rung 2: haiku xhigh\n  extra rung 3: sonnet high\n  extra rung 4: opus high\n  extra rung 5: opus xhigh\n/); assert.match(out.stdout, /The stored ladder was not written:/); assert.equal(fs.readFileSync(f.ladder, 'utf8'), before); assert.match(fs.readFileSync(f.pairs, 'utf8'), /"codeMinutesPerTask": 12.3 \}/)
+test('the last field of a row keeps its space, and ladder changes are shown but never written', t => {
+  const f = setup(t, [haikuHigh]); const before = fs.readFileSync(f.ladder, 'utf8'); writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { intelligence: 29.9 } } }))
+  const out = run(f, ['--write']); assert.match(out.stdout, /Recalculated ladder: haiku high/); assert.match(out.stdout, /Stored ladder: changed\n  extra rung 2: haiku xhigh\n  extra rung 3: sonnet high\n  extra rung 4: opus high\n  extra rung 5: opus xhigh\n/); assert.match(out.stdout, /The stored ladder was not written:/); assert.equal(fs.readFileSync(f.ladder, 'utf8'), before); assert.match(fs.readFileSync(f.pairs, 'utf8'), /"checked": "2026-11-13" \}/)
 })
-
-test('partial code figures update Claude and external rows while preserving earlier costs and minutes', t => {
-  const external = { ...argonHigh, code: 40, codeCostPerTaskUsd: 2, codeMinutesPerTask: 10, codeChecked: '2026-11-10' }
-  const f = setup(t, [haikuHigh, external])
-  writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { code: 25 } }, [external.slug]: { figures: { code: 55 } } }))
+test('the code figures are not read: a row keeps the code fields it carries, and the report names none', t => {
+  const carried = { ...haikuHigh, code: 21.72, codeCostPerTaskUsd: 0.331, codeMinutesPerTask: 12.1, codeChecked: '2026-11-10' }
+  const f = setup(t, [carried])
+  writeSnapshot(f, snapshotOf({ [carried.slug]: { figures: { intelligence: 29.9, code: 25, codeCostPerTaskUsd: 0.5, codeMinutesPerTask: 9 } } }))
   const out = run(f, ['--write'])
-  assert.equal(out.exitCode, 0)
-  const [a, b] = rowsOf(f)
-  assert.deepEqual([a.code, a.codeChecked, a.codeCostPerTaskUsd, a.codeMinutesPerTask], [25, '2026-11-13', 0.331, 12.1])
-  assert.deepEqual([b.code, b.codeChecked, b.codeCostPerTaskUsd, b.codeMinutesPerTask], [55, '2026-11-13', 2, 10])
-  for (const r of [haikuHigh, external]) assert.ok(out.stdout.includes(`${r.id}: the page of ${r.slug} gives the code figure but not codeCostPerTaskUsd, codeMinutesPerTask; the row keeps its earlier ones`))
+  assert.equal(out.exitCode, 0, out.stdout)
+  const r = rowsOf(f)[0]
+  assert.deepEqual([r.intelligence, r.code, r.codeCostPerTaskUsd, r.codeMinutesPerTask, r.codeChecked], [29.9, 21.72, 0.331, 12.1, '2026-11-10'])
+  assert.doesNotMatch(out.stdout, /code/)
 })

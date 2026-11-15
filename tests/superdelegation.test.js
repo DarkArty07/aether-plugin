@@ -36,6 +36,11 @@ const MUSE = 'muse/muse-wonder-full-1.0@high'
 const onlyMuse = (days = 2) => ({ muse: { installed: true, groups: { muse: open(days) } } })
 const withMuse = (days, base = world()) => ({ ...base, ...onlyMuse(days) })
 
+test('an implementer call is judged by intelligence alone: tables that differ only in their code figures give the same decision', () => {
+  const decide = (code) => choose({ pairs: pairs.map((pair) => ({ ...pair, code: code(pair) })), reference: { model: 'sonnet', effort: 'high' }, harnesses: world(), role: 'implementer' })
+  assert.deepEqual(decide((pair) => (pair.harness === 'claude' ? 90 : 1)), decide(() => undefined))
+})
+
 test('C4: a call asks for the points of its reference pair, never for a model name alone', () => {
   assert.equal(ask('sonnet', 'xhigh').requested, 49.9)
   assert.equal(ask('sonnet', 'high').requested, 41.5)
@@ -180,7 +185,7 @@ test('C8: no pair is ever picked below the points asked minus 1, and a Sonnet xh
   const xhigh = ask('sonnet', 'xhigh')
   assert.ok(xhigh.picked.intelligence >= 48.9)
   assert.equal(ask('opus', 'max').picked, null)
-  // Sonnet max asks 54.5 (floor 53.5): Hydrogen xhigh (53.9) reaches it, and with no role there is no code floor, so it takes the call.
+  // Sonnet max asks 54.5 (floor 53.5): Hydrogen xhigh (53.9) reaches it, so it takes the call.
   assert.equal(pickedId(ask('sonnet', 'max')), 'agy/gemini-4-hydrogen@xhigh')
 })
 

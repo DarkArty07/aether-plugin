@@ -17,7 +17,7 @@ A delegate task is bounded work that the Lead hands to one subagent. The system,
 
 ## The ladder
 
-The ladder is calculated by a fixed law over Artificial Analysis figures (the Pareto frontier of quality and cost: a candidate that another pair matches or beats for less cost is dropped; the rest ordered by intelligence, each rung gaining at least 2 points in code and intelligence) and stored in `plugins/aether/config/ladder.json`.
+The ladder is calculated by a fixed law over Artificial Analysis figures (the Pareto frontier of quality and cost: a candidate that another pair matches or beats for less cost is dropped; the rest ordered by intelligence, each rung gaining at least 2 points in intelligence) and stored in `plugins/aether/config/ladder.json`.
 
 | Step | Model | Effort |
 |---|---|---|
