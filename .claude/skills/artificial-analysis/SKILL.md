@@ -7,7 +7,7 @@ description: Use when a decision about which model or effort a role runs on need
 
 AA measures every model at every effort on the same tasks and publishes the intelligence index, the cost and the tokens of one task, and the score of each benchmark behind the index. It is the source of `config/pairs.json` and `config/models/models.json`. The owner reads it on the website and sends screenshots; this skill is how to read the same figures yourself.
 
-The model pages are the **only source** by the owner's decision: the owner wants to read AA pages directly and maintain the information. Read them on request, using the cache and leaving at least 1.5 seconds between pages. `docs/reference/artificial-analysis.md` records what AA's terms of use say about automated requests; the owner requested this reading.
+The model pages are the **only source** by the owner's decision: the owner wants to read AA pages directly and maintain the information. Read them on request, using the cache and leaving at least 1.5 seconds between pages. The reader's cache is one folder per day by default, so a page cached on another day is read again; a `--cache` folder is reused as given, so use a new one for each reading. `docs/reference/artificial-analysis.md` records what AA's terms of use say about automated requests; the owner requested this reading.
 
 ## Run it
 
