@@ -16,7 +16,7 @@ const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 const FEATURE = 'specs/001-demo'
 const DAY = 86400000
 // What the fake agy's /usage reports so that Gemini's weekly window resets before the Claude and GPT one: Argon takes
-// the Writer. Argon is 50.4, below the Judge's floor (Opus high 51.7, at least 50.7), so a Judge round on the
+// the Writer. Argon is 50.4, below the Judge's floor (Opus high 51.8, at least 50.8), so a Judge round on the
 // shipped table is the native agent unless the test grants the judge role to claude-opus-5-5.
 const geminiFirst = () => ({
   'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * DAY).toISOString()],
@@ -154,7 +154,7 @@ test('a Judge round on the shipped agy table finds no external pair at Opus high
   assert.equal(r.status, 3, r.stdout)
   assert.equal(r.json.unavailable, 'no-external')
   assert.equal(r.json.native.agent, 'aether:judge')
-  assert.equal(r.json.native.intelligence, 51.7)
+  assert.equal(r.json.native.intelligence, 51.8)
   assert.equal(agyTurns(env).length, 0)
 })
 
