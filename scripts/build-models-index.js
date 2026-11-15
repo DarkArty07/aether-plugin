@@ -35,6 +35,12 @@ const NO_ENTRY = 'no Artificial Analysis entry'
 const README_START = '<!-- models-index:start -->'
 const README_END = '<!-- models-index:end -->'
 
+// A row of another harness that borrows the page of a Claude row by owner decision (muse/muse-wonder-full-1.0
+// takes the Opus 5.5 high page). Its figures are the other model's, so the row takes none.
+function borrowsPage(row, pairs) {
+  return Boolean(row && row.harness !== 'claude' && row.ownerDecision && pairs.some((other) => other.harness === 'claude' && other.slug === row.slug))
+}
+
 // Pure assembly: only the supplied snapshot gives scores; declarations decide scope.
 function buildIndex({ lanes = {}, harnessModels = {}, pairs = [], snapshot = { pages: {} }, harnesses = DEFAULT_HARNESSES, generatedAt = null }) {
   const pages = snapshot.pages ?? {}
@@ -64,7 +70,7 @@ function buildIndex({ lanes = {}, harnessModels = {}, pairs = [], snapshot = { p
     const scores = []
     for (const effort of detail.efforts) {
       const pair = pairs.find((row) => row.harness === harness && (row.model === model || row.model === detail.alias) && row.effort === effort)
-      const page = pages[pair?.slug]
+      const page = borrowsPage(pair, pairs) ? null : pages[pair?.slug]
       if (!page) continue
       const value = (key) => page.figures?.[key]?.value ?? null
       scores.push({

@@ -417,32 +417,6 @@
         "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/pricing-rate-limits"],
         "checked": "2026-10-19"
       }
-    },
-    {
-      "harness": "muse",
-      "model": "muse-wonder-full-1.0",
-      "family": "muse-wonder-full-1-0",
-      "name": "Muse Wonder Full 1.0",
-      "maker": "Meta",
-      "effortVia": "flag",
-      "efforts": ["minimal","low","medium","high","xhigh","max"],
-      "scores": [{"effort":"high","intelligence":51.8,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":106.1,"ttftSeconds":28.25}],
-      "lane": {"roles":["implementer","reviewer"]},
-      "profile": {
-        "purpose": "Flagship coding model available only in Muse Code on the Power Usage and Maximum Usage plans.",
-        "contextTokens": 1048576,
-        "maxOutputTokens": null,
-        "defaultEffort": "high",
-        "price": null,
-        "knowledgeCutoff": null,
-        "availability": "Available only in Muse Code on the Power Usage and Maximum Usage plans; not on the Meta API.",
-        "caveats": [
-          "Prices come from a summary of Meta's pages, to be checked against the page.",
-          "Not an API model; requires a Muse Code Power or Maximum subscription plan."
-        ],
-        "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/muse-code/subscriptions"],
-        "checked": "2026-10-19"
-      }
     }
   ],
   "excluded": [
@@ -722,6 +696,33 @@
         "checked": "2026-10-13"
       },
       "note": "offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it"
+    },
+    {
+      "harness": "muse",
+      "model": "muse-wonder-full-1.0",
+      "family": "muse-wonder-full-1-0",
+      "name": "Muse Wonder Full 1.0",
+      "maker": "Meta",
+      "effortVia": "flag",
+      "efforts": ["minimal","low","medium","high","xhigh","max"],
+      "scores": [],
+      "lane": {"roles":["implementer","reviewer"]},
+      "profile": {
+        "purpose": "Flagship coding model available only in Muse Code on the Power Usage and Maximum Usage plans.",
+        "contextTokens": 1048576,
+        "maxOutputTokens": null,
+        "defaultEffort": "high",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Available only in Muse Code on the Power Usage and Maximum Usage plans; not on the Meta API.",
+        "caveats": [
+          "Prices come from a summary of Meta's pages, to be checked against the page.",
+          "Not an API model; requires a Muse Code Power or Maximum subscription plan."
+        ],
+        "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/muse-code/subscriptions"],
+        "checked": "2026-10-19"
+      },
+      "note": "offered, with no Artificial Analysis entry, so no figures"
     }
   ],
   "superseded": [

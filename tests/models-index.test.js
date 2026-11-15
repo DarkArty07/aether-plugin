@@ -133,6 +133,20 @@ test('the native harness maps an alias to its pair rows, and the page of the max
   assert.deepEqual(built(w).models[0].scores.map((s) => [s.effort, s.intelligence]), [['high', 30], ['max', 36.2]])
 })
 
+test('a row that borrows a Claude page by owner decision gives its model no scores, and a row with no decision on the same slug keeps its scores', (t) => {
+  const rows = [
+    pair('claude', 'acme-1', 'high', 'acme-1-high'),
+    pair('agy', 'acme-1', 'high', 'acme-1-high'),
+    pair('agy', 'borrow-1', 'high', 'acme-1-high', { ownerDecision: 'Owner: borrows the page of Acme 1 high.' }),
+  ]
+  const w = work(t, { listings: AGY({ models: ['acme-1-high', 'borrow-1-high'] }), pairs: rows, profiles: { 'acme-1': PROFILE('Acme 1'), 'borrow-1': PROFILE('Borrow 1') } })
+  const out = builder.main(w.args(['--write']), { now: NOW })
+  assert.equal(out.exitCode, 0, out.stdout)
+  const file = built(w)
+  assert.deepEqual(file.models.map((entry) => [entry.model, entry.scores.map((s) => s.intelligence)]), [['acme-1', [50.8]]])
+  assert.deepEqual(file.withoutFigures.map((entry) => [entry.harness, entry.model, entry.note]), [['agy', 'borrow-1', 'offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it']])
+})
+
 const { serialize, splitId, harnessEntries, badListings, mergeReadme, renderGenerated, missingProfiles, missingListings } = builder
 
 test('ids retain thinking and fast forms and normalize extra-high', () => {
