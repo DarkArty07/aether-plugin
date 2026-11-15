@@ -1,62 +1,18 @@
 #!/usr/bin/env node
 'use strict'
 
-// Usage: node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]
-//
-// Refreshes the figures of the pairs table from their Artificial Analysis model pages: the intelligence,
-// the cost per task and the code figures of every row that has a page, in one run, with one date on all
-// of them. Rows without a page (the Muse Spark estimates) move with their reference row instead (their
-// intelligence is the reference's plus the stored distance). The stored ladder is recalculated and
-// compared, but never written automatically.
-
+// Refresh pairs from the local page snapshot; the recalculated ladder is never written.
 const fs = require('node:fs')
-const os = require('node:os')
 const path = require('node:path')
-
-const KEY = 'ARTIFICIAL_ANALYSIS_API_KEY'
+const { loadSnapshot } = require('./aa-pages.js')
 const DEFAULT_PAIRS = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json')
 const DEFAULT_LADDER = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'ladder.json')
-const USAGE = 'usage: node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]'
-
-// The key from the environment when set, else from the first ARTIFICIAL_ANALYSIS_API_KEY line of
-// the .env text, without one pair of surrounding quotes. Null when neither has it.
-function keyFrom(env, envFileText) {
-  if (env[KEY]) return env[KEY]
-  if (envFileText === null || envFileText === undefined) return null
-  for (const line of envFileText.split(/\r?\n/)) {
-    const match = /^ARTIFICIAL_ANALYSIS_API_KEY=(.*)$/.exec(line)
-    if (match) return unquote(match[1].trim()) || null
-  }
-  return null
-}
-
-function unquote(value) {
-  const quoted = /^(['"])(.*)\1$/.exec(value)
-  return quoted ? quoted[2] : value
-}
-
-// The .env file of the data directory: AETHER_DATA_DIR when set, else ~/.local/share/aether-plugin.
-function keyFile(env) {
-  return path.join(env.AETHER_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'aether-plugin'), '.env')
-}
-
-// The .env text to look in: the one given, none when the environment already has the key, or else
-// the data directory's .env (null when that file does not exist).
-function envFileFor(env, envFile) {
-  if (envFile !== undefined) return envFile
-  if (env[KEY]) return null
-  const file = keyFile(env)
-  try {
-    return fs.readFileSync(file, 'utf8')
-  } catch (err) {
-    if (err.code === 'ENOENT') return null
-    throw err
-  }
-}
+const USAGE = 'usage: node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--snapshot <path>] [--write]'
 
 function parseArgs(argv) {
   let pairsPath = DEFAULT_PAIRS
   let ladderPath = DEFAULT_LADDER
+  let snapshotPath
   let write = false
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--write') {
@@ -65,11 +21,13 @@ function parseArgs(argv) {
       pairsPath = path.resolve(argv[++i])
     } else if (argv[i] === '--ladder' && i + 1 < argv.length) {
       ladderPath = path.resolve(argv[++i])
+    } else if (argv[i] === '--snapshot' && i + 1 < argv.length) {
+      snapshotPath = path.resolve(argv[++i])
     } else {
       return null
     }
   }
-  return { pairsPath, ladderPath, write }
+  return { pairsPath, ladderPath, snapshotPath, write }
 }
 
 function patchRowLine(line, values) {
@@ -107,12 +65,11 @@ function patchPairsText(text, rowUpdates) {
   return lines.join('\n')
 }
 
-async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+function main(argv, { now = Date.now } = {}) {
   const args = parseArgs(argv)
   if (!args) return { exitCode: 2, stdout: `${USAGE}\n` }
 
   const { ladderFrom, diffLadder } = require(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'pareto.js'))
-  const { pairFiguresOf, readPages } = require(path.join(__dirname, '..', '.claude', 'skills', 'artificial-analysis', 'aa-api.js'))
 
   const ladder = JSON.parse(fs.readFileSync(args.ladderPath, 'utf8'))
   const pairsText = fs.readFileSync(args.pairsPath, 'utf8')
@@ -122,20 +79,12 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
   // page and move with their reference row instead.
   const pagedRows = pairsTable.pairs.filter((row) => !Object.hasOwn(row, 'estimateOf'))
   const estimateRows = pairsTable.pairs.filter((row) => Object.hasOwn(row, 'estimateOf'))
-  const slugs = [...new Set(pagedRows.map((row) => row.slug))]
-  let pages
-  try {
-    pages = await readPages(slugs, { fetch, pause, parse: pairFiguresOf })
-  } catch (err) {
-    // A 403 or 429 stops the pass at the page it names: nothing is written, and the exit code is 1.
-    return { exitCode: 1, stdout: `${err.message}\nNothing was written.\n` }
-  }
+  const pages = loadSnapshot(args.snapshotPath).pages
 
   const changes = []
   const failures = []
   const rowUpdates = new Map()
   let hadError = false
-  const today = new Date(now()).toISOString().slice(0, 10)
 
   const record = (row, updates, field, after) => {
     const before = row[field] ?? 'none'
@@ -147,38 +96,33 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
   }
 
   for (const row of pagedRows) {
-    const figures = pages.get(row.slug)
-    if (!figures) {
-      failures.push(`${row.id}: the page of ${row.slug} has no figure`)
-      continue
-    }
-    if (figures.error) {
-      failures.push(`${row.id}: ${figures.error}`)
+    const page = pages[row.slug]
+    if (!page) {
+      failures.push(`${row.id}: the snapshot has no page for ${row.slug}: run node scripts/aa-pages.js read ${row.slug}`)
       hadError = true
       continue
     }
-    const hasCode = typeof figures.code === 'number' && typeof figures.codeCostPerTaskUsd === 'number' && typeof figures.codeMinutesPerTask === 'number'
-    if (!hasCode) {
-      failures.push(`${row.id}: the page of ${row.slug} has no code figure`)
-    }
+    const figures = page.figures
+    const hasCode = ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask'].every((field) => typeof figures[field]?.value === 'number')
+    if (!hasCode) failures.push(`${row.id}: the page of ${row.slug} has no code figure`)
 
     const updates = {}
-    if (typeof figures.intelligence === 'number') {
-      record(row, updates, 'intelligence', figures.intelligence)
+    if (typeof figures.intelligence?.value === 'number') {
+      record(row, updates, 'intelligence', figures.intelligence.value)
       // checked dates the intelligence. A page that gave none must not mark the old figure as freshly checked.
-      row.checked = today
-      updates.checked = today
+      row.checked = figures.intelligence.on
+      updates.checked = figures.intelligence.on
     }
     // A cost of null stays null: it is the owner's decision (Muse), or the page has no cost.
-    if (typeof figures.costPerTaskUsd === 'number' && typeof row.costPerTaskUsd === 'number') {
-      record(row, updates, 'costPerTaskUsd', figures.costPerTaskUsd)
+    if (typeof figures.costPerTaskUsd?.value === 'number' && typeof row.costPerTaskUsd === 'number') {
+      record(row, updates, 'costPerTaskUsd', figures.costPerTaskUsd.value)
     }
     if (hasCode) {
       for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) {
-        record(row, updates, field, figures[field])
+        record(row, updates, field, figures[field].value)
       }
-      row.codeChecked = today
-      updates.codeChecked = today
+      row.codeChecked = figures.code.on
+      updates.codeChecked = figures.code.on
     }
     rowUpdates.set(row.id, updates)
   }
@@ -211,6 +155,18 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
     stdout += `${line}\n`
   }
 
+  const readDates = new Map()
+  for (const row of pagedRows) {
+    const date = pages[row.slug]?.readOn
+    if (date && (!readDates.has(row.harness) || date > readDates.get(row.harness))) readDates.set(row.harness, date)
+  }
+  const claudeDate = readDates.get('claude')
+  if (claudeDate) {
+    for (const [harness, date] of readDates) {
+      if (harness !== 'claude' && date !== claudeDate) stdout += `Read dates differ: ${harness} was read on ${date}, claude on ${claudeDate}.\n`
+    }
+  }
+
   if (args.write && rowUpdates.size > 0) {
     const updatedText = patchPairsText(pairsText, rowUpdates)
     if (updatedText !== pairsText) {
@@ -237,12 +193,10 @@ async function main(argv, { fetch = globalThis.fetch, now = Date.now, pause = (m
   return { exitCode: hadError ? 1 : 0, stdout }
 }
 
-// Exported for scripts/build-models-index.js, which imports them from this file.
-module.exports = { keyFrom, keyFile, envFileFor, KEY, main }
+module.exports = { main }
 
 if (require.main === module) {
-  main(process.argv.slice(2)).then(({ exitCode, stdout }) => {
-    process.stdout.write(stdout)
-    process.exitCode = exitCode
-  })
+  const { exitCode, stdout } = main(process.argv.slice(2))
+  process.stdout.write(stdout)
+  process.exitCode = exitCode
 }
