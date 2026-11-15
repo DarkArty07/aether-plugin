@@ -36,14 +36,19 @@ Aether reads model pages directly from the website without an API key. Each page
 
 ## What the website shows and pages do not
 
-The website overview, charts and leaderboards present comparison views and metadata that individual model pages do not provide or that vary over time:
+The chart page of 2026-10-26, captured in [the comparison](../models/artificial-analysis-2026-10-26.md), shows the following, and the evidence file of the 13 model pages read on 2026-11-13 (`specs/038-aa-pages-hydrogen/evidence/aa-extract-2026-11-13.json`) has no field for them:
 
-- The chart of cost against intelligence, which plots models across both dimensions.
-- Aggregate leaderboards and rankings across multiple benchmarks.
-- Context window sizes, total and active parameter counts, knowledge cutoff dates, licenses, open weights flags, and the Openness Index breakdown.
-- Detailed reasoning token breakdowns and full benchmark suite results not captured on single model pages.
+- The parameters of each model, total and active, where the maker discloses them.
+- The weights classification and the Openness Index (given for 10 of the 28 models of the chart).
+- The knowledge cutoff (given for 1 of the 28).
 
-The most critical figure for model selection remains output tokens per task and cost per task. A price per million tokens only translates to cost when combined with the tokens spent on a task. Models with comparable intelligence can spend vastly different amounts of tokens, which is why per-task cost figures are essential for the Pareto ladder.
+The same chart shows the reasoning part of the output tokens per task. The field of the pages for it, `reasoningTokens`, was empty on all 13 pages.
+
+The 13 pages also carry fields that Aether does not read (not read by Aether): the context window (`contextWindowTokens`, on all 13), the output tokens of each eval (`outputTokens`, on 12 of the 13 pages), the six sector scores (`financeAndAccounting`, `strategyAndOps`, `legal`, `healthcareAndMedical`, `engineering` and `economics`), the evals other than `terminalbench-4-0` (for example `hle-diamond`, `critpt-v2-hard` and `gdp-pdf`), the cache write price, the discount on cache hits and the blended price (`cacheWritePrice`, `cacheHitDiscountPercent`, `price1mBlended7To2To1`), and the total cost of the briefcase with its parts `analyticalQuality` and `presentation`.
+
+Empty on those 13 pages: `reasoningTokens`, `medianOutputSpeed`, `medianTimeToFirstChunk`, `medianTimeToFirstAnswerToken` and `medianEndToEndResponseTime`. For the speed and the first token the reader falls back to `headline` when the field is empty; the evidence file does not keep `headline`.
+
+Aether takes the cost per task and not the output tokens per task. A price per million tokens only becomes a cost with the tokens a task spends, and models of similar intelligence can spend very different amounts of tokens, which is why the Pareto ladder uses the cost per task.
 
 ## What the terms of use allow
 
@@ -60,7 +65,7 @@ The cost per task of `plugins/aether/config/pairs.json` was copied by hand from 
 ## Where each figure lives
 
 - `plugins/aether/config/models/aa-pages.json`: the snapshot holding the extracted figures for each model page slug, with each figure stamped with the date it was observed (`on`) and the entry with its latest read date (`readOn`).
-- `scripts/aa-pages.js`: the single page reader. Its `read` subcommand fetches model pages on demand and writes the snapshot, while its `extract` subcommand extracts figures from cached or provided HTML.
+- `scripts/aa-pages.js`: the single page reader. `node scripts/aa-pages.js read` fetches the model pages on the owner's request, one request per page with a pause of 1.5 seconds between requests, and writes the snapshot. It reads the page slugs given on the command line or, when none is given, the slugs of `config/pairs.json`; with no slug given, `--harness <name>` keeps the rows of that harness and the Claude rows; `--pairs <file>` names another table to read the slugs from; `--snapshot <file>` the snapshot it merges into and writes; `--cache <dir>` a folder of saved pages, where a page already saved is read with no request and a page read from the network is saved (by default, a folder under the system temp directory). It stops at the first 403 or 429 answer and writes nothing.
 - `scripts/refresh-lanes.js`: reads the snapshot `aa-pages.json` without network access and patches `config/pairs.json` with the intelligence, cost per task and code figures of every row with a page in one run; it displays the recalculated ladder and does not save it.
 - `scripts/build-models-index.js`: rebuilds `plugins/aether/config/models/models.json` from the snapshot and harness listings without network access.
 - `plugins/aether/config/models/models.json`: keeps, for each model in use and each effort its harness takes: intelligence, the coding index when there is one, Terminal-Bench v4, input and output prices, tokens per second, and time to first token.
