@@ -10,9 +10,9 @@ const DAY = 24 * 3600 * 1000
 const at = (days) => new Date(Date.UTC(2026, 9, 20) + days * DAY).toISOString()
 const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: days === null ? null : at(days) })
 const dry = { usable: false, unknown: false, mark: null, resetsAt: at(1) }
-// agy's Argon and Flash read the one «Gemini Models» window, so `gemini` sets both keys; `argon` or `flash` sets one.
-const world = ({ gemini = open(2), argon = gemini, flash = gemini, claude = open(3), grok = open(1) } = {}) => ({
-  agy: { installed: true, groups: { argon, flash, claude } },
+// agy's Argon and Hydrogen read the one «Gemini Models» window, so `gemini` sets both keys; `argon` or `hydrogen` sets one.
+const world = ({ gemini = open(2), argon = gemini, hydrogen = gemini, claude = open(3), grok = open(1) } = {}) => ({
+  agy: { installed: true, groups: { argon, hydrogen, claude } },
   grok: { installed: true, groups: { grok } },
 })
 const ask = (model, effort, more = {}) => choose({ pairs, reference: { model, effort }, harnesses: world(), ...more })
@@ -52,31 +52,31 @@ test('E2: a Haiku high call takes the cheapest pair of the quota that renews fir
   assert.deepEqual([d.candidates[0].outcome, d.candidates[0].rank], ['picked', 1])
   assert.match(d.reason, /grok\/grok-4\.7@low/)
   assert.equal(d.native.id, 'claude/haiku@high')
-  // With grok dry, the next quota to renew is gemini, and its cheapest pair that reaches 36.8 is Flash medium (39.8).
+  // With grok dry, the next quota to renew is gemini, and its cheapest pair that reaches 36.8 is Hydrogen medium (39.8).
   const next = ask('haiku', 'high', { harnesses: world({ grok: dry }) })
-  assert.equal(pickedId(next), 'agy/gemini-3.8-flash@medium')
+  assert.equal(pickedId(next), 'agy/gemini-4-hydrogen@medium')
   assert.equal(why(next, 'grok/grok-4.7@low'), 'dry')
 })
 
-test('issue 038: a refusal of Argon leaves Flash usable in the choice, and a refusal of Flash leaves Argon, with the pairs of the shipped table', () => {
+test('issue 038: a refusal of Argon leaves Hydrogen usable in the choice, and a refusal of Hydrogen leaves Argon, with the pairs of the shipped table', () => {
   const held = { usable: false, unknown: false, mark: { reason: 'quota refusal' }, resetsAt: at(2) }
   const alone = { grok: dry, claude: dry }
   const states = (decision, name) => decision.candidates.filter((c) => c.id.startsWith(`agy/${name}`)).map((c) => c.outcome === 'picked' ? 'picked' : c.why)
 
-  // Only the Gemini window is healthy. Argon is held: Flash medium, the cheapest pair that reaches Haiku high, takes the call.
+  // Only the Gemini window is healthy. Argon is held: Hydrogen medium, the cheapest pair that reaches Haiku high, takes the call.
   const argonHeld = ask('haiku', 'high', { harnesses: world({ ...alone, argon: held }) })
-  assert.equal(pickedId(argonHeld), 'agy/gemini-3.8-flash@medium')
+  assert.equal(pickedId(argonHeld), 'agy/gemini-4-hydrogen@medium')
   assert.deepEqual(states(argonHeld, 'gemini-4-argon'), ['dry'])
-  assert.ok(!states(argonHeld, 'gemini-3.8-flash').includes('dry'))
+  assert.ok(!states(argonHeld, 'gemini-4-hydrogen').includes('dry'))
 
-  // Flash is held: no Flash pair is a candidate, and Argon takes a call that Flash could not reach anyway.
-  const flashHeld = ask('sonnet', 'xhigh', { harnesses: world({ ...alone, flash: held }) })
-  assert.equal(pickedId(flashHeld), 'agy/gemini-4-argon@high')
-  assert.ok(states(flashHeld, 'gemini-3.8-flash').every((why) => why === 'dry'))
-  assert.equal(pickedId(ask('haiku', 'high', { harnesses: world({ ...alone, flash: held }) })), 'agy/gemini-4-argon@high', 'Flash medium is out, so the cheapest that reaches Haiku high is Argon')
+  // Hydrogen is held: no Hydrogen pair is a candidate, and Argon takes a call that Hydrogen could not reach anyway.
+  const hydrogenHeld = ask('sonnet', 'xhigh', { harnesses: world({ ...alone, hydrogen: held }) })
+  assert.equal(pickedId(hydrogenHeld), 'agy/gemini-4-argon@high')
+  assert.ok(states(hydrogenHeld, 'gemini-4-hydrogen').every((why) => why === 'dry'))
+  assert.equal(pickedId(ask('haiku', 'high', { harnesses: world({ ...alone, hydrogen: held }) })), 'agy/gemini-4-argon@high', 'Hydrogen medium is out, so the cheapest that reaches Haiku high is Argon')
 
   // Both held: the window is out for both, and with the rest dry nothing leaves Claude.
-  assert.equal(ask('haiku', 'high', { harnesses: world({ ...alone, argon: held, flash: held }) }).picked, null)
+  assert.equal(ask('haiku', 'high', { harnesses: world({ ...alone, argon: held, hydrogen: held }) }).picked, null)
 })
 
 test('E3: with only Grok healthy, a Sonnet xhigh call runs native and nothing is asked of the owner', () => {
@@ -112,13 +112,13 @@ test('C5: a pair reaches a call at the points asked minus 1, inclusive, and not 
   assert.equal(why(d, 'y/b@high'), 'below')
 })
 
-test('C5: a pair with no cost per task is never a candidate, and Flash low is one of them', () => {
+test('C5: a pair with no cost per task is never a candidate, and Hydrogen low is one of them', () => {
   const real = ask('haiku', 'low')
-  assert.equal(why(real, 'agy/gemini-3.8-flash@low'), 'no-cost')
-  const table = [...natives(), row('a/flash@high', { intelligence: 40, costPerTaskUsd: null })]
+  assert.equal(why(real, 'agy/gemini-4-hydrogen@low'), 'no-cost')
+  const table = [...natives(), row('a/hydrogen@high', { intelligence: 40, costPerTaskUsd: null })]
   const d = choose({ pairs: table, reference: { model: 'haiku', effort: 'high' }, harnesses: only('a') })
   assert.equal(d.picked, null)
-  assert.equal(why(d, 'a/flash@high'), 'no-cost')
+  assert.equal(why(d, 'a/hydrogen@high'), 'no-cost')
 })
 
 test('C5 and R9: within a quota a pair that gives no more points than a cheaper candidate of the same call is never used: Grok xhigh against Grok high', () => {
@@ -254,7 +254,7 @@ test('a retry excludes the pair that failed, and a harness that is off or not in
   const off = choose({ pairs, reference: { model: 'haiku', effort: 'high' }, harnesses: { agy: world().agy } })
   assert.equal(why(off, 'grok/grok-4.7@low'), 'harness-off')
   const missing = choose({ pairs, reference: { model: 'haiku', effort: 'high' }, harnesses: { agy: { installed: false, groups: {} }, grok: world().grok } })
-  assert.equal(why(missing, 'agy/gemini-3.8-flash@medium'), 'not-installed')
+  assert.equal(why(missing, 'agy/gemini-4-hydrogen@medium'), 'not-installed')
 })
 
 test('issue 64: authorRule reserve takes another family first, then the author family; the default stays a bar', () => {
@@ -366,9 +366,9 @@ test('idleHarnesses names why an enabled harness gives the run nothing', () => {
 })
 
 const NATIVE = { id: 'claude/sonnet@high', harness: 'claude', model: 'sonnet', effort: 'high', family: 'claude-sonnet', group: null, intelligence: 50, costPerTaskUsd: 2 }
-const EXT = (model, intelligence, cost) => ({ id: `agy/${model}@high`, harness: 'agy', model, effort: 'high', family: 'gemini', group: 'flash', intelligence, costPerTaskUsd: cost })
-const VIEWS = { agy: { installed: true, groups: { flash: {} } } }
-const TABLE = (roles) => ({ harnesses: { agy: { models: { 'gem-a': { group: 'flash', roles }, 'gem-b': { group: 'flash', roles: ['judge', 'writer', 'examiner'] } } } } })
+const EXT = (model, intelligence, cost) => ({ id: `agy/${model}@high`, harness: 'agy', model, effort: 'high', family: 'gemini', group: 'hydrogen', intelligence, costPerTaskUsd: cost })
+const VIEWS = { agy: { installed: true, groups: { hydrogen: {} } } }
+const TABLE = (roles) => ({ harnesses: { agy: { models: { 'gem-a': { group: 'hydrogen', roles }, 'gem-b': { group: 'hydrogen', roles: ['judge', 'writer', 'examiner'] } } } } })
 const call = (role, roles) => choose({ pairs: [NATIVE, EXT('gem-a', 50, 1), EXT('gem-b', 50, 5)], reference: { model: 'sonnet', effort: 'high' }, harnesses: VIEWS, role, lanes: TABLE(roles) })
 
 for (const role of ['implementer', 'supervisor', 'reviewer']) {

@@ -25,7 +25,7 @@ const win = (remaining, hours) => ({ remaining, resetsAt: new Date(NOW + hours *
 const weekly = (remaining, hours) => ({ windows: { weekly: win(remaining, hours) } })
 const gemini = (remaining, hours) => ({ windows: { '5h': win(1, 5), weekly: win(remaining, hours) } })
 // agy's table has two keys that read the one «Gemini Models» group, so a reading has the same windows for both.
-const geminiKeys = (remaining, hours) => ({ argon: gemini(remaining, hours), flash: gemini(remaining, hours) })
+const geminiKeys = (remaining, hours) => ({ argon: gemini(remaining, hours), hydrogen: gemini(remaining, hours) })
 const agy = (groups, readAt = NOW - 2 * MIN) => ({ readAt, groups })
 const GROK = { readAt: NOW - MIN, groups: { grok: weekly(0.95, 29.6) } }
 // A valid muse reading whose weekly window renews in 50 h, after grok's and agy's Claude group in the tests below.
@@ -48,7 +48,7 @@ const PAIRS = [
   claude('sonnet', 'high', 46.8, 0.88),
   claude('opus', 'high', 53.6, 1.82),
   claude('opus', 'xhigh', 56, 3.46),
-  external('agy', 'gemini-3.8-flash', 'medium', 'flash', 39.8, 0.93),
+  external('agy', 'gemini-4-hydrogen', 'medium', 'hydrogen', 39.8, 0.93),
   external('agy', 'gemini-4-argon', 'high', 'argon', 52.6, 1.99),
   external('agy', 'claude-sonnet-5-5', 'high', 'claude', 46.8, 0.88),
   external('grok', 'grok-4.7', 'high', 'grok', 46.3, 2.73),
@@ -101,7 +101,7 @@ test('the quota that renews first takes the call, at its cheapest pair that reac
 test('the points of the reference decide, not the name of a model: a lower reference lets a cheaper pair in', async () => {
   const s = setup({ readings: { agy: agy({ ...geminiKeys(0.8, 10), claude: weekly(0.9, 40) }), grok: GROK } })
   const step = await pairStep(s.d, s.merged, { reference: { model: 'haiku', effort: 'high' } })
-  assert.equal(idOf(step), 'agy/gemini-3.8-flash@medium', '39.8 points reach 37.8 minus one')
+  assert.equal(idOf(step), 'agy/gemini-4-hydrogen@medium', '39.8 points reach 37.8 minus one')
 })
 
 test('a group under the reserve is out, and the next quota takes the call', async () => {
@@ -235,7 +235,7 @@ test('issue 025: a stale harness that cannot serve the call is not waited for', 
 
 test('issue 025: a stale agy whose every group is marked dry is neither renewed nor waited for, and a fitting stale harness still is', async () => {
   const refusal = (group) => ({ harness: 'agy', group, at: NOW - H, until: NOW + 100 * H, source: 'router', reason: 'quota refusal' })
-  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 5), claude: weekly(0.9, 80) }, NOW - 11 * MIN), grok: null, muse: null }, marks: ['argon', 'flash', 'claude'].map(refusal) })
+  const s = setup({ readings: { agy: agy({ ...geminiKeys(1, 5), claude: weekly(0.9, 80) }, NOW - 11 * MIN), grok: null, muse: null }, marks: ['argon', 'hydrogen', 'claude'].map(refusal) })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
   assert.deepEqual(s.renewed, ['grok', 'muse'], 'agy is left out of the renewal, grok and muse are renewed')
   assert.equal(step.waitedMs, MUSE_WAIT_MS, 'the wait is for grok and muse, at least 20 s while muse is among them')
@@ -399,7 +399,7 @@ test('R5: a read-only delegate takes no pair whose model lacks reviewer in its r
   assert.equal(step.error, undefined)
   assert.equal(step.pick, null)
   const why = Object.fromEntries(step.quota.map((c) => [c.id, c.why]))
-  for (const id of ['grok/grok-4.7@high', 'agy/gemini-4-argon@high', 'agy/gemini-3.8-flash@medium', 'agy/claude-sonnet-5-5@high']) assert.equal(why[id], 'role', id)
+  for (const id of ['grok/grok-4.7@high', 'agy/gemini-4-argon@high', 'agy/gemini-4-hydrogen@medium', 'agy/claude-sonnet-5-5@high']) assert.equal(why[id], 'role', id)
 })
 
 test('the decision asks for reviewer and the probe of serving asks for no role', () => {

@@ -146,7 +146,7 @@ test('a merge that fails its tests in the middle of a lane call does not block t
 
   const message = ['You are implementing task-1: Task 1 title.', 'FAKE-AGY: sleep 3', 'FAKE-AGY: write src/t1/a.js one', 'FAKE-AGY: commit add a', `FAKE-AGY: answer ${DONE}`].join('\n')
   const digest = fx.writePrompt(args, IMPLEMENT, message)
-  const flags = ['--role', 'implementer', '--task', 'task-1', '--model', 'gemini-3.8-flash', '--effort', 'xhigh', '--digest', digest]
+  const flags = ['--role', 'implementer', '--task', 'task-1', '--model', 'gemini-4-hydrogen', '--effort', 'xhigh', '--digest', digest]
   assert.equal(fx.lane(args, 'start', [IMPLEMENT, ...flags], env).json.started, true)
   const done = fx.waitDone(args, IMPLEMENT, env)
   await merged

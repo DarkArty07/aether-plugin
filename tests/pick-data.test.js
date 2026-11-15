@@ -31,7 +31,7 @@ const MIN = 60 * 1000
 const win = (remaining, hours) => ({ remaining, resetsAt: new Date(NOW + hours * H).toISOString() })
 const weekly = (remaining, hours) => ({ windows: { weekly: win(remaining, hours) } })
 const gemini = (remaining, hours) => ({ windows: { '5h': win(1, 5), weekly: win(remaining, hours) } })
-const geminiKeys = (remaining, hours) => ({ argon: gemini(remaining, hours), flash: gemini(remaining, hours) })
+const geminiKeys = (remaining, hours) => ({ argon: gemini(remaining, hours), hydrogen: gemini(remaining, hours) })
 const agy = (groups, readAt = NOW - 2 * MIN) => ({ readAt, groups })
 const GROK = { readAt: NOW - MIN, groups: { grok: weekly(0.95, 29.6) } }
 const MUSE = { readAt: NOW - MIN, groups: { muse: { windows: { '5h': win(1, 5), weekly: win(0.9, 50) } } } }
@@ -47,7 +47,7 @@ const PAIRS = [
   claude('sonnet', 'high', 46.8, 0.88),
   claude('opus', 'high', 53.6, 1.82),
   claude('opus', 'xhigh', 56, 3.46),
-  external('agy', 'gemini-3.8-flash', 'medium', 'flash', 39.8, 0.93),
+  external('agy', 'gemini-4-hydrogen', 'medium', 'hydrogen', 39.8, 0.93),
   external('agy', 'gemini-4-argon', 'high', 'argon', 52.6, 1.99),
   external('agy', 'claude-sonnet-5-5', 'high', 'claude', 46.8, 0.88),
   external('grok', 'grok-4.7', 'high', 'grok', 46.3, 2.73),
@@ -106,7 +106,7 @@ test('the swarm still takes the pair of the quota that renews first', (t) => {
   const env = { ...fx.laneEnv(t, { quota: claudeFirst }), AETHER_LANE_HARNESSES: 'agy' }
   const r = fx.lane(args, 'pick', ['task-1-1-implement', '--role', 'implementer', '--model', 'sonnet', '--effort', 'xhigh'], env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
-  assert.equal(r.json.requested, 49.6)
+  assert.equal(r.json.requested, 49.9)
   assert.equal(r.json.picked.id, 'agy/claude-opus-5-5@high')
   assert.equal(r.json.reference.id, 'claude/sonnet@xhigh')
 })

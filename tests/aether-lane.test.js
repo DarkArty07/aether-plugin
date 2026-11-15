@@ -19,7 +19,7 @@ const DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote it.', head: '', te
 const APPROVE = JSON.stringify({ verdict: 'approve', findings: [], ruling: 'Approve.', guidance: '', question: '' })
 const READY = JSON.stringify({ verdict: 'ready', findings: [], declined: [], summary: 'Ready.' })
 const IMPLEMENT = 'task-1-1-implement'
-const flags = (digest, { role = 'implementer', task = 'task-1', model = 'gemini-3.8-flash', effort = 'xhigh' } = {}) => [
+const flags = (digest, { role = 'implementer', task = 'task-1', model = 'gemini-4-hydrogen', effort = 'xhigh' } = {}) => [
   '--role',
   role,
   ...(task ? ['--task', task] : []),
@@ -134,7 +134,7 @@ function implement(t, lines, { env = fx.laneEnv(t), session = null } = {}) {
   const message = ['You are implementing task-1: Task 1 title.', ...body].join('\n')
   const digest = fx.writePrompt(args, IMPLEMENT, message, { session })
   const start = fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env)
-  assert.deepEqual(start.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'flash' }, start.stdout + start.stderr)
+  assert.deepEqual(start.json, { started: true, model: 'gemini-4-hydrogen-xhigh', group: 'hydrogen' }, start.stdout + start.stderr)
   return { repo, args, env, message, done: fx.waitDone(args, IMPLEMENT, env) }
 }
 
@@ -228,11 +228,11 @@ test("status reads each group's windows, marks a group under the reserve unusabl
   const r = fx.lane(args, 'status', [], env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   const agy = r.json.harnesses.agy
-  assert.deepEqual([agy.enabled, agy.path, agy.installed, agy.version, agy.groups.argon.usable, agy.groups.flash.usable, agy.groups.claude.usable], [true, fx.FAKE_AGY, true, '1.3.2', false, false, true])
+  assert.deepEqual([agy.enabled, agy.path, agy.installed, agy.version, agy.groups.argon.usable, agy.groups.hydrogen.usable, agy.groups.claude.usable], [true, fx.FAKE_AGY, true, '1.3.2', false, false, true])
   assert.deepEqual([agy.groups.claude.windows['5h'].remaining, agy.groups.claude.windows['5h'].resetsAt], [0.9, '2026-10-09T05:53:31.000Z'])
   const readings = lanes.readLog(env.AETHER_DATA_DIR).filter((e) => e.kind === 'reading')
   assert.equal(readings.length, 1)
-  assert.deepEqual([readings[0].run, readings[0].version, readings[0].harness, Object.keys(readings[0].groups).sort()], [args.runId, '1.3.2', 'agy', ['argon', 'claude', 'flash']])
+  assert.deepEqual([readings[0].run, readings[0].version, readings[0].harness, Object.keys(readings[0].groups).sort()], [args.runId, '1.3.2', 'agy', ['argon', 'claude', 'hydrogen']])
   const missing = fx.lane(args, 'status', [], fx.laneEnv(t, { command: '/nowhere/agy' }))
   assert.deepEqual(missing.json.harnesses, {
     agy: { enabled: true, command: '/nowhere/agy', path: null, installed: false, version: null, groups: {} },
@@ -302,7 +302,7 @@ test("without AETHER_LANE_HARNESSES, as where the mod runs aether-lane, status a
   const digest = fx.writePrompt(args, IMPLEMENT, 'the message')
   const flagsOf = { role: 'implementer', task: 'task-1', effort: 'high', digest }
   // agy's model is refused, since the run listed codex alone; codex's passes that check and stops at its install.
-  assert.deepEqual(calls.start(args.repoRoot, args.runId, IMPLEMENT, { ...flagsOf, model: 'gemini-3.8-flash' }), { unavailable: 'harness' })
+  assert.deepEqual(calls.start(args.repoRoot, args.runId, IMPLEMENT, { ...flagsOf, model: 'gemini-4-hydrogen' }), { unavailable: 'harness' })
   assert.deepEqual(calls.start(args.repoRoot, args.runId, IMPLEMENT, { ...flagsOf, model: 'gpt-codex' }), { unavailable: 'not-installed' })
 })
 
@@ -422,7 +422,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   const unit = unitDir(args)
   const head = fx.git(unit, 'rev-parse', 'HEAD')
   assert.deepEqual([done.result.status, done.result.head], ['DONE', head])
-  assert.deepEqual([done.lane.harness, done.lane.model, done.lane.group, done.lane.effort], ['agy', 'gemini-3.8-flash-xhigh', 'flash', 'xhigh'])
+  assert.deepEqual([done.lane.harness, done.lane.model, done.lane.group, done.lane.effort], ['agy', 'gemini-4-hydrogen-xhigh', 'hydrogen', 'xhigh'])
   assert.deepEqual(done.lane.usage, { input: 1000, output: 200, thinking: 0, cacheRead: 500, total: 1200 })
   assert.equal(done.digest, lanes.resultDigest({ result: done.result, lane: done.lane }))
   assert.ok(fs.readFileSync(path.join(args.runDir, 'packages', 'task-1.diff'), 'utf8').includes(`Head: ${head}`))
@@ -431,7 +431,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   const [turn] = fx.agyTurns(env)
   assert.equal(turn.cwd, unit)
   assert.equal(turn.marker, `${args.runId}/${IMPLEMENT}`)
-  assert.equal(fx.argAfter(turn.argv, '--model'), 'gemini-3.8-flash-xhigh')
+  assert.equal(fx.argAfter(turn.argv, '--model'), 'gemini-4-hydrogen-xhigh')
   assert.equal(fx.argAfter(turn.argv, '--print-timeout'), '2700s')
   assert.equal(fx.argAfter(turn.argv, '--conversation'), null)
   assert.ok(turn.argv.includes('--dangerously-skip-permissions'))
@@ -446,7 +446,7 @@ test("an implementer call runs agy in the unit worktree, and returns its report 
   const entry = lanes.readLog(env.AETHER_DATA_DIR).find((e) => e.kind === 'call')
   assert.deepEqual(
     [entry.session, entry.run, entry.design, entry.call, entry.role, entry.task, entry.harness, entry.model, entry.group, entry.effort, entry.status],
-    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-xhigh', 'flash', 'xhigh', 'ok'],
+    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-4-hydrogen-xhigh', 'hydrogen', 'xhigh', 'ok'],
   )
   assert.deepEqual(entry.usage, done.lane.usage)
   assert.equal(entry.conversation, done.lane.conversation)
@@ -657,7 +657,7 @@ test("stop kills a running call's runner and agy, and wait then reports it unfin
   const [entry] = entries
   assert.deepEqual(
     [entry.session, entry.run, entry.design, entry.call, entry.role, entry.task, entry.harness, entry.model, entry.group, entry.effort, entry.status],
-    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-3.8-flash-xhigh', 'flash', 'xhigh', 'stopped'],
+    ['s-1', args.runId, null, IMPLEMENT, 'implementer', 'task-1', 'agy', 'gemini-4-hydrogen-xhigh', 'hydrogen', 'xhigh', 'stopped'],
   )
   assert.deepEqual([entry.usage, entry.conversation, entry.quotaAfter], [{ input: 0, output: 0, thinking: 0, cacheRead: 0, total: 0 }, null, null])
   assert.equal(entry.quotaBefore.windows['5h'].remaining, 0.9)
@@ -792,7 +792,7 @@ test("quota, with no run, gives each group's windows, reset, hours left, priorit
   assert.deepEqual([group.source.log, group.source.ageMinutes, group.source.stale, group.source.usedPercent, group.source.usedPercentAbsent], [logFile, 5, false, 30, false])
   // agy's groups come from its /usage, read now; a weekly window under the reserve makes its group unusable.
   const agy = r.json.harnesses.agy
-  assert.deepEqual([agy.groups.argon.usable, agy.groups.flash.usable, agy.groups.claude.usable], [false, false, true])
+  assert.deepEqual([agy.groups.argon.usable, agy.groups.hydrogen.usable, agy.groups.claude.usable], [false, false, true])
   assert.deepEqual(agy.groups.claude.windows['5h'].remaining, 0.5)
   assert.deepEqual([agy.groups.claude.source.command, agy.groups.claude.source.ageMinutes, agy.groups.claude.source.stale], [fx.FAKE_AGY, 0, false])
   // With no harness named, it lists the installed harnesses of the table.
@@ -817,7 +817,7 @@ test('quota prints the same for people, and marks a grok reading older than 30 m
   assert.ok(text.includes(`source: grok's log ${logFile}, line of `), text)
   assert.ok(text.includes('(pid 531322, grok 1.0.41), 45 min old (stale: --refresh takes a new one); the line has no creditUsagePercent, read as 0% used'), text)
   assert.match(text, /\n {2}argon, "Gemini Models": usable, priority [\d.]+\n {4}weekly: 90% left, /)
-  assert.match(text, /\n {2}flash, "Gemini Models": usable, priority [\d.]+\n {4}weekly: 90% left, /)
+  assert.match(text, /\n  hydrogen, "Gemini Models": usable, priority [\d.]+\n {4}weekly: 90% left, /)
   assert.ok(text.includes(`source: ${fx.FAKE_AGY}, read now`), text)
 
   // A reading of a period that has ended is no reading: grok is unknown, and --refresh is named as the way to one.

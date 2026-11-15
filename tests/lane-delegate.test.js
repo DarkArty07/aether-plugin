@@ -714,9 +714,9 @@ test('R5: an editing delegate and its review never go to a pair whose model lack
   assert.ok(by('implementer').length > 0 && by('reviewer').length > 0)
   // gemini-4-argon lists judge, writer and examiner only.
   for (const entry of choices) assert.equal(whyOf(entry, 'agy/gemini-4-argon@high'), 'role', entry.role)
-  // gemini-3.8-flash lists implementer only, so no review goes to it.
-  for (const entry of by('reviewer')) assert.equal(whyOf(entry, 'agy/gemini-3.8-flash@medium'), 'role')
+  // gemini-4-hydrogen lists implementer only, so no review goes to it.
+  for (const entry of by('reviewer')) assert.equal(whyOf(entry, 'agy/gemini-4-hydrogen@medium'), 'role')
   assert.notEqual(result.pair.model, 'gemini-4-argon')
-  assert.notEqual(result.review.pair.model, 'gemini-3.8-flash')
+  assert.notEqual(result.review.pair.model, 'gemini-4-hydrogen')
 })
 

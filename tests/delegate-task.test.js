@@ -349,35 +349,35 @@ test('each step asks the pair of the points of its own model, and an unjudged la
   assert.equal(risen.external.pin, null)
 })
 
-const FLASH_MEDIUM = { id: 'agy/gemini-3.8-flash@medium', harness: 'agy', model: 'gemini-3.8-flash', effort: 'medium', group: 'flash' }
+const HYDROGEN_MEDIUM = { id: 'agy/gemini-4-hydrogen@medium', harness: 'agy', model: 'gemini-4-hydrogen', effort: 'medium', group: 'hydrogen' }
 const SONNET_PICK = { id: 'agy/claude-sonnet-5-5@medium', harness: 'agy', model: 'claude-sonnet-5-5', effort: 'medium', group: 'claude' }
 
-// One unjudged launch of a task that edited on FLASH_MEDIUM, for a choice that made `pick` and found `quota` able to serve.
+// One unjudged launch of a task that edited on HYDROGEN_MEDIUM, for a choice that made `pick` and found `quota` able to serve.
 async function corrected(t, { pick, quota, edits = true }) {
   const { deps, dataDir } = world(t, { settings: EXTERNAL, pick, quota })
   const more = edits ? 'AETHER-OWNS: src/**\nAETHER-TESTS: npm test\n' : ''
   await task.begin(call(BRIEF('t1', more)), deps)
-  log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: FLASH_MEDIUM, checks: { ok: true } })
+  log.appendEntry(dataDir, { kind: 'result', task: 't1', attempt: 1, session: 's1', time: 5000, ok: true, pair: HYDROGEN_MEDIUM, checks: { ok: true } })
   const plan = await task.begin(call(BRIEF('t1', more)), deps)
   const file = JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'external', '2-s1--t1.json'), 'utf8'))
   return { plan, file }
 }
 
 test('an unjudged launch goes to the same model one effort up, whatever model the choice would pick, and the note says so (issue 87)', async (t) => {
-  const quota = [{ id: SONNET_PICK.id, outcome: 'picked' }, { id: 'agy/gemini-3.8-flash@high', outcome: 'next', rank: 2 }, { id: 'agy/gemini-3.8-flash@medium', outcome: 'next', rank: 3 }]
+  const quota = [{ id: SONNET_PICK.id, outcome: 'picked' }, { id: 'agy/gemini-4-hydrogen@high', outcome: 'next', rank: 2 }, { id: 'agy/gemini-4-hydrogen@medium', outcome: 'next', rank: 3 }]
   for (const edits of [true, false]) {
     const { plan, file } = await corrected(t, { pick: SONNET_PICK, quota, edits })
-    assert.match(plan.notes.join(' '), /on agy gemini-3\.8-flash high \(pair agy\/gemini-3\.8-flash@high\)/, `edits ${edits}: the note names the pair that runs`)
-    assert.deepEqual([file.harness, file.rung.model, file.rung.effort, file.pin], ['agy', 'gemini-3.8-flash', 'high', 'agy/gemini-3.8-flash@high'])
+    assert.match(plan.notes.join(' '), /on agy gemini-4-hydrogen high \(pair agy\/gemini-4-hydrogen@high\)/, `edits ${edits}: the note names the pair that runs`)
+    assert.deepEqual([file.harness, file.rung.model, file.rung.effort, file.pin], ['agy', 'gemini-4-hydrogen', 'high', 'agy/gemini-4-hydrogen@high'])
     assert.equal(file.alternates[0].rung.model, 'claude-sonnet-5-5', 'the pick of the choice is the first alternate')
-    assert.ok(!file.alternates.some((a) => a.rung.model === 'gemini-3.8-flash' && a.rung.effort === 'high'), 'the pair that runs is not its own alternate')
+    assert.ok(!file.alternates.some((a) => a.rung.model === 'gemini-4-hydrogen' && a.rung.effort === 'high'), 'the pair that runs is not its own alternate')
   }
 })
 
 test('when the raised pair cannot serve the unjudged launch keeps the earlier pair, and when neither can the choice stands (issue 87)', async (t) => {
-  const sameOnly = await corrected(t, { pick: SONNET_PICK, quota: [{ id: SONNET_PICK.id, outcome: 'picked' }, { id: FLASH_MEDIUM.id, outcome: 'next', rank: 2 }] })
-  assert.deepEqual([sameOnly.file.rung.model, sameOnly.file.rung.effort, sameOnly.file.pin], ['gemini-3.8-flash', 'medium', FLASH_MEDIUM.id])
-  const none = await corrected(t, { pick: SONNET_PICK, quota: [{ id: SONNET_PICK.id, outcome: 'picked' }, { id: 'agy/gemini-3.8-flash@high', outcome: 'passed', why: 'harness-off' }] })
+  const sameOnly = await corrected(t, { pick: SONNET_PICK, quota: [{ id: SONNET_PICK.id, outcome: 'picked' }, { id: HYDROGEN_MEDIUM.id, outcome: 'next', rank: 2 }] })
+  assert.deepEqual([sameOnly.file.rung.model, sameOnly.file.rung.effort, sameOnly.file.pin], ['gemini-4-hydrogen', 'medium', HYDROGEN_MEDIUM.id])
+  const none = await corrected(t, { pick: SONNET_PICK, quota: [{ id: SONNET_PICK.id, outcome: 'picked' }, { id: 'agy/gemini-4-hydrogen@high', outcome: 'passed', why: 'harness-off' }] })
   assert.deepEqual([none.file.rung.model, none.file.rung.effort, none.file.pin], ['claude-sonnet-5-5', 'medium', null])
 })
 

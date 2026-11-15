@@ -98,8 +98,8 @@ function swarmAttempt(t, { mode, files, sibling = null }) {
   const digest = fx.writePrompt(args, IMPLEMENT, message)
   const branch = run.unitBranch(args.runId, 'task-1')
   const before = args.integration.branch ? repo.git('rev-parse', args.integration.branch) : null
-  const start = fx.lane(args, 'start', [IMPLEMENT, '--role', 'implementer', '--task', 'task-1', '--model', 'gemini-3.8-flash', '--effort', 'xhigh', '--digest', digest], env)
-  assert.deepEqual(start.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'flash' }, start.stdout + start.stderr)
+  const start = fx.lane(args, 'start', [IMPLEMENT, '--role', 'implementer', '--task', 'task-1', '--model', 'gemini-4-hydrogen', '--effort', 'xhigh', '--digest', digest], env)
+  assert.deepEqual(start.json, { started: true, model: 'gemini-4-hydrogen-xhigh', group: 'hydrogen' }, start.stdout + start.stderr)
   const done = fx.waitDone(args, IMPLEMENT, env)
   return { repo, args, env, done, witness, branch, before }
 }
@@ -246,8 +246,8 @@ test('a detached commit off the other line rejects the attempt with a reason nam
   const env = fx.laneEnv(t, { command: detachCommand(t, { mode: 'sibling', sibling, witness, files: { committed: [['src/t1/new.js', 'hello\n']], uncommitted: [] } }) })
   const message = ['You are implementing task-1: Task 1 title.', '## Paths you own', '', `FAKE-AGY: answer ${IMPL_DONE}`].join('\n')
   const digest = fx.writePrompt(args, IMPLEMENT, message)
-  const started = fx.lane(args, 'start', [IMPLEMENT, '--role', 'implementer', '--task', 'task-1', '--model', 'gemini-3.8-flash', '--effort', 'xhigh', '--digest', digest], env)
-  assert.deepEqual(started.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'flash' }, started.stdout + started.stderr)
+  const started = fx.lane(args, 'start', [IMPLEMENT, '--role', 'implementer', '--task', 'task-1', '--model', 'gemini-4-hydrogen', '--effort', 'xhigh', '--digest', digest], env)
+  assert.deepEqual(started.json, { started: true, model: 'gemini-4-hydrogen-xhigh', group: 'hydrogen' }, started.stdout + started.stderr)
   const done = fx.waitDone(args, IMPLEMENT, env)
   const branch = run.unitBranch(args.runId, 'task-1')
   assert.equal(done.status, 'failed', JSON.stringify(done))
@@ -276,8 +276,8 @@ test('a rejected detached attempt leaves the worktree on the branch, and the nex
   const message = ['You are implementing task-1: Task 1 title.', '## Paths you own', '', 'You may change only these paths:', '- src/t1/**', '', `FAKE-AGY: answer ${IMPL_DONE}`].join('\n')
   const digest = fx.writePrompt(args, IMPLEMENT, message)
   const branch = run.unitBranch(args.runId, 'task-1')
-  const started = fx.lane(args, 'start', [IMPLEMENT, '--role', 'implementer', '--task', 'task-1', '--model', 'gemini-3.8-flash', '--effort', 'xhigh', '--digest', digest], env)
-  assert.deepEqual(started.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'flash' }, started.stdout + started.stderr)
+  const started = fx.lane(args, 'start', [IMPLEMENT, '--role', 'implementer', '--task', 'task-1', '--model', 'gemini-4-hydrogen', '--effort', 'xhigh', '--digest', digest], env)
+  assert.deepEqual(started.json, { started: true, model: 'gemini-4-hydrogen-xhigh', group: 'hydrogen' }, started.stdout + started.stderr)
   const rejected = fx.waitDone(args, IMPLEMENT, env)
   assert.equal(rejected.status, 'failed', JSON.stringify(rejected))
   const branchTip = branchOf(repo, branch)
@@ -291,8 +291,8 @@ test('a rejected detached attempt leaves the worktree on the branch, and the nex
   const second = 'task-1-2-implement'
   const env2 = fx.laneEnv(t, { command: detachCommand(t, { mode: 'attached', witness, files: { committed: [['src/t1/on.js', 'on\n']], uncommitted: [] } }) })
   const digest2 = fx.writePrompt(args, second, message)
-  const started2 = fx.lane(args, 'start', [second, '--role', 'implementer', '--task', 'task-1', '--model', 'gemini-3.8-flash', '--effort', 'xhigh', '--digest', digest2], env2)
-  assert.deepEqual(started2.json, { started: true, model: 'gemini-3.8-flash-xhigh', group: 'flash' }, started2.stdout + started2.stderr)
+  const started2 = fx.lane(args, 'start', [second, '--role', 'implementer', '--task', 'task-1', '--model', 'gemini-4-hydrogen', '--effort', 'xhigh', '--digest', digest2], env2)
+  assert.deepEqual(started2.json, { started: true, model: 'gemini-4-hydrogen-xhigh', group: 'hydrogen' }, started2.stdout + started2.stderr)
   const done = fx.waitDone(args, second, env2)
   assert.equal(done.status, 'ok', JSON.stringify(done))
   const head = branchOf(repo, branch)

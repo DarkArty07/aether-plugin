@@ -21,8 +21,8 @@ const FEATURE = 'specs/001-demo'
 const DAY = 86400000
 const open = (days) => ({ usable: true, unknown: false, mark: null, resetsAt: new Date(Date.UTC(2026, 9, 20) + days * DAY).toISOString() })
 const dry = { usable: false, unknown: false, mark: null, resetsAt: '2026-10-21T00:00:00.000Z' }
-// Argon and Flash read the one «Gemini Models» window, so `g` is the view of both keys.
-const world = (g = open(2), c = open(3)) => ({ agy: { installed: true, groups: { argon: g, flash: g, claude: c } } })
+// Argon and Hydrogen read the one «Gemini Models» window, so `g` is the view of both keys.
+const world = (g = open(2), c = open(3)) => ({ agy: { installed: true, groups: { argon: g, hydrogen: g, claude: c } } })
 const shippedConfig = lanes.loadConfig(lanes.CONFIG_FILE)
 const config = { harnesses: { agy: { command: 'agy', waitSeconds: 540, timeouts: { implementer: 1, supervisor: 1, reviewer: 1, judge: 1200, writer: 2700, examiner: 1800 }, groups: {}, models: shippedConfig.harnesses.agy.models } } }
 const choose = (seat, more = {}) => chooseSeat({ config, pairs, seat, harnesses: world(), ...more })
@@ -46,22 +46,22 @@ test('R5: a seat takes no pair whose model lacks the seat in its roles list', ()
       if (entry && !entry.roles.includes(seat)) assert.ok(['role', 'excluded', 'not-offered', 'reserved'].includes(row.why), `${seat}: ${row.id} is ${row.why}`)
     }
   }
-  const judge = choose('judge').tried.find((row) => row.id === 'agy/gemini-3.8-flash@medium')
+  const judge = choose('judge').tried.find((row) => row.id === 'agy/gemini-4-hydrogen@medium')
   if (judge) assert.notEqual(judge.outcome === 'passed' ? judge.why : 'role', null)
 })
 
-test('the Judge asks the points of Opus high (51.7) and, with Argon at 50.4 below that floor, the native Judge takes it', () => {
+test('the Judge asks the points of Opus high (51.8) and, with Argon at 50.4 below that floor, the native Judge takes it', () => {
   const chosen = choose('judge')
-  assert.equal(chosen.decision.requested, 51.7)
+  assert.equal(chosen.decision.requested, 51.8)
   assert.equal(chosen.external, undefined)
   assert.equal(chosen.native.agent, NATIVE.judge.agent)
   assert.equal(chosen.native.model, 'opus')
   assert.deepEqual(chosen.tried.find((row) => row.id === 'agy/gemini-4-argon@high'), { id: 'agy/gemini-4-argon@high', outcome: 'passed', why: 'below' })
 })
 
-test('the Writer asks Sonnet high (41.1), and its external effort is the pair effort, never a translated one', () => {
+test('the Writer asks Sonnet high (41.5), and its external effort is the pair effort, never a translated one', () => {
   const chosen = choose('writer')
-  assert.equal(chosen.decision.requested, 41.1)
+  assert.equal(chosen.decision.requested, 41.5)
   assert.equal(chosen.external.pair.id, 'agy/gemini-4-argon@high')
   assert.equal(chosen.external.effort, chosen.external.pair.effort)
   assert.equal(chosen.external.timeoutSeconds, 2700)
@@ -88,7 +88,7 @@ test('issue 64: the Judge takes Muse when it is the only external pair left, and
     },
   }
   const dryExceptMuse = {
-    agy: { installed: true, groups: { argon: dry, flash: dry, claude: dry } },
+    agy: { installed: true, groups: { argon: dry, hydrogen: dry, claude: dry } },
     grok: { installed: true, groups: { grok: dry } },
     muse: { installed: true, groups: { muse: open(2) } },
   }
@@ -97,13 +97,13 @@ test('issue 64: the Judge takes Muse when it is the only external pair left, and
     assert.equal(chosen.external && chosen.external.pair.id, MUSE, seat)
     assert.equal(chosen.note, SAME_FAMILY, seat)
     assert.match(chosen.decision.reason, /same family that wrote the document judged it/, seat)
-    assert.equal(chosen.decision.requested, 51.7, 'the points asked stay Opus high')
+    assert.equal(chosen.decision.requested, 51.8, 'the points asked stay Opus high')
   }
-  // Argon is open and another family, and it renews later. It is 50.4, below the 50.7 floor, so it does not
+  // Argon is open and another family, and it renews later. It is 50.4, below the 50.8 floor, so it does not
   // displace Muse: Muse stays the only pair that reaches, with the same-family note.
   const argonLater = {
     ...dryExceptMuse,
-    agy: { installed: true, groups: { argon: open(5), flash: dry, claude: dry } },
+    agy: { installed: true, groups: { argon: open(5), hydrogen: dry, claude: dry } },
   }
   const other = choose('judge', { author: 'muse-wonder-full-1.0', harnesses: argonLater, config: museConfig })
   assert.equal(other.external.pair.id, MUSE)
@@ -176,7 +176,7 @@ test('the native agent of a seat comes from its decision, with the seat agent in
 test('a pair below the points is not taken when its group has no reading, and a pair of a harness that is off does not compete', () => {
   const noGemini = { agy: { installed: true, groups: { claude: open(3) } } }
   const missing = choose('judge', { harnesses: noGemini })
-  assert.equal(missing.external, undefined, 'Argon is 50.4, below the 50.7 floor of Opus high, so a missing reading does not hand it the seat')
+  assert.equal(missing.external, undefined, 'Argon is 50.4, below the 50.8 floor of Opus high, so a missing reading does not hand it the seat')
   assert.equal(missing.tried.find((entry) => entry.id === 'agy/gemini-4-argon@high').why, 'below')
   const unread = choose('judge', { harnesses: { agy: { installed: true, groups: {} } } })
   assert.equal(unread.external, undefined)
@@ -256,7 +256,7 @@ function seatLog(env) {
   return lanes.readLog(env.AETHER_DATA_DIR)
 }
 
-// Shipped Argon high is 50.4. The Judge asks Opus high, 51.7, and a pair reaches that at 50.7.
+// Shipped Argon high is 50.4. The Judge asks Opus high, 51.8, and a pair reaches that at 50.8.
 // The external Judge rounds need a judge-role pair at that floor. This is the shipped table with
 // agy/gemini-4-argon@high set to 51.7. lib/pairs.js and the seat command both read AETHER_PAIRS_CONFIG.
 // The native hand-back tests leave it unset, so they keep the shipped table.
@@ -315,7 +315,7 @@ test('an external Judge reviews the commit in a disposable worktree, and its ans
   assert.equal(entry.status, 'ok')
   assert.equal('choice' in entry, false, 'there is no seats choice any more')
   assert.deepEqual([entry.reference.id, entry.reference.model, entry.reference.effort], ['claude/opus@high', 'opus', 'high'])
-  assert.match(entry.reason, /^agy\/gemini-4-argon@high: 51\.7 points for 51\.7 asked/)
+  assert.match(entry.reason, /^agy\/gemini-4-argon@high: 51\.7 points for 51\.8 asked/)
   assert.equal(entry.effort, 'high')
   assert.equal(entry.model, 'gemini-4-argon-high')
   assert.equal(entry.session, 's1')
@@ -357,7 +357,7 @@ test('a Judge whose answer breaks its schema, or that fails, gives the round to 
   assert.equal(repo.git('status', '--porcelain'), '')
 })
 
-test('the Judge asks Opus high (51.7) and, with no pair at that floor, hands the round to the native Judge before any harness runs', (t) => {
+test('the Judge asks Opus high (51.8) and, with no pair at that floor, hands the round to the native Judge before any harness runs', (t) => {
   const repo = seatRepo(t)
   const env = laneEnv(t, { quota: geminiFirst() })
   const before = repo.git('rev-parse', 'HEAD')
@@ -367,7 +367,7 @@ test('the Judge asks Opus high (51.7) and, with no pair at that floor, hands the
   assert.equal(r.json.seat, 'judge')
   assert.equal(r.json.native.agent, 'aether:judge')
   assert.equal(r.json.native.model, 'opus')
-  assert.equal(r.json.decision.requested, 51.7)
+  assert.equal(r.json.decision.requested, 51.8)
   assert.deepEqual([r.json.decision.reference.id, r.json.decision.reference.model, r.json.decision.reference.effort], ['claude/opus@high', 'opus', 'high'])
   assert.equal(r.json.decision.picked, null)
   assert.deepEqual(r.json.tried.find((entry) => entry.id === 'agy/gemini-4-argon@high'), { id: 'agy/gemini-4-argon@high', outcome: 'passed', why: 'below' })
@@ -399,7 +399,7 @@ test('a Judge whose only seat pair is below Opus high never opens a worktree, so
   assert.equal(seatLog(env).some((e) => e.kind === 'call'), false)
 })
 
-test('a Judge whose answer would break its schema, or that would fail, never runs: Argon is below Opus high (51.7)', (t) => {
+test('a Judge whose answer would break its schema, or that would fail, never runs: Argon is below Opus high (51.8)', (t) => {
   const repo = seatRepo(t)
   const cases = [
     `FAKE-AGY: answer ${JSON.stringify({ ...JUDGE_ANSWER, verdict: 'maybe' })}`,
@@ -414,7 +414,7 @@ test('a Judge whose answer would break its schema, or that would fail, never run
     assert.equal(r.json.unavailable, 'no-external', directive)
     assert.equal(r.json.native.agent, 'aether:judge')
     assert.equal(r.json.native.model, 'opus')
-    assert.equal(r.json.decision.requested, 51.7)
+    assert.equal(r.json.decision.requested, 51.8)
     assert.deepEqual(agyTurns(env), [], directive)
   }
   assert.equal(repo.git('status', '--porcelain'), '')
@@ -465,7 +465,7 @@ test('a Judge whose author is the one external model that reaches the points goe
   assert.deepEqual(agyTurns(both), [])
 })
 
-test('a Judge whose author is Argon, which is below Opus high (51.7), goes to the native agent, and so does a Judge whose author is the native model', (t) => {
+test('a Judge whose author is Argon, which is below Opus high (51.8), goes to the native agent, and so does a Judge whose author is the native model', (t) => {
   const repo = seatRepo(t)
   const input = `FAKE-AGY: answer ${JSON.stringify(JUDGE_ANSWER)}\n`
   const env = laneEnv(t, { quota: geminiFirst() })
@@ -572,14 +572,14 @@ test("aether-report --seats counts each seat's rounds, who answered, and why the
   })
   assert.deepEqual(decisions.map((d) => [d.status, d.reference.id]), [['ok', 'claude/opus@high'], ['failed', 'claude/opus@high'], ['native', 'claude/opus@high']])
   assert.equal(decisions[2].reason, 'superdelegation-off')
-  assert.match(decisions[0].reason, /^agy\/gemini-4-argon@high: 51\.7 points for 51\.7 asked/)
+  assert.match(decisions[0].reason, /^agy\/gemini-4-argon@high: 51\.7 points for 51\.8 asked/)
   assert.deepEqual([report.bySeat.examiner.rounds, report.bySeat.examiner.native, report.bySeat.examiner.off], [1, 1, 0])
   assert.equal(report.lanes.calls, 2)
   assert.equal(report.lanes.byRole.judge.calls, 2)
   assert.deepEqual(report.notes, [])
 })
 
-test('aether-report --seats counts a Judge handed back before any harness runs, when no pair reaches Opus high (51.7)', (t) => {
+test('aether-report --seats counts a Judge handed back before any harness runs, when no pair reaches Opus high (51.8)', (t) => {
   const repo = seatRepo(t)
   const env = laneEnv(t, { quota: geminiFirst() })
   const off = { ...env, AETHER_SUPERDELEGATION: 'off' }
@@ -824,12 +824,12 @@ test('E7: when the external round of a Judge fails, the native Judge handed back
   assert.equal(r.json.native.agent, 'aether:judge')
   assert.notEqual(r.json.native.model, 'opus')
   assert.equal(r.json.native.model, 'sonnet')
-  assert.equal(r.json.decision.requested, 51.7)
+  assert.equal(r.json.decision.requested, 51.8)
   assert.equal(r.json.decision.reference.id, 'claude/opus@high')
   assert.equal(agyTurns(env).length, 1)
 })
 
-test('E7: when no external pair reaches Opus high (51.7), the native Judge handed back is not the author model', (t) => {
+test('E7: when no external pair reaches Opus high (51.8), the native Judge handed back is not the author model', (t) => {
   const repo = seatRepo(t)
   const env = laneEnv(t)
   const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--author', 'opus'], env, 'FAKE-AGY: exit-error\n')
@@ -838,7 +838,7 @@ test('E7: when no external pair reaches Opus high (51.7), the native Judge hande
   assert.equal(r.json.native.agent, 'aether:judge')
   assert.notEqual(r.json.native.model, 'opus')
   assert.equal(r.json.native.model, 'sonnet')
-  assert.equal(r.json.decision.requested, 51.7)
+  assert.equal(r.json.decision.requested, 51.8)
   assert.equal(r.json.decision.reference.id, 'claude/opus@high')
   assert.deepEqual(agyTurns(env), [])
 })
