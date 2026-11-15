@@ -21,32 +21,35 @@ const ask = (model, effort, harnesses = world()) => choose({ pairs, reference: {
 const pickedId = (decision) => (decision.picked ? decision.picked.id : null)
 const why = (decision, id) => decision.candidates.find((c) => c.id === id).why
 
-test('with only agy, its Claude group dry and Hydrogen open, an implementer call lands on Hydrogen as the design says', () => {
+test('with only agy, its Claude group dry and Hydrogen open, an implementer call lands on Hydrogen by intelligence and cost alone', () => {
   assert.equal(pickedId(ask('haiku', 'high')), 'agy/gemini-4-hydrogen@medium')
   assert.equal(pickedId(ask('haiku', 'xhigh')), 'agy/gemini-4-hydrogen@medium')
-  assert.equal(pickedId(ask('sonnet', 'high')), 'agy/gemini-4-hydrogen@high')
+  assert.equal(pickedId(ask('sonnet', 'high')), 'agy/gemini-4-hydrogen@medium')
+  assert.equal(pickedId(ask('opus', 'high')), 'agy/gemini-4-hydrogen@high')
+  assert.equal(pickedId(ask('opus', 'xhigh')), null)
 })
 
-test('Sonnet high leaves Hydrogen medium out for its code, and says so', () => {
-  const decision = ask('sonnet', 'high')
-  assert.equal(why(decision, 'agy/gemini-4-hydrogen@medium'), 'below-code')
-  assert.equal(why(decision, 'agy/gemini-4-hydrogen@low'), 'below')
-})
-
-test('for Opus high and Opus xhigh no Hydrogen pair is a candidate', () => {
-  for (const effort of ['high', 'xhigh']) {
-    const decision = ask('opus', effort)
-    const hydrogen = decision.candidates.filter((c) => c.id.startsWith('agy/gemini-4-hydrogen@'))
-    assert.equal(hydrogen.length, 4)
-    assert.ok(hydrogen.every((c) => c.outcome === 'passed'), effort)
+test('no implementer call is refused for a code figure: no candidate carries the outcome below-code', () => {
+  for (const [model, effort] of [['haiku', 'high'], ['sonnet', 'high'], ['opus', 'high'], ['opus', 'xhigh']]) {
+    assert.ok(ask(model, effort).candidates.every((c) => c.why !== 'below-code'), `${model} ${effort}`)
   }
-  assert.equal(why(ask('opus', 'high'), 'agy/gemini-4-hydrogen@high'), 'below-code')
+  assert.equal(why(ask('sonnet', 'high'), 'agy/gemini-4-hydrogen@low'), 'below')
 })
 
-test('with the Claude group of agy open and the same window, an agy Claude pair wins where it is cheaper than Hydrogen, so the dry world is weighing', () => {
+test('for Opus xhigh no Hydrogen pair is a candidate, and Opus high takes Hydrogen high', () => {
+  const decision = ask('opus', 'xhigh')
+  const hydrogen = decision.candidates.filter((c) => c.id.startsWith('agy/gemini-4-hydrogen@'))
+  assert.equal(hydrogen.length, 4)
+  assert.ok(hydrogen.every((c) => c.outcome === 'passed'))
+  assert.equal(pickedId(ask('opus', 'high')), 'agy/gemini-4-hydrogen@high')
+})
+
+test('with the Claude group of agy open, an agy Claude pair takes the call where it is cheaper than Hydrogen, and the rest stay on Hydrogen', () => {
   const open = world({ claude: OPEN })
-  assert.match(pickedId(ask('haiku', 'high', open)), /^agy\/claude-/)
-  assert.match(pickedId(ask('sonnet', 'high', open)), /^agy\/claude-/)
+  assert.equal(pickedId(ask('haiku', 'high', open)), 'agy/claude-sonnet-5-5@medium')
+  assert.equal(pickedId(ask('haiku', 'xhigh', open)), 'agy/gemini-4-hydrogen@medium')
+  assert.equal(pickedId(ask('sonnet', 'high', open)), 'agy/gemini-4-hydrogen@medium')
+  assert.equal(pickedId(ask('opus', 'high', open)), 'agy/gemini-4-hydrogen@high')
 })
 
 test('Flash is gone from the pairs and the lane table, and its group is called hydrogen', () => {

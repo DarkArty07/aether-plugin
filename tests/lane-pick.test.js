@@ -39,8 +39,8 @@ test('pick gives the pair of the quota that renews first, asks the points of the
   assert.deepEqual([entry.run, entry.call, entry.role, entry.requested, entry.picked.id], [args.runId, CALL, 'implementer', 49.9, 'agy/claude-opus-5-5@high'])
   assert.equal(typeof entry.reason, 'string')
   assert.ok(Array.isArray(entry.candidates) && entry.candidates.every((c) => c.id && c.outcome))
-  // Argon does not list implementer, and Opus medium (48.1) is below the floor of 48.6, so Gemini renewing first still leaves Opus high as the only pair.
-  assert.equal(pick(args, agyEnv(t, { quota: geminiFirst }), SONNET_XHIGH).json.picked.id, 'agy/claude-opus-5-5@high')
+  // Argon does not list implementer, and Opus medium (48.1) is below the floor of 48.6. Gemini renewing first, Hydrogen high (50.8) reaches the floor and takes the call.
+  assert.equal(pick(args, agyEnv(t, { quota: geminiFirst }), SONNET_XHIGH).json.picked.id, 'agy/gemini-4-hydrogen@high')
 })
 
 test('R5: a pair whose model lacks the role in its roles list is not picked, for each swarm role', (t) => {

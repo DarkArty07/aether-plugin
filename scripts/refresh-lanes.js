@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict'
 
-// Refresh pairs from the local page snapshot; the recalculated ladder is never written.
+// Refresh the intelligence, the cost per task and the date of each pair from the local page snapshot. The code
+// figures are not read or written (A127). The recalculated ladder is shown and never written.
 const fs = require('node:fs')
 const path = require('node:path')
 const { loadSnapshot } = require('./aa-pages.js')
@@ -33,7 +34,7 @@ function parseArgs(argv) {
 function patchRowLine(line, values) {
   let updated = line
   const missing = []
-  const fields = ['intelligence', 'costPerTaskUsd', 'code', 'codeCostPerTaskUsd', 'codeMinutesPerTask', 'checked', 'codeChecked']
+  const fields = ['intelligence', 'costPerTaskUsd', 'checked']
   for (const field of fields) {
     if (!(field in values)) continue
     const valStr = JSON.stringify(values[field])
@@ -103,13 +104,6 @@ function main(argv, { now = Date.now } = {}) {
       continue
     }
     const figures = page.figures
-    const hasCode = typeof figures.code?.value === 'number'
-    if (!hasCode) failures.push(`${row.id}: the page of ${row.slug} has no code figure`)
-    else {
-      const missing = ['codeCostPerTaskUsd', 'codeMinutesPerTask'].filter((field) => typeof figures[field]?.value !== 'number')
-      if (missing.length) failures.push(`${row.id}: the page of ${row.slug} gives the code figure but not ${missing.join(', ')}; the row keeps its earlier ones`)
-    }
-
     const updates = {}
     if (typeof figures.intelligence?.value === 'number') {
       record(row, updates, 'intelligence', figures.intelligence.value)
@@ -120,14 +114,6 @@ function main(argv, { now = Date.now } = {}) {
     // A cost of null stays null: it is the owner's decision (Muse), or the page has no cost.
     if (typeof figures.costPerTaskUsd?.value === 'number' && typeof row.costPerTaskUsd === 'number') {
       record(row, updates, 'costPerTaskUsd', figures.costPerTaskUsd.value)
-    }
-    if (hasCode) {
-      record(row, updates, 'code', figures.code.value)
-      row.codeChecked = figures.code.on
-      updates.codeChecked = figures.code.on
-    }
-    for (const field of ['codeCostPerTaskUsd', 'codeMinutesPerTask']) {
-      if (typeof figures[field]?.value === 'number') record(row, updates, field, figures[field].value)
     }
     rowUpdates.set(row.id, updates)
   }

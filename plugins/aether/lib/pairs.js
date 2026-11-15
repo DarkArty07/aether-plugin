@@ -33,12 +33,7 @@ function validatePair(pair, index) {
   if (!isText(pair.model)) fail('model', 'must be a non-empty string')
   if (!EFFORTS.includes(pair.effort)) fail('effort', `must be one of ${EFFORTS.join(', ')}`)
   if (!isText(pair.family)) fail('family', 'must be a non-empty string')
-  if ((pair.harness === NATIVE_HARNESS || Object.hasOwn(pair, 'code')) &&
-      (!isNumber(pair.code) || pair.code < 0 || pair.code > 100)) fail('code', 'must be a number from 0 to 100')
   if (pair.harness === NATIVE_HARNESS) {
-    for (const field of ['codeCostPerTaskUsd', 'codeMinutesPerTask']) {
-      if (!isNumber(pair[field]) || pair[field] < 0) fail(field, 'must be a number of at least 0')
-    }
     if (pair.group !== null) fail('group', `must be null for ${NATIVE_HARNESS}`)
   } else if (!isText(pair.group)) {
     fail('group', 'must be a non-empty string for an external harness')
@@ -49,7 +44,6 @@ function validatePair(pair, index) {
   if (!isNumberOrNull(pair.outputTokensPerSecond)) fail('outputTokensPerSecond', 'must be a number of at least 0, or null')
   if (!isNumberOrNull(pair.timeToFirstTokenS)) fail('timeToFirstTokenS', 'must be a number of at least 0, or null')
   if (Object.hasOwn(pair, 'ownerDecision') && !isText(pair.ownerDecision)) fail('ownerDecision', 'must be a non-empty string when present')
-  if (Object.hasOwn(pair, 'codeChecked') && !isText(pair.codeChecked)) fail('codeChecked', 'must be a non-empty string when present')
   if (Object.hasOwn(pair, 'checked') && !isText(pair.checked)) fail('checked', 'must be a non-empty string when present')
   if (Object.hasOwn(pair, 'costEstimate') && !isText(pair.costEstimate)) fail('costEstimate', 'must be a non-empty string when present')
   const id = pairId(pair.harness, pair.model, pair.effort)
