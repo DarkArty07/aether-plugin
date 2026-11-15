@@ -3,7 +3,6 @@
 The LLMs our harnesses offer, from Artificial Analysis (AA) figures and the harnesses' own listings, so a session reads files and not an API. The data lives in the plugin, so it ships with it and a session in any project reads it: [`models.json`](../../plugins/aether/config/models/models.json) is the list an orchestrator reads (each model in use with its harness, the id or alias to pass to the CLI, its efforts, its scores and its profile, and the `excluded` models the owner keeps out), [`profiles.json`](../../plugins/aether/config/models/profiles.json) says what each model is for, and [`harness-models.json`](../../plugins/aether/config/models/harness-models.json) holds what each harness's CLI listed, with the day it was captured. This folder has only this page, the reading copy of the list. The first harness is the native one, `claude`: its models are not lanes, so they have no `*` below.
 
 ## Refresh
-
 `node scripts/build-models-index.js --write   # from the photo of the model pages, no network: plugins/aether/config/models/aa-pages.json` rewrites `models.json` (in `--out`, default `plugins/aether/config/models`) and the generated part below (in `--docs`, default `docs/models`), and exits 1 when a model has no profile. The models come from `harness-models.json` and the figures from the photo.
 
 ## Add a harness
