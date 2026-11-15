@@ -17,7 +17,7 @@ const DEFAULT_ID = `d-1-${PID}`
 const ID2 = `d-2-${PID}`
 const ID3 = `d-3-${PID}`
 
-const GROUPS = { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' }
+const GROUPS = { argon: 'Gemini Models', hydrogen: 'Gemini Models', claude: 'Claude and GPT models' }
 
 function setup(t, { quota = null } = {}) {
   const env = laneEnv(t, { quota })
@@ -39,7 +39,7 @@ function setup(t, { quota = null } = {}) {
   const usageCalls = () => calls().filter((c) => c.argv.includes('/usage'))
   return { env, config, repo, dataDir: env.AETHER_DATA_DIR, modelCalls, usageCalls }
 }
-const rung = { model: 'gemini-3.8-flash', effort: 'medium', group: 'flash' }
+const rung = { model: 'gemini-4-hydrogen', effort: 'medium', group: 'hydrogen' }
 const run = (s, prompt, over = {}) => delegate.runDelegate({
   cwd: s.repo.dir, id: DEFAULT_ID, harness: 'agy', rung, task: { description: 'audit the retry wrapper', prompt }, config: s.config, dataDir: s.dataDir, ...over,
 })
@@ -52,13 +52,13 @@ test('a read-only delegate runs on agy with the model of the rung, and its answe
   assert.equal(out.status, 'ok', out.detail)
   assert.equal(out.text, 'found 3 callers')
   assert.equal(out.harness, 'agy')
-  assert.equal(out.modelArg, 'gemini-3.8-flash-medium')
+  assert.equal(out.modelArg, 'gemini-4-hydrogen-medium')
   assert.equal(out.usage.input, 1000)
   assert.equal(out.usage.output, 200)
   assert.equal(out.timedOut, false, 'a call that ended by itself did not run out of time')
   assert.ok(Array.isArray(out.quotaSpent))
   const [call] = s.modelCalls()
-  assert.equal(call.argv[call.argv.indexOf('--model') + 1], 'gemini-3.8-flash-medium')
+  assert.equal(call.argv[call.argv.indexOf('--model') + 1], 'gemini-4-hydrogen-medium')
   assert.equal(call.argv[call.argv.indexOf('--print-timeout') + 1], `${CLI_MAX_SECONDS}s`, 'the reviewer timeout of the table, 1200 s, is cut to the most a delegate may run')
   assert.ok(call.argv.includes('--dangerously-skip-permissions'))
   assert.ok(call.cwd.endsWith(path.join('.aether', 'work', 'delegates', DEFAULT_ID, 'wt')))
@@ -120,7 +120,7 @@ test('a delegate that changes a file is a violation, and the change never reache
 
 test('an agy that fails is a failed delegate, with its reason (R26)', async (t) => {
   const s = setup(t)
-  const out = await run(s, 'Audit.\nFAKE-AGY: exit-error model not found: gemini-3.8-flash-medium')
+  const out = await run(s, 'Audit.\nFAKE-AGY: exit-error model not found: gemini-4-hydrogen-medium')
   assert.equal(out.status, 'failed')
   assert.ok(out.detail.includes('model not found'))
   assert.equal(out.text, '')
@@ -208,7 +208,7 @@ test('a harness that is not installed or has no such model is unavailable, with 
   const t2 = setup(t)
   t2.config.harnesses.codex.command = '/nonexistent/codex'
   assert.equal((await run(t2, 'Audit.', { harness: 'codex' })).status, 'unavailable')
-  assert.equal((await run(t2, 'Audit.', { rung: { model: 'no-such-model', effort: 'low', group: 'flash' } })).status, 'unavailable')
+  assert.equal((await run(t2, 'Audit.', { rung: { model: 'no-such-model', effort: 'low', group: 'hydrogen' } })).status, 'unavailable')
   assert.equal(t2.modelCalls().length, 0)
 })
 
@@ -299,7 +299,7 @@ test('the quota goes through the saved reading: the one before is served from it
   assert.equal(s.usageCalls().length, 2, 'no saved reading yet: the reading before and the one after')
   const saved = JSON.parse(fs.readFileSync(readingsLib.cacheFile(s.dataDir, 'agy'), 'utf8'))
   assert.equal(saved.harness, 'agy')
-  assert.ok(Object.hasOwn(saved.groups, 'flash'), 'the reading after is saved')
+  assert.ok(Object.hasOwn(saved.groups, 'hydrogen'), 'the reading after is saved')
   const second = await run(s, 'Audit.\nFAKE-AGY: answer {"answer": "two"}', { id: ID2 })
   assert.equal(second.status, 'ok', second.detail)
   assert.equal(s.usageCalls().length, 3, 'the reading before came from the saved one: only the reading after started agy')

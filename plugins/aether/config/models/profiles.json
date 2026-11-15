@@ -5,6 +5,7 @@
     "claude-sonnet-5-5": {
       "name": "Claude Sonnet 5.5",
       "maker": "Anthropic",
+      "released": "2026-09-28",
       "purpose": "\"The best combination of speed and intelligence.\" Comparative latency: fast.",
       "contextTokens": 1000000,
       "maxOutputTokens": 128000,
@@ -22,6 +23,7 @@
     "claude-opus-5-5": {
       "name": "Claude Opus 5.5",
       "maker": "Anthropic",
+      "released": "2026-09-22",
       "purpose": "\"For long-running agentic coding and knowledge work.\" Anthropic's advice: start here for most workloads, and move to Fable 5.1 when evals on Opus 5.5 at higher effort still fall short. Comparative latency: moderate.",
       "contextTokens": 1000000,
       "maxOutputTokens": 128000,
@@ -39,6 +41,7 @@
     "claude-haiku-5-5": {
       "name": "Claude Haiku 5.5",
       "maker": "Anthropic",
+      "released": "2026-10-07",
       "purpose": "\"For high-volume, latency-sensitive tasks such as classification, extraction, and routing.\" Its model page adds: \"built for high-volume, latency-sensitive work such as classification, routing, extraction, and subagent tasks.\" Comparative latency: fastest.",
       "contextTokens": 1000000,
       "maxOutputTokens": 128000,
@@ -65,6 +68,7 @@
     "claude-fable-5-1": {
       "name": "Claude Fable 5.1",
       "maker": "Anthropic",
+      "released": "2026-09-01",
       "purpose": "\"For demanding reasoning and long-horizon agentic work.\" Anthropic's advice: for most workloads start with Opus 5.5, and use Fable 5.1 for demanding reasoning and long-horizon agentic work, or when evals on Opus 5.5 at higher effort still fall short. Comparative latency: slower.",
       "contextTokens": 1000000,
       "maxOutputTokens": 128000,
@@ -83,26 +87,42 @@
       "sources": ["https://platform.claude.com/docs/en/models/overview","https://platform.claude.com/docs/en/models/fable-5-1/overview","https://platform.claude.com/docs/en/about-claude/pricing","https://platform.claude.com/docs/en/build-with-claude/effort"],
       "checked": "2026-10-14"
     },
-    "gemini-3-8-flash": {
-      "name": "Gemini 3.8 Flash",
+    "gemini-4-hydrogen": {
+      "name": "Gemini 4 Hydrogen",
       "maker": "Google",
-      "purpose": "\"Google's most intelligent Flash model, engineered for long-horizon software engineering, autonomous agents, and complex enterprise workflows.\"",
-      "contextTokens": 1048576,
-      "maxOutputTokens": 65536,
-      "inputs": ["text","image","video","audio","pdf"],
-      "outputs": ["text"],
+      "released": "2026-11-12",
+      "purpose": "Offered by agy 1.5.8 at low, medium, high and xhigh, and the owner's intent is that it replaces Gemini 3.8 Flash; the maker's page was not read for this profile.",
+      "contextTokens": null,
+      "maxOutputTokens": null,
+      "inputs": null,
+      "outputs": null,
       "defaultEffort": null,
-      "efforts": ["low","medium","high"],
-      "price": {"input":0.75,"output":3.75,"note":"per million tokens, from OpenRouter and Artificial Analysis; Google's model page does not state a price"},
+      "efforts": ["low", "medium", "high", "xhigh"],
+      "price": {"input": 1.5, "output": 7.5, "note": "per million tokens; the agy list of 2026-11-13 and the Artificial Analysis photo of 2026-11-14 (priceInput, priceOutput) give the same price"},
       "knowledgeCutoff": null,
-      "availability": "Gemini API id gemini-3.8-flash, stable. On agy it is offered at low, medium and high.",
-      "caveats": ["The effort `minimal` is not supported and returns an error.","Knowledge cutoff and price are not on Google's model page."],
-      "sources": ["https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash","https://ai.google.dev/gemini-api/docs/models"],
-      "checked": "2026-10-13"
+      "availability": "Listed by agy 1.5.8 on 2026-11-13 at four efforts in the Gemini Models group; the Gemini API page was not read, so its availability there is not confirmed.",
+      "caveats": ["The maker's page was not read: contextTokens, maxOutputTokens, knowledgeCutoff and defaultEffort are null, not guessed."],
+      "sources": ["specs/038-aa-pages-hydrogen/evidence/README.md", "plugins/aether/config/models/aa-pages.json"],
+      "checked": "2026-11-13"
+    },
+    "gemini-pro-orchestrator-g1-pro": {
+      "name": "gemini-pro-orchestrator-g1-pro",
+      "maker": "Google",
+      "purpose": "Listed by agy 1.5.8 as gemini-pro-orchestrator-g1-pro; Aether has not read any page for it and does not use it.",
+      "contextTokens": null,
+      "maxOutputTokens": null,
+      "defaultEffort": null,
+      "price": null,
+      "knowledgeCutoff": null,
+      "availability": "Listed by agy 1.5.8 on 2026-11-13; no page read.",
+      "caveats": ["Aether read no page for this model and does not use it; the fields not read are null."],
+      "sources": ["specs/038-aa-pages-hydrogen/evidence/README.md"],
+      "checked": "2026-11-13"
     },
     "gemini-4-argon": {
       "name": "Gemini 4 Argon",
       "maker": "Google",
+      "released": "2026-09-30",
       "purpose": "A flagship reasoning model, with a unified 1M context window and long decodes up to 1M tokens.",
       "contextTokens": 1000000,
       "maxOutputTokens": 1000000,
@@ -128,6 +148,7 @@
     "grok-4-7": {
       "name": "Grok 4.7",
       "maker": "xAI (SpaceXAI)",
+      "released": "2026-09-21",
       "purpose": "\"Frontier model, built for coding, agentic tasks, and knowledge work.\" The default model of Grok Build.",
       "contextTokens": 500000,
       "maxOutputTokens": null,
@@ -146,7 +167,7 @@
       "sources": ["https://docs.x.ai/developers/grok-4-7"],
       "checked": "2026-10-13"
     },
-    "grok-4.7-build-fast": {
+    "grok-4-7-build-fast": {
       "name": "Grok 4.7 Fast",
       "maker": "xAI (SpaceXAI)",
       "purpose": "The same Grok 4.7 served on faster infrastructure: faster and dearer, not a different or smaller model.",
@@ -175,6 +196,7 @@
     "muse-spark-1-3": {
       "name": "Muse Spark 1.3",
       "maker": "Meta",
+      "released": "2026-09-02",
       "purpose": "\"Latest version\", \"Recommended for new work\", for \"high-volume or cost-sensitive work\".",
       "contextTokens": 1048576,
       "maxOutputTokens": null,
@@ -199,7 +221,7 @@
       ],
       "checked": "2026-10-19"
     },
-    "muse-wonder-1.0": {
+    "muse-wonder-1-0": {
       "name": "Muse Wonder 1.0",
       "maker": "Meta",
       "purpose": "Preview; for \"complex multi-file changes\" and long-horizon agentic work.",
@@ -226,7 +248,7 @@
       ],
       "checked": "2026-10-19"
     },
-    "muse-wonder-full-1.0": {
+    "muse-wonder-full-1-0": {
       "name": "Muse Wonder Full 1.0",
       "maker": "Meta",
       "purpose": "Flagship coding model available only in Muse Code on the Power Usage and Maximum Usage plans.",
@@ -252,6 +274,7 @@
     "gpt-6-1-sol": {
       "name": "GPT-6.1 Sol",
       "maker": "OpenAI",
+      "released": "2026-09-29",
       "purpose": "«Latest workhorse model for coding and everyday work.»",
       "contextTokens": 500000,
       "maxOutputTokens": null,
@@ -271,6 +294,7 @@
     "gpt-6-1-terra": {
       "name": "GPT-6.1 Terra",
       "maker": "OpenAI",
+      "released": "2026-10-26",
       "purpose": "«GPT-6.1 Terra Codex model.»",
       "contextTokens": 500000,
       "maxOutputTokens": null,
@@ -290,6 +314,7 @@
     "gpt-6-luna": {
       "name": "GPT-6 Luna",
       "maker": "OpenAI",
+      "released": "2026-09-22",
       "purpose": "«Fast and affordable model for easier tasks.»",
       "contextTokens": 272000,
       "maxOutputTokens": null,
@@ -309,6 +334,7 @@
     "gpt-6-astra": {
       "name": "GPT-6 Astra",
       "maker": "OpenAI",
+      "released": "2026-09-03",
       "purpose": "«Frontier intelligence for the most demanding work.»",
       "contextTokens": 272000,
       "maxOutputTokens": null,
@@ -328,6 +354,7 @@
     "gpt-6-sol": {
       "name": "GPT-6 Sol",
       "maker": "OpenAI",
+      "released": "2026-09-22",
       "purpose": "«Previous generation workhorse model.»",
       "contextTokens": 272000,
       "maxOutputTokens": null,
@@ -347,6 +374,7 @@
     "gpt-5-6-sol": {
       "name": "GPT-5.6 Sol",
       "maker": "OpenAI",
+      "released": "2026-07-09",
       "purpose": "«Older generation workhorse model.»",
       "contextTokens": 272000,
       "maxOutputTokens": null,
@@ -366,6 +394,7 @@
     "gpt-5-6-terra": {
       "name": "GPT-5.6 Terra",
       "maker": "OpenAI",
+      "released": "2026-07-09",
       "purpose": "«Older balanced model for straightforward work.»",
       "contextTokens": 272000,
       "maxOutputTokens": null,
@@ -385,6 +414,7 @@
     "gpt-5-6-luna": {
       "name": "GPT-5.6 Luna",
       "maker": "OpenAI",
+      "released": "2026-07-09",
       "purpose": "«Older fast and efficient model.»",
       "contextTokens": 272000,
       "maxOutputTokens": null,

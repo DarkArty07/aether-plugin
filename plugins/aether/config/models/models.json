@@ -1,11 +1,10 @@
 {
-  "generatedAt": "2026-10-30",
-  "source": "https://artificialanalysis.ai/api/v2/data/llms/models",
+  "generatedAt": "2026-11-14",
+  "source": "plugins/aether/config/models/aa-pages.json, from the model pages https://artificialanalysis.ai/models/<slug>",
   "harnesses": ["claude","agy","codex","grok","muse"],
-  "since": "2026-01-01",
-  "listedOn": {"claude":"2026-10-14","agy":"2026-10-15","codex":"2026-10-29","grok":"2026-10-13","muse":"2026-10-27"},
+  "listedOn": {"claude":"2026-10-14","agy":"2026-11-13","codex":"2026-10-29","grok":"2026-10-13","muse":"2026-10-27"},
   "rules": {
-    "newest": "Only the newest generation of each line is used (Sonnet 5.5, not Sonnet 5); the older ones are superseded.",
+    "newest": "Only the newest generation of each line is used (Sonnet 5.5, not Sonnet 5): an older one is declared superseded in harness-models.json, with its reason and date.",
     "offered": "Only a model the CLI of a chosen harness lists is in, whatever Artificial Analysis lists; a model only the lane table names is not offered.",
     "profiled": "Every model has a profile written from its maker's pages, with its sources and the date checked; without one the build exits 1."
   },
@@ -21,11 +20,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":18.6,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":167.7,"ttftSeconds":6.68},
-        {"effort":"medium","intelligence":24.6,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":167.3,"ttftSeconds":8.11},
-        {"effort":"high","intelligence":29.6,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":188.1,"ttftSeconds":18.16},
-        {"effort":"xhigh","intelligence":34.3,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":199.6,"ttftSeconds":38.52},
-        {"effort":"max","intelligence":36.2,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":235.5,"ttftSeconds":269.01}
+        {"effort":"low","intelligence":18.6,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":210,"ttftSeconds":5.83},
+        {"effort":"medium","intelligence":24.6,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":220.7,"ttftSeconds":10.89},
+        {"effort":"high","intelligence":29.9,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":224.4,"ttftSeconds":22.04},
+        {"effort":"xhigh","intelligence":34.6,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":231.1,"ttftSeconds":58.98},
+        {"effort":"max","intelligence":36.5,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":254.1,"ttftSeconds":182.97}
       ],
       "lane": null,
       "profile": {
@@ -57,37 +56,6 @@
     },
     {
       "harness": "claude",
-      "model": "claude-sonnet-5-5",
-      "alias": "sonnet",
-      "family": "claude-sonnet-5-5",
-      "name": "Claude Sonnet 5.5",
-      "maker": "Anthropic",
-      "released": "2026-09-28",
-      "effortVia": "flag",
-      "efforts": ["low","medium","high","xhigh","max"],
-      "scores": [
-        {"effort":"low","intelligence":25.3,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":102.7,"ttftSeconds":0.94},
-        {"effort":"medium","intelligence":30.3,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":100,"ttftSeconds":0.88},
-        {"effort":"high","intelligence":41.1,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":106.1,"ttftSeconds":8.47},
-        {"effort":"xhigh","intelligence":49.6,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":104,"ttftSeconds":15.89},
-        {"effort":"max","intelligence":54.2,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":134.4,"ttftSeconds":251.92}
-      ],
-      "lane": null,
-      "profile": {
-        "purpose": "\"The best combination of speed and intelligence.\" Comparative latency: fast.",
-        "contextTokens": 1000000,
-        "maxOutputTokens": 128000,
-        "defaultEffort": "high",
-        "price": {"input":2,"output":10,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
-        "knowledgeCutoff": "2026-06",
-        "availability": "Claude API id claude-sonnet-5-5; not retired before 2027-09-28. Each harness takes the efforts its entry lists.",
-        "caveats": ["Adaptive thinking: the model decides how much to think, steered by effort."],
-        "sources": ["https://platform.claude.com/docs/en/models/overview"],
-        "checked": "2026-10-13"
-      }
-    },
-    {
-      "harness": "claude",
       "model": "claude-opus-5-5",
       "alias": "opus",
       "family": "claude-opus-5-5",
@@ -97,11 +65,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":34.5,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":75.9,"ttftSeconds":4.59},
-        {"effort":"medium","intelligence":48.1,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":76.9,"ttftSeconds":13.76},
-        {"effort":"high","intelligence":51.7,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":80.7,"ttftSeconds":18.59},
-        {"effort":"xhigh","intelligence":57,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":85.1,"ttftSeconds":84.45},
-        {"effort":"max","intelligence":58.4,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":97.3,"ttftSeconds":617.73}
+        {"effort":"low","intelligence":34.8,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":105,"ttftSeconds":5.36},
+        {"effort":"medium","intelligence":48.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":105.9,"ttftSeconds":16.66},
+        {"effort":"high","intelligence":51.8,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":106.1,"ttftSeconds":28.25},
+        {"effort":"xhigh","intelligence":57.4,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":110.9,"ttftSeconds":88.37},
+        {"effort":"max","intelligence":59.1,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":114.5,"ttftSeconds":399.11}
       ],
       "lane": null,
       "profile": {
@@ -118,6 +86,95 @@
       }
     },
     {
+      "harness": "claude",
+      "model": "claude-sonnet-5-5",
+      "alias": "sonnet",
+      "family": "claude-sonnet-5-5",
+      "name": "Claude Sonnet 5.5",
+      "maker": "Anthropic",
+      "released": "2026-09-28",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [
+        {"effort":"low","intelligence":25.6,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":134.9,"ttftSeconds":2.28},
+        {"effort":"medium","intelligence":30.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":131.5,"ttftSeconds":4.41},
+        {"effort":"high","intelligence":41.5,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":144.3,"ttftSeconds":10.31},
+        {"effort":"xhigh","intelligence":49.9,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":141.9,"ttftSeconds":30.3},
+        {"effort":"max","intelligence":54.5,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":141.6,"ttftSeconds":292.1}
+      ],
+      "lane": null,
+      "profile": {
+        "purpose": "\"The best combination of speed and intelligence.\" Comparative latency: fast.",
+        "contextTokens": 1000000,
+        "maxOutputTokens": 128000,
+        "defaultEffort": "high",
+        "price": {"input":2,"output":10,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
+        "knowledgeCutoff": "2026-06",
+        "availability": "Claude API id claude-sonnet-5-5; not retired before 2027-09-28. Each harness takes the efforts its entry lists.",
+        "caveats": ["Adaptive thinking: the model decides how much to think, steered by effort."],
+        "sources": ["https://platform.claude.com/docs/en/models/overview"],
+        "checked": "2026-10-13"
+      }
+    },
+    {
+      "harness": "agy",
+      "model": "claude-opus-5-5",
+      "family": "claude-opus-5-5",
+      "name": "Claude Opus 5.5",
+      "maker": "Anthropic",
+      "released": "2026-09-22",
+      "effortVia": "id",
+      "efforts": ["low","medium","high"],
+      "ids": {"low":"claude-opus-5-5-low","medium":"claude-opus-5-5-medium","high":"claude-opus-5-5-high"},
+      "scores": [
+        {"effort":"low","intelligence":34.8,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":105,"ttftSeconds":5.36},
+        {"effort":"medium","intelligence":48.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":105.9,"ttftSeconds":16.66},
+        {"effort":"high","intelligence":51.8,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":106.1,"ttftSeconds":28.25}
+      ],
+      "lane": {"roles":["implementer","reviewer"]},
+      "profile": {
+        "purpose": "\"For long-running agentic coding and knowledge work.\" Anthropic's advice: start here for most workloads, and move to Fable 5.1 when evals on Opus 5.5 at higher effort still fall short. Comparative latency: moderate.",
+        "contextTokens": 1000000,
+        "maxOutputTokens": 128000,
+        "defaultEffort": "medium",
+        "price": {"input":4,"output":20,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
+        "knowledgeCutoff": "2026-06",
+        "availability": "Claude API id claude-opus-5-5; not retired before 2027-09-22. Each harness takes the efforts its entry lists.",
+        "caveats": ["Thinking is always on (adaptive)."],
+        "sources": ["https://platform.claude.com/docs/en/models/overview"],
+        "checked": "2026-10-13"
+      }
+    },
+    {
+      "harness": "agy",
+      "model": "claude-sonnet-5-5",
+      "family": "claude-sonnet-5-5",
+      "name": "Claude Sonnet 5.5",
+      "maker": "Anthropic",
+      "released": "2026-09-28",
+      "effortVia": "id",
+      "efforts": ["low","medium","high"],
+      "ids": {"low":"claude-sonnet-5-5-low","medium":"claude-sonnet-5-5-medium","high":"claude-sonnet-5-5-high"},
+      "scores": [
+        {"effort":"low","intelligence":25.6,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":134.9,"ttftSeconds":2.28},
+        {"effort":"medium","intelligence":30.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":131.5,"ttftSeconds":4.41},
+        {"effort":"high","intelligence":41.5,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":144.3,"ttftSeconds":10.31}
+      ],
+      "lane": {"roles":["implementer","supervisor"]},
+      "profile": {
+        "purpose": "\"The best combination of speed and intelligence.\" Comparative latency: fast.",
+        "contextTokens": 1000000,
+        "maxOutputTokens": 128000,
+        "defaultEffort": "high",
+        "price": {"input":2,"output":10,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
+        "knowledgeCutoff": "2026-06",
+        "availability": "Claude API id claude-sonnet-5-5; not retired before 2027-09-28. Each harness takes the efforts its entry lists.",
+        "caveats": ["Adaptive thinking: the model decides how much to think, steered by effort."],
+        "sources": ["https://platform.claude.com/docs/en/models/overview"],
+        "checked": "2026-10-13"
+      }
+    },
+    {
       "harness": "agy",
       "model": "gemini-4-argon",
       "family": "gemini-4-argon",
@@ -127,7 +184,7 @@
       "effortVia": "id",
       "efforts": ["low","medium","high"],
       "ids": {"low":"gemini-4-argon-low","medium":"gemini-4-argon-medium","high":"gemini-4-argon-high"},
-      "scores": [{"effort":"high","intelligence":50.4,"terminalBench":0.571,"priceInput":4,"priceOutput":20,"tokensPerSecond":80.5,"ttftSeconds":27.2}],
+      "scores": [{"effort":"high","intelligence":50.4,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":65.4,"ttftSeconds":43.26}],
       "lane": {"roles":["judge","writer","examiner"]},
       "profile": {
         "purpose": "A flagship reasoning model, with a unified 1M context window and long decodes up to 1M tokens.",
@@ -157,114 +214,61 @@
     },
     {
       "harness": "agy",
-      "model": "claude-sonnet-5-5",
-      "family": "claude-sonnet-5-5",
-      "name": "Claude Sonnet 5.5",
-      "maker": "Anthropic",
-      "released": "2026-09-28",
-      "effortVia": "id",
-      "efforts": ["low","medium","high"],
-      "ids": {"low":"claude-sonnet-5-5-low","medium":"claude-sonnet-5-5-medium","high":"claude-sonnet-5-5-high"},
-      "scores": [
-        {"effort":"low","intelligence":25.3,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":102.7,"ttftSeconds":0.94},
-        {"effort":"medium","intelligence":30.3,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":100,"ttftSeconds":0.88},
-        {"effort":"high","intelligence":41.1,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":106.1,"ttftSeconds":8.47}
-      ],
-      "lane": {"roles":["implementer","supervisor"]},
-      "profile": {
-        "purpose": "\"The best combination of speed and intelligence.\" Comparative latency: fast.",
-        "contextTokens": 1000000,
-        "maxOutputTokens": 128000,
-        "defaultEffort": "high",
-        "price": {"input":2,"output":10,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
-        "knowledgeCutoff": "2026-06",
-        "availability": "Claude API id claude-sonnet-5-5; not retired before 2027-09-28. Each harness takes the efforts its entry lists.",
-        "caveats": ["Adaptive thinking: the model decides how much to think, steered by effort."],
-        "sources": ["https://platform.claude.com/docs/en/models/overview"],
-        "checked": "2026-10-13"
-      }
-    },
-    {
-      "harness": "agy",
-      "model": "claude-opus-5-5",
-      "family": "claude-opus-5-5",
-      "name": "Claude Opus 5.5",
-      "maker": "Anthropic",
-      "released": "2026-09-22",
-      "effortVia": "id",
-      "efforts": ["low","medium","high"],
-      "ids": {"low":"claude-opus-5-5-low","medium":"claude-opus-5-5-medium","high":"claude-opus-5-5-high"},
-      "scores": [
-        {"effort":"low","intelligence":34.5,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":75.9,"ttftSeconds":4.59},
-        {"effort":"medium","intelligence":48.1,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":76.9,"ttftSeconds":13.76},
-        {"effort":"high","intelligence":51.7,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":80.7,"ttftSeconds":18.59}
-      ],
-      "lane": {"roles":["implementer","reviewer"]},
-      "profile": {
-        "purpose": "\"For long-running agentic coding and knowledge work.\" Anthropic's advice: start here for most workloads, and move to Fable 5.1 when evals on Opus 5.5 at higher effort still fall short. Comparative latency: moderate.",
-        "contextTokens": 1000000,
-        "maxOutputTokens": 128000,
-        "defaultEffort": "medium",
-        "price": {"input":4,"output":20,"note":"per million tokens; cache reads at 5% of the input price, batch at 50% off"},
-        "knowledgeCutoff": "2026-06",
-        "availability": "Claude API id claude-opus-5-5; not retired before 2027-09-22. Each harness takes the efforts its entry lists.",
-        "caveats": ["Thinking is always on (adaptive)."],
-        "sources": ["https://platform.claude.com/docs/en/models/overview"],
-        "checked": "2026-10-13"
-      }
-    },
-    {
-      "harness": "agy",
-      "model": "gemini-3.8-flash",
-      "family": "gemini-3-8-flash",
-      "name": "Gemini 3.8 Flash",
+      "model": "gemini-4-hydrogen",
+      "family": "gemini-4-hydrogen",
+      "name": "Gemini 4 Hydrogen",
       "maker": "Google",
-      "released": "2026-09-02",
+      "released": "2026-11-12",
       "effortVia": "id",
-      "efforts": ["low","medium","high"],
-      "ids": {"low":"gemini-3.8-flash-low","medium":"gemini-3.8-flash-medium","high":"gemini-3.8-flash-high"},
+      "efforts": ["low","medium","high","xhigh"],
+      "ids": {"low":"gemini-4-hydrogen-low","medium":"gemini-4-hydrogen-medium","high":"gemini-4-hydrogen-high","xhigh":"gemini-4-hydrogen-xhigh"},
       "scores": [
-        {"effort":"low","intelligence":22.3,"terminalBench":0.101,"priceInput":0.75,"priceOutput":3.75,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"medium","intelligence":30,"terminalBench":0.197,"priceInput":0.75,"priceOutput":3.75,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"high","intelligence":30.5,"terminalBench":0.197,"priceInput":0.75,"priceOutput":3.75,"tokensPerSecond":130.2,"ttftSeconds":18.01}
+        {"effort":"low","intelligence":26.9,"terminalBench":0.066,"priceInput":1.5,"priceOutput":7.5,"tokensPerSecond":168.5,"ttftSeconds":5.67},
+        {"effort":"medium","intelligence":41.2,"terminalBench":0.293,"priceInput":1.5,"priceOutput":7.5,"tokensPerSecond":173.5,"ttftSeconds":11.33},
+        {"effort":"high","intelligence":50.8,"terminalBench":0.54,"priceInput":1.5,"priceOutput":7.5,"tokensPerSecond":170,"ttftSeconds":16.95},
+        {"effort":"xhigh","intelligence":53.9,"terminalBench":0.535,"priceInput":1.5,"priceOutput":7.5,"tokensPerSecond":175.4,"ttftSeconds":47.2}
       ],
       "lane": {"roles":["implementer"]},
       "profile": {
-        "purpose": "\"Google's most intelligent Flash model, engineered for long-horizon software engineering, autonomous agents, and complex enterprise workflows.\"",
-        "contextTokens": 1048576,
-        "maxOutputTokens": 65536,
+        "purpose": "Offered by agy 1.5.8 at low, medium, high and xhigh, and the owner's intent is that it replaces Gemini 3.8 Flash; the maker's page was not read for this profile.",
+        "contextTokens": null,
+        "maxOutputTokens": null,
         "defaultEffort": null,
-        "price": {"input":0.75,"output":3.75,"note":"per million tokens, from OpenRouter and Artificial Analysis; Google's model page does not state a price"},
+        "price": {
+          "input": 1.5,
+          "output": 7.5,
+          "note": "per million tokens; the agy list of 2026-11-13 and the Artificial Analysis photo of 2026-11-14 (priceInput, priceOutput) give the same price"
+        },
         "knowledgeCutoff": null,
-        "availability": "Gemini API id gemini-3.8-flash, stable. On agy it is offered at low, medium and high.",
-        "caveats": ["The effort `minimal` is not supported and returns an error.","Knowledge cutoff and price are not on Google's model page."],
-        "sources": ["https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash","https://ai.google.dev/gemini-api/docs/models"],
-        "checked": "2026-10-13"
+        "availability": "Listed by agy 1.5.8 on 2026-11-13 at four efforts in the Gemini Models group; the Gemini API page was not read, so its availability there is not confirmed.",
+        "caveats": ["The maker's page was not read: contextTokens, maxOutputTokens, knowledgeCutoff and defaultEffort are null, not guessed."],
+        "sources": ["specs/038-aa-pages-hydrogen/evidence/README.md","plugins/aether/config/models/aa-pages.json"],
+        "checked": "2026-11-13"
       }
     },
     {
       "harness": "codex",
-      "model": "gpt-6.1-terra",
-      "family": "gpt-6-1-terra",
-      "name": "GPT-6.1 Terra",
+      "model": "gpt-6-luna",
+      "family": "gpt-6-luna",
+      "name": "GPT-6 Luna",
       "maker": "OpenAI",
-      "released": "2026-10-26",
+      "released": "2026-09-22",
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":29.2,"terminalBench":0.152,"priceInput":1,"priceOutput":5,"tokensPerSecond":90.9,"ttftSeconds":1.73},
-        {"effort":"medium","intelligence":38.1,"terminalBench":0.323,"priceInput":1,"priceOutput":5,"tokensPerSecond":91.5,"ttftSeconds":3.03},
-        {"effort":"high","intelligence":42.3,"terminalBench":0.419,"priceInput":1,"priceOutput":5,"tokensPerSecond":92.9,"ttftSeconds":13.32},
-        {"effort":"xhigh","intelligence":45,"terminalBench":0.465,"priceInput":1,"priceOutput":5,"tokensPerSecond":91.1,"ttftSeconds":38.66},
-        {"effort":"max","intelligence":51,"terminalBench":0.556,"priceInput":1,"priceOutput":5,"tokensPerSecond":91,"ttftSeconds":171.32}
+        {"effort":"low","intelligence":9.7,"terminalBench":0,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":88.2,"ttftSeconds":3.34},
+        {"effort":"medium","intelligence":18.5,"terminalBench":0.025,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":92.1,"ttftSeconds":6.49},
+        {"effort":"high","intelligence":21.4,"terminalBench":0.045,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":94.4,"ttftSeconds":13.37},
+        {"effort":"xhigh","intelligence":23.5,"terminalBench":0.081,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":98.2,"ttftSeconds":20.35},
+        {"effort":"max","intelligence":27.9,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":103.1,"ttftSeconds":86.56}
       ],
-      "lane": {"roles":["implementer","supervisor"]},
+      "lane": {"roles":["implementer"]},
       "profile": {
-        "purpose": "«GPT-6.1 Terra Codex model.»",
-        "contextTokens": 500000,
+        "purpose": "«Fast and affordable model for easier tasks.»",
+        "contextTokens": 272000,
         "maxOutputTokens": null,
-        "defaultEffort": "low",
-        "price": {"input":1,"output":5,"note":"per million tokens"},
+        "defaultEffort": "medium",
+        "price": {"input":0.1,"output":0.5,"note":"per million tokens"},
         "knowledgeCutoff": null,
         "availability": "Codex CLI (codex exec).",
         "caveats": [],
@@ -282,11 +286,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":34.5,"terminalBench":0.308,"priceInput":2,"priceOutput":10,"tokensPerSecond":57,"ttftSeconds":1.88},
-        {"effort":"medium","intelligence":46.1,"terminalBench":0.48,"priceInput":2,"priceOutput":10,"tokensPerSecond":57.1,"ttftSeconds":3.98},
-        {"effort":"high","intelligence":50.2,"terminalBench":0.515,"priceInput":2,"priceOutput":10,"tokensPerSecond":67.7,"ttftSeconds":30.59},
-        {"effort":"xhigh","intelligence":52.3,"terminalBench":0.54,"priceInput":2,"priceOutput":10,"tokensPerSecond":75.9,"ttftSeconds":71.02},
-        {"effort":"max","intelligence":54.5,"terminalBench":0.561,"priceInput":2,"priceOutput":10,"tokensPerSecond":88.8,"ttftSeconds":183.42}
+        {"effort":"low","intelligence":34.8,"terminalBench":0.308,"priceInput":2,"priceOutput":10,"tokensPerSecond":48.3,"ttftSeconds":3.14},
+        {"effort":"medium","intelligence":46.3,"terminalBench":0.48,"priceInput":2,"priceOutput":10,"tokensPerSecond":49.3,"ttftSeconds":5.2},
+        {"effort":"high","intelligence":50.3,"terminalBench":0.515,"priceInput":2,"priceOutput":10,"tokensPerSecond":48.1,"ttftSeconds":40.91},
+        {"effort":"xhigh","intelligence":52.5,"terminalBench":0.54,"priceInput":2,"priceOutput":10,"tokensPerSecond":48.9,"ttftSeconds":82.55},
+        {"effort":"max","intelligence":54.6,"terminalBench":0.561,"priceInput":2,"priceOutput":10,"tokensPerSecond":48.6,"ttftSeconds":197.65}
       ],
       "lane": {"roles":["implementer","supervisor","reviewer"]},
       "profile": {
@@ -304,27 +308,27 @@
     },
     {
       "harness": "codex",
-      "model": "gpt-6-luna",
-      "family": "gpt-6-luna",
-      "name": "GPT-6 Luna",
+      "model": "gpt-6.1-terra",
+      "family": "gpt-6-1-terra",
+      "name": "GPT-6.1 Terra",
       "maker": "OpenAI",
-      "released": "2026-09-22",
+      "released": "2026-10-26",
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":9.7,"terminalBench":0,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":111.5,"ttftSeconds":3.36},
-        {"effort":"medium","intelligence":18.3,"terminalBench":0.025,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"high","intelligence":21.4,"terminalBench":0.045,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":113.8,"ttftSeconds":14.88},
-        {"effort":"xhigh","intelligence":23.3,"terminalBench":0.081,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":116,"ttftSeconds":25.71},
-        {"effort":"max","intelligence":27.8,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":115.3,"ttftSeconds":107.11}
+        {"effort":"low","intelligence":29.4,"terminalBench":0.152,"priceInput":1,"priceOutput":5,"tokensPerSecond":62.4,"ttftSeconds":2.81},
+        {"effort":"medium","intelligence":38.2,"terminalBench":0.323,"priceInput":1,"priceOutput":5,"tokensPerSecond":63.3,"ttftSeconds":5.11},
+        {"effort":"high","intelligence":42.4,"terminalBench":0.419,"priceInput":1,"priceOutput":5,"tokensPerSecond":65,"ttftSeconds":12.7},
+        {"effort":"xhigh","intelligence":45.3,"terminalBench":0.465,"priceInput":1,"priceOutput":5,"tokensPerSecond":67.2,"ttftSeconds":35.53},
+        {"effort":"max","intelligence":51.3,"terminalBench":0.556,"priceInput":1,"priceOutput":5,"tokensPerSecond":69.7,"ttftSeconds":176.31}
       ],
-      "lane": {"roles":["implementer"]},
+      "lane": {"roles":["implementer","supervisor"]},
       "profile": {
-        "purpose": "«Fast and affordable model for easier tasks.»",
-        "contextTokens": 272000,
+        "purpose": "«GPT-6.1 Terra Codex model.»",
+        "contextTokens": 500000,
         "maxOutputTokens": null,
-        "defaultEffort": "medium",
-        "price": {"input":0.1,"output":0.5,"note":"per million tokens"},
+        "defaultEffort": "low",
+        "price": {"input":1,"output":5,"note":"per million tokens"},
         "knowledgeCutoff": null,
         "availability": "Codex CLI (codex exec).",
         "caveats": [],
@@ -342,9 +346,9 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh"],
       "scores": [
-        {"effort":"low","intelligence":30.9,"terminalBench":0.162,"priceInput":2,"priceOutput":6,"tokensPerSecond":73.2,"ttftSeconds":4.13},
-        {"effort":"high","intelligence":35,"terminalBench":0.247,"priceInput":2,"priceOutput":6,"tokensPerSecond":78.2,"ttftSeconds":11.37},
-        {"effort":"xhigh","intelligence":34.3,"terminalBench":0.258,"priceInput":2,"priceOutput":6,"tokensPerSecond":89.5,"ttftSeconds":23.38}
+        {"effort":"low","intelligence":31.1,"terminalBench":0.162,"priceInput":2,"priceOutput":6,"tokensPerSecond":67,"ttftSeconds":10.03},
+        {"effort":"high","intelligence":35.2,"terminalBench":0.247,"priceInput":2,"priceOutput":6,"tokensPerSecond":65.7,"ttftSeconds":40.26},
+        {"effort":"xhigh","intelligence":35.5,"terminalBench":0.258,"priceInput":2,"priceOutput":6,"tokensPerSecond":65.6,"ttftSeconds":62.5}
       ],
       "lane": {"roles":["implementer"]},
       "profile": {
@@ -373,10 +377,7 @@
       "released": "2026-09-02",
       "effortVia": "flag",
       "efforts": ["minimal","low","medium","high","xhigh","max"],
-      "scores": [
-        {"effort":"xhigh","intelligence":null,"terminalBench":0.167,"priceInput":1.25,"priceOutput":4.25,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"max","intelligence":36.4,"terminalBench":0.333,"priceInput":1.25,"priceOutput":4.25,"tokensPerSecond":null,"ttftSeconds":null}
-      ],
+      "scores": [{"effort":"max","intelligence":36.6,"terminalBench":0.333,"priceInput":1.25,"priceOutput":4.25,"tokensPerSecond":125.9,"ttftSeconds":29.24}],
       "lane": {"roles":["implementer","reviewer"]},
       "profile": {
         "purpose": "\"Latest version\", \"Recommended for new work\", for \"high-volume or cost-sensitive work\".",
@@ -393,6 +394,55 @@
         "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/pricing-rate-limits"],
         "checked": "2026-10-19"
       }
+    },
+    {
+      "harness": "muse",
+      "model": "muse-wonder-1.0",
+      "family": "muse-wonder-1-0",
+      "name": "Muse Wonder 1.0",
+      "maker": "Meta",
+      "effortVia": "flag",
+      "efforts": ["minimal","low","medium","high","xhigh","max"],
+      "scores": [{"effort":"max","intelligence":43.6,"terminalBench":0.52,"priceInput":4,"priceOutput":20,"tokensPerSecond":111.8,"ttftSeconds":24.97}],
+      "lane": {"roles":["implementer","reviewer"]},
+      "profile": {
+        "purpose": "Preview; for \"complex multi-file changes\" and long-horizon agentic work.",
+        "contextTokens": 1048576,
+        "maxOutputTokens": null,
+        "defaultEffort": "high",
+        "price": {"input":4,"output":20,"note":"per million tokens on the Meta API; cached input 0.20"},
+        "knowledgeCutoff": null,
+        "availability": "Meta API (id muse-wonder-1.0, preview) and Muse Code CLI. Each harness takes the efforts its entry lists.",
+        "caveats": ["Prices come from a summary of Meta's pages, to be checked against the page.","Preview model; contributor mode is not offered."],
+        "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/pricing-rate-limits"],
+        "checked": "2026-10-19"
+      }
+    },
+    {
+      "harness": "muse",
+      "model": "muse-wonder-full-1.0",
+      "family": "muse-wonder-full-1-0",
+      "name": "Muse Wonder Full 1.0",
+      "maker": "Meta",
+      "effortVia": "flag",
+      "efforts": ["minimal","low","medium","high","xhigh","max"],
+      "scores": [{"effort":"high","intelligence":51.8,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":106.1,"ttftSeconds":28.25}],
+      "lane": {"roles":["implementer","reviewer"]},
+      "profile": {
+        "purpose": "Flagship coding model available only in Muse Code on the Power Usage and Maximum Usage plans.",
+        "contextTokens": 1048576,
+        "maxOutputTokens": null,
+        "defaultEffort": "high",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Available only in Muse Code on the Power Usage and Maximum Usage plans; not on the Meta API.",
+        "caveats": [
+          "Prices come from a summary of Meta's pages, to be checked against the page.",
+          "Not an API model; requires a Muse Code Power or Maximum subscription plan."
+        ],
+        "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/muse-code/subscriptions"],
+        "checked": "2026-10-19"
+      }
     }
   ],
   "excluded": [
@@ -404,17 +454,10 @@
       "name": "Claude Fable 5.1",
       "maker": "Anthropic",
       "released": "2026-09-01",
-      "reason": "The owner keeps Fable out until Fable 5.5 (decision A43).",
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
-      "price": {"input":10,"output":50},
-      "scores": [
-        {"effort":"low","intelligence":38.5,"terminalBench":0.404,"priceInput":10,"priceOutput":50,"tokensPerSecond":53.5,"ttftSeconds":1.6},
-        {"effort":"medium","intelligence":43,"terminalBench":0.449,"priceInput":10,"priceOutput":50,"tokensPerSecond":57.1,"ttftSeconds":3.44},
-        {"effort":"high","intelligence":47,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":56.3,"ttftSeconds":13.43},
-        {"effort":"xhigh","intelligence":49.7,"terminalBench":0.551,"priceInput":10,"priceOutput":50,"tokensPerSecond":63.8,"ttftSeconds":44.18},
-        {"effort":"max","intelligence":49,"terminalBench":0.52,"priceInput":10,"priceOutput":50,"tokensPerSecond":69.7,"ttftSeconds":169.49}
-      ],
+      "scores": [],
+      "lane": null,
       "profile": {
         "purpose": "\"For demanding reasoning and long-horizon agentic work.\" Anthropic's advice: for most workloads start with Opus 5.5, and use Fable 5.1 for demanding reasoning and long-horizon agentic work, or when evals on Opus 5.5 at higher effort still fall short. Comparative latency: slower.",
         "contextTokens": 1000000,
@@ -435,162 +478,9 @@
           "https://platform.claude.com/docs/en/build-with-claude/effort"
         ],
         "checked": "2026-10-14"
-      }
-    },
-    {
-      "harness": "codex",
-      "model": "gpt-6-sol",
-      "family": "gpt-6-sol",
-      "name": "GPT-6 Sol",
-      "maker": "OpenAI",
-      "released": "2026-09-22",
-      "reason": "Previous generation workhorse model of the line; Aether uses only the newest generation.",
-      "effortVia": "flag",
-      "efforts": ["low","medium","high","xhigh","max"],
-      "price": {"input":2,"output":10},
-      "scores": [
-        {"effort":"low","intelligence":null,"terminalBench":0.091,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"medium","intelligence":null,"terminalBench":0.187,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"high","intelligence":null,"terminalBench":0.263,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"xhigh","intelligence":null,"terminalBench":0.303,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"max","intelligence":null,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":null,"ttftSeconds":null}
-      ],
-      "profile": {
-        "purpose": "«Previous generation workhorse model.»",
-        "contextTokens": 272000,
-        "maxOutputTokens": null,
-        "defaultEffort": "medium",
-        "price": null,
-        "knowledgeCutoff": null,
-        "availability": "Codex CLI (codex exec).",
-        "caveats": [],
-        "sources": ["https://platform.openai.com/docs/models"],
-        "checked": "2026-10-29"
-      }
-    },
-    {
-      "harness": "codex",
-      "model": "gpt-6-astra",
-      "family": "gpt-6-astra",
-      "name": "GPT-6 Astra",
-      "maker": "OpenAI",
-      "released": "2026-09-03",
-      "reason": "The top tier waits for its next generation: the owner said «no lo vamos a usar hasta que salga astra 6.1». GPT-6.1 Astra reopens the question as Fable 5.5 reopens Fable 5.1 (A43); Astra max scored 56.9 against Sol max 54.5, at five times the price per token: 10/50 against 2/10.",
-      "effortVia": "flag",
-      "efforts": ["low","medium","high","xhigh","max"],
-      "price": {"input":10,"output":50},
-      "scores": [
-        {"effort":"low","intelligence":43,"terminalBench":0.419,"priceInput":10,"priceOutput":50,"tokensPerSecond":65.7,"ttftSeconds":1.6},
-        {"effort":"medium","intelligence":51.5,"terminalBench":0.495,"priceInput":10,"priceOutput":50,"tokensPerSecond":61.5,"ttftSeconds":5.29},
-        {"effort":"high","intelligence":54.8,"terminalBench":0.54,"priceInput":10,"priceOutput":50,"tokensPerSecond":72.3,"ttftSeconds":34.46},
-        {"effort":"xhigh","intelligence":55.3,"terminalBench":0.596,"priceInput":10,"priceOutput":50,"tokensPerSecond":78,"ttftSeconds":78.88},
-        {"effort":"max","intelligence":56.9,"terminalBench":0.591,"priceInput":10,"priceOutput":50,"tokensPerSecond":88.9,"ttftSeconds":200.85}
-      ],
-      "profile": {
-        "purpose": "«Frontier intelligence for the most demanding work.»",
-        "contextTokens": 272000,
-        "maxOutputTokens": null,
-        "defaultEffort": "low",
-        "price": {"input":10,"output":50,"note":"per million tokens"},
-        "knowledgeCutoff": null,
-        "availability": "Codex CLI (codex exec).",
-        "caveats": [],
-        "sources": ["https://platform.openai.com/docs/models"],
-        "checked": "2026-10-29"
-      }
-    },
-    {
-      "harness": "codex",
-      "model": "gpt-5.6-luna",
-      "family": "gpt-5-6-luna",
-      "name": "GPT-5.6 Luna",
-      "maker": "OpenAI",
-      "released": "2026-07-09",
-      "reason": "Older generation fast model of the line; Aether uses only the newest generation.",
-      "effortVia": "flag",
-      "efforts": ["low","medium","high","xhigh","max"],
-      "price": {"input":0.2,"output":1.2},
-      "scores": [
-        {"effort":"low","intelligence":null,"terminalBench":0,"priceInput":0.2,"priceOutput":1.2,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"medium","intelligence":null,"terminalBench":0.005,"priceInput":0.2,"priceOutput":1.2,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"high","intelligence":null,"terminalBench":0.025,"priceInput":0.2,"priceOutput":1.2,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"xhigh","intelligence":null,"terminalBench":0.035,"priceInput":0.2,"priceOutput":1.2,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"max","intelligence":null,"terminalBench":0.116,"priceInput":0.2,"priceOutput":1.2,"tokensPerSecond":null,"ttftSeconds":null}
-      ],
-      "profile": {
-        "purpose": "«Older fast and efficient model.»",
-        "contextTokens": 272000,
-        "maxOutputTokens": null,
-        "defaultEffort": "medium",
-        "price": null,
-        "knowledgeCutoff": null,
-        "availability": "Codex CLI (codex exec).",
-        "caveats": [],
-        "sources": ["https://platform.openai.com/docs/models"],
-        "checked": "2026-10-29"
-      }
-    },
-    {
-      "harness": "codex",
-      "model": "gpt-5.6-sol",
-      "family": "gpt-5-6-sol",
-      "name": "GPT-5.6 Sol",
-      "maker": "OpenAI",
-      "released": "2026-07-09",
-      "reason": "Older generation workhorse model of the line; Aether uses only the newest generation.",
-      "effortVia": "flag",
-      "efforts": ["low","medium","high","xhigh","max"],
-      "price": {"input":4,"output":20},
-      "scores": [
-        {"effort":"low","intelligence":null,"terminalBench":0.01,"priceInput":4,"priceOutput":20,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"medium","intelligence":null,"terminalBench":0.146,"priceInput":4,"priceOutput":20,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"high","intelligence":null,"terminalBench":0.207,"priceInput":4,"priceOutput":20,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"xhigh","intelligence":null,"terminalBench":0.247,"priceInput":4,"priceOutput":20,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"max","intelligence":null,"terminalBench":0.399,"priceInput":4,"priceOutput":20,"tokensPerSecond":null,"ttftSeconds":null}
-      ],
-      "profile": {
-        "purpose": "«Older generation workhorse model.»",
-        "contextTokens": 272000,
-        "maxOutputTokens": null,
-        "defaultEffort": "low",
-        "price": null,
-        "knowledgeCutoff": null,
-        "availability": "Codex CLI (codex exec).",
-        "caveats": [],
-        "sources": ["https://platform.openai.com/docs/models"],
-        "checked": "2026-10-29"
-      }
-    },
-    {
-      "harness": "codex",
-      "model": "gpt-5.6-terra",
-      "family": "gpt-5-6-terra",
-      "name": "GPT-5.6 Terra",
-      "maker": "OpenAI",
-      "released": "2026-07-09",
-      "reason": "Older generation balanced model of the line; Aether uses only the newest generation.",
-      "effortVia": "flag",
-      "efforts": ["low","medium","high","xhigh","max"],
-      "price": {"input":2,"output":12},
-      "scores": [
-        {"effort":"low","intelligence":null,"terminalBench":0.015,"priceInput":2,"priceOutput":12,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"medium","intelligence":null,"terminalBench":0.01,"priceInput":2,"priceOutput":12,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"high","intelligence":null,"terminalBench":0.015,"priceInput":2,"priceOutput":12,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"xhigh","intelligence":null,"terminalBench":0.101,"priceInput":2,"priceOutput":12,"tokensPerSecond":null,"ttftSeconds":null},
-        {"effort":"max","intelligence":null,"terminalBench":0.354,"priceInput":2,"priceOutput":12,"tokensPerSecond":null,"ttftSeconds":null}
-      ],
-      "profile": {
-        "purpose": "«Older balanced model for straightforward work.»",
-        "contextTokens": 272000,
-        "maxOutputTokens": null,
-        "defaultEffort": "medium",
-        "price": null,
-        "knowledgeCutoff": null,
-        "availability": "Codex CLI (codex exec).",
-        "caveats": [],
-        "sources": ["https://platform.openai.com/docs/models"],
-        "checked": "2026-10-29"
-      }
+      },
+      "reason": "The owner keeps Fable out until Fable 5.5 (decision A43).",
+      "price": null
     },
     {
       "harness": "codex",
@@ -598,11 +488,10 @@
       "family": "codex-auto-review",
       "name": "Codex Auto Review",
       "maker": "OpenAI",
-      "reason": "Codex hides this model (internal automatic approval review model with visibility hide).",
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
-      "price": null,
       "scores": [],
+      "lane": null,
       "profile": {
         "purpose": "«Automatic approval review model for Codex.»",
         "contextTokens": 272000,
@@ -614,7 +503,139 @@
         "caveats": [],
         "sources": ["https://platform.openai.com/docs/models"],
         "checked": "2026-10-29"
-      }
+      },
+      "reason": "Codex hides this model (internal automatic approval review model with visibility hide).",
+      "price": null
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-5.6-luna",
+      "family": "gpt-5-6-luna",
+      "name": "GPT-5.6 Luna",
+      "maker": "OpenAI",
+      "released": "2026-07-09",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [],
+      "lane": null,
+      "profile": {
+        "purpose": "«Older fast and efficient model.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "medium",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      },
+      "reason": "Older generation fast model of the line; Aether uses only the newest generation.",
+      "price": null
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-5.6-sol",
+      "family": "gpt-5-6-sol",
+      "name": "GPT-5.6 Sol",
+      "maker": "OpenAI",
+      "released": "2026-07-09",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [],
+      "lane": null,
+      "profile": {
+        "purpose": "«Older generation workhorse model.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "low",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      },
+      "reason": "Older generation workhorse model of the line; Aether uses only the newest generation.",
+      "price": null
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-5.6-terra",
+      "family": "gpt-5-6-terra",
+      "name": "GPT-5.6 Terra",
+      "maker": "OpenAI",
+      "released": "2026-07-09",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [],
+      "lane": null,
+      "profile": {
+        "purpose": "«Older balanced model for straightforward work.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "medium",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      },
+      "reason": "Older generation balanced model of the line; Aether uses only the newest generation.",
+      "price": null
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-6-astra",
+      "family": "gpt-6-astra",
+      "name": "GPT-6 Astra",
+      "maker": "OpenAI",
+      "released": "2026-09-03",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [],
+      "lane": null,
+      "profile": {
+        "purpose": "«Frontier intelligence for the most demanding work.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "low",
+        "price": {"input":10,"output":50,"note":"per million tokens"},
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      },
+      "reason": "The top tier waits for its next generation: the owner said «no lo vamos a usar hasta que salga astra 6.1». GPT-6.1 Astra reopens the question as Fable 5.5 reopens Fable 5.1 (A43); Astra max scored 56.9 against Sol max 54.5, at five times the price per token: 10/50 against 2/10.",
+      "price": null
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-6-sol",
+      "family": "gpt-6-sol",
+      "name": "GPT-6 Sol",
+      "maker": "OpenAI",
+      "released": "2026-09-22",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [],
+      "lane": null,
+      "profile": {
+        "purpose": "«Previous generation workhorse model.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "medium",
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      },
+      "reason": "Previous generation workhorse model of the line; Aether uses only the newest generation.",
+      "price": null
     },
     {
       "harness": "codex",
@@ -622,11 +643,10 @@
       "family": "gpt-reserve",
       "name": "GPT-Reserve",
       "maker": "OpenAI",
-      "reason": "Codex hides this model (internal model with visibility hide).",
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
-      "price": null,
       "scores": [],
+      "lane": null,
       "profile": {
         "purpose": "«Fast and affordable agentic coding model.»",
         "contextTokens": 272000,
@@ -638,20 +658,48 @@
         "caveats": [],
         "sources": ["https://platform.openai.com/docs/models"],
         "checked": "2026-10-29"
-      }
+      },
+      "reason": "Codex hides this model (internal model with visibility hide).",
+      "price": null
     }
   ],
   "notOffered": [],
   "withoutFigures": [
     {
+      "harness": "agy",
+      "model": "gemini-pro-orchestrator-g1-pro",
+      "family": "gemini-pro-orchestrator-g1-pro",
+      "name": "gemini-pro-orchestrator-g1-pro",
+      "maker": "Google",
+      "effortVia": "id",
+      "efforts": ["default"],
+      "ids": {"default":"gemini-pro-orchestrator-g1-pro"},
+      "scores": [],
+      "lane": null,
+      "profile": {
+        "purpose": "Listed by agy 1.5.8 as gemini-pro-orchestrator-g1-pro; Aether has not read any page for it and does not use it.",
+        "contextTokens": null,
+        "maxOutputTokens": null,
+        "defaultEffort": null,
+        "price": null,
+        "knowledgeCutoff": null,
+        "availability": "Listed by agy 1.5.8 on 2026-11-13; no page read.",
+        "caveats": ["Aether read no page for this model and does not use it; the fields not read are null."],
+        "sources": ["specs/038-aa-pages-hydrogen/evidence/README.md"],
+        "checked": "2026-11-13"
+      },
+      "note": "offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it"
+    },
+    {
       "harness": "grok",
       "model": "grok-4.7-build-fast",
+      "family": "grok-4-7-build-fast",
       "name": "Grok 4.7 Fast",
       "maker": "xAI (SpaceXAI)",
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh"],
+      "scores": [],
       "lane": null,
-      "note": "offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it",
       "profile": {
         "purpose": "The same Grok 4.7 served on faster infrastructure: faster and dearer, not a different or smaller model.",
         "contextTokens": 500000,
@@ -672,60 +720,47 @@
         ],
         "sources": ["https://docs.x.ai/developers/grok-4-7"],
         "checked": "2026-10-13"
-      }
-    },
-    {
-      "harness": "muse",
-      "model": "muse-wonder-1.0",
-      "name": "Muse Wonder 1.0",
-      "maker": "Meta",
-      "effortVia": "flag",
-      "efforts": ["minimal","low","medium","high","xhigh","max"],
-      "lane": {"roles":["implementer","reviewer"]},
-      "note": "offered, with no Artificial Analysis entry, so no figures",
-      "profile": {
-        "purpose": "Preview; for \"complex multi-file changes\" and long-horizon agentic work.",
-        "contextTokens": 1048576,
-        "maxOutputTokens": null,
-        "defaultEffort": "high",
-        "price": {"input":4,"output":20,"note":"per million tokens on the Meta API; cached input 0.20"},
-        "knowledgeCutoff": null,
-        "availability": "Meta API (id muse-wonder-1.0, preview) and Muse Code CLI. Each harness takes the efforts its entry lists.",
-        "caveats": ["Prices come from a summary of Meta's pages, to be checked against the page.","Preview model; contributor mode is not offered."],
-        "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/pricing-rate-limits"],
-        "checked": "2026-10-19"
-      }
-    },
-    {
-      "harness": "muse",
-      "model": "muse-wonder-full-1.0",
-      "name": "Muse Wonder Full 1.0",
-      "maker": "Meta",
-      "effortVia": "flag",
-      "efforts": ["minimal","low","medium","high","xhigh","max"],
-      "lane": {"roles":["implementer","reviewer"]},
-      "note": "offered, with no Artificial Analysis entry, so no figures",
-      "profile": {
-        "purpose": "Flagship coding model available only in Muse Code on the Power Usage and Maximum Usage plans.",
-        "contextTokens": 1048576,
-        "maxOutputTokens": null,
-        "defaultEffort": "high",
-        "price": null,
-        "knowledgeCutoff": null,
-        "availability": "Available only in Muse Code on the Power Usage and Maximum Usage plans; not on the Meta API.",
-        "caveats": [
-          "Prices come from a summary of Meta's pages, to be checked against the page.",
-          "Not an API model; requires a Muse Code Power or Maximum subscription plan."
-        ],
-        "sources": ["https://dev.meta.ai/docs/models","https://dev.meta.ai/docs/muse-code/subscriptions"],
-        "checked": "2026-10-19"
-      }
+      },
+      "note": "offered, with no Artificial Analysis entry, so no figures; not a lane: the lane table does not list it"
     }
   ],
   "superseded": [
-    {"harness":"grok","id":"grok-4.6","supersededBy":"grok-4.7"},
-    {"harness":"grok","id":"grok-4.5","supersededBy":"grok-4.7"},
-    {"harness":"muse","id":"muse-spark-1.2","supersededBy":"muse-spark-1.3"}
+    {
+      "harness": "agy",
+      "id": "gemini-3.8-flash",
+      "supersededBy": "gemini-4-hydrogen",
+      "on": "2026-11-13",
+      "reason": "The owner, 2026-11-13: «hydrogen esta pensnaod para reemplazar a 3.8 flash». Gemini 4 Hydrogen replaces Gemini 3.8 Flash.",
+      "figures": "Photo of 2026-11-14: Flash high intelligence 30.8, cost per task US$ 7.766, code 19.7 %; Hydrogen medium intelligence 41.2, US$ 0.798, code 29.29 %; Hydrogen high intelligence 50.8, US$ 1.873, code 54.04 %."
+    },
+    {
+      "harness": "grok",
+      "id": "grok-4.5",
+      "supersededBy": "grok-4.7",
+      "on": "2026-11-13",
+      "reason": "Grok 4.7 is the generation that replaces Grok 4.5 on the line; Aether uses only the newest generation."
+    },
+    {
+      "harness": "grok",
+      "id": "grok-4.6",
+      "supersededBy": "grok-4.7",
+      "on": "2026-11-13",
+      "reason": "Grok 4.7 is the generation that replaces Grok 4.6 on the line; Aether uses only the newest generation."
+    },
+    {
+      "harness": "muse",
+      "id": "muse-spark-1.2",
+      "supersededBy": "muse-spark-1.3",
+      "on": "2026-11-13",
+      "reason": "Muse Spark 1.3 is the generation that replaces Muse Spark 1.2 on the line; Aether uses only the newest generation."
+    }
   ],
-  "outOfScope": [{"harness":"agy","model":"gpt-oss-120b","reason":"Artificial Analysis lists gpt-oss-120b, released 2025-08-05, before 2026-01-01"}]
+  "outOfScope": [
+    {
+      "harness": "agy",
+      "model": "gpt-oss-120b",
+      "reason": "listed by agy, released 2025-08-05, before the index's 2026-01-01 cut; no Artificial Analysis page is read for it",
+      "on": "2026-11-13"
+    }
+  ]
 }

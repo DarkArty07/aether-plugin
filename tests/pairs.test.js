@@ -7,33 +7,26 @@ const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const { loadPairs, pairsPath, pairId, referenceOf } = require('../plugins/aether/lib/pairs.js')
 
-const EVIDENCE = path.join(__dirname, 'fixtures', 'aa-pairs-2026-10-29.json')
-const NATIVE = { Haiku: 'haiku', Sonnet: 'sonnet', Opus: 'opus' }
-const EXTERNAL = { 'Gemini 4 Argon': 'gemini-4-argon', 'Gemini 3.8 Flash': 'gemini-3.8-flash', 'Grok 4.7': 'grok-4.7' }
+const SNAPSHOT = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models', 'aa-pages.json'), 'utf8')).pages
 
-function modelOf(name) {
-  const native = Object.keys(NATIVE).find((word) => name.startsWith(`Claude ${word}`))
-  if (native) return NATIVE[native]
-  return EXTERNAL[Object.keys(EXTERNAL).find((word) => name.startsWith(word))]
-}
-
-test('the table holds the 22 pairs of the evidence with the same figures, six Claude pairs for agy, the six pairs of Muse and the fifteen pairs of Codex', () => {
+test('every row with a page of its own takes its figures from the photo of the model pages, with six Claude pairs for agy, the seven pairs of Muse, the fifteen pairs of Codex and four of Hydrogen', () => {
   const { pairs } = loadPairs()
-  const evidence = JSON.parse(fs.readFileSync(EVIDENCE, 'utf8')).pairs
-  assert.equal(evidence.length, 22)
-  for (const row of evidence) {
-    const found = pairs.find((p) => p.harness === row.harness && p.model === modelOf(row.name) && p.effort === row.effort)
-    assert.ok(found, `${row.name} is in the table`)
-    assert.equal(found.slug, row.slug, row.name)
-    assert.equal(found.intelligence, row.intelligence, row.name)
-    assert.equal(found.costPerTaskUsd, row.costPerTaskUsd ?? null, row.name)
+  // The Spark estimates have no page, and the Muse pair at Opus high borrows the page of Opus high and keeps no cost.
+  const withPage = pairs.filter((p) => !Object.hasOwn(p, 'estimateOf') && p.id !== 'muse/muse-wonder-full-1.0@high')
+  assert.equal(withPage.length, 46)
+  for (const found of withPage) {
+    const figures = SNAPSHOT[found.slug]?.figures
+    assert.ok(figures, `${found.id} has the page ${found.slug} in the photo`)
+    assert.equal(found.intelligence, figures.intelligence.value, found.id)
+    assert.equal(found.costPerTaskUsd, figures.costPerTaskUsd.value, found.id)
     assert.equal(found.id, pairId(found.harness, found.model, found.effort))
   }
-  assert.equal(pairs.length, 50)
+  assert.equal(pairs.length, 51)
   assert.equal(pairs.filter((p) => p.harness === 'agy' && p.family.startsWith('claude-')).length, 6)
+  assert.equal(pairs.filter((p) => p.harness === 'agy' && p.model === 'gemini-4-hydrogen').length, 4)
   assert.equal(pairs.filter((p) => p.harness === 'muse').length, 7)
   assert.equal(pairs.filter((p) => p.harness === 'codex').length, 15)
-  assert.equal(new Set(pairs.map((p) => p.id)).size, 50)
+  assert.equal(new Set(pairs.map((p) => p.id)).size, 51)
 })
 
 test('the Claude pairs of agy carry the figures of the native pair of the same model and effort', () => {
@@ -61,13 +54,13 @@ test('C16: the Muse pair has the figure of Opus high, no cost and the owner word
   assert.deepEqual([pair.slug, pair.intelligence], [opus.slug, opus.intelligence])
   assert.match(pair.ownerDecision, /anivel de opus/)
   const wonder1 = pairs.find((p) => p.id === 'muse/muse-wonder-1.0@max')
-  // Wonder 1.0 max is 43.3 on the scale of 2026-10-29. Spark xhigh is an estimate now, so it carries an owner decision with the low, medium and high rows.
-  assert.deepEqual([wonder1.intelligence, wonder1.costPerTaskUsd, wonder1.group], [43.3, 6.952, 'muse'])
+  // Wonder 1.0 max is 43.6 on the scale of 2026-11-14. Spark xhigh is an estimate now, so it carries an owner decision with the low, medium and high rows.
+  assert.deepEqual([wonder1.intelligence, wonder1.costPerTaskUsd, wonder1.group], [43.6, 6.952, 'muse'])
   assert.match(wonder1.ownerDecision, /Las dos respuestas es lo reocmendado/)
   assert.deepEqual(pairs.filter((p) => p.ownerDecision !== undefined).map((p) => p.id), ['muse/muse-spark-1.3@low', 'muse/muse-spark-1.3@medium', 'muse/muse-spark-1.3@high', 'muse/muse-spark-1.3@xhigh', pair.id, 'muse/muse-wonder-1.0@max'])
-  assert.deepEqual(pairs.filter((p) => p.costPerTaskUsd === null).map((p) => p.id).sort(), ['agy/gemini-3.8-flash@low', pair.id])
+  assert.deepEqual(pairs.filter((p) => p.costPerTaskUsd === null).map((p) => p.id).sort(), [pair.id])
   const xhigh = pairs.find((p) => p.id === 'muse/muse-spark-1.3@xhigh')
-  assert.deepEqual([xhigh.intelligence, xhigh.costPerTaskUsd], [33.9, 1.438])
+  assert.deepEqual([xhigh.intelligence, xhigh.costPerTaskUsd], [34.2, 1.438])
   const estimated = Object.fromEntries(['low', 'medium', 'high'].map((effort) => [effort, pairs.find((p) => p.id === `muse/muse-spark-1.3@${effort}`)]))
   assert.deepEqual([estimated.low.costPerTaskUsd, estimated.medium.costPerTaskUsd, estimated.high.costPerTaskUsd], [0.232, 0.534, 0.824])
   for (const [effort, row] of Object.entries(estimated)) {
@@ -92,7 +85,7 @@ test('the Spark estimates carry their reference and distance, and their points a
 
 test('referenceOf gives the native pair of a model and effort, and throws for any other', () => {
   const { pairs } = loadPairs()
-  assert.equal(referenceOf(pairs, { model: 'sonnet', effort: 'xhigh' }).intelligence, 49.6)
+  assert.equal(referenceOf(pairs, { model: 'sonnet', effort: 'xhigh' }).intelligence, 49.9)
   assert.equal(referenceOf(pairs, { model: 'opus', effort: 'max' }).id, 'claude/opus@max')
   assert.throws(() => referenceOf(pairs, { model: 'gpt', effort: 'high' }), /no reference pair for gpt high/)
 })
@@ -106,7 +99,7 @@ test('AETHER_PAIRS_CONFIG names another table, and a table that breaks a rule is
     return file
   }
   assert.equal(pairsPath({ AETHER_PAIRS_CONFIG: '/x/pairs.json' }), '/x/pairs.json')
-  assert.equal(loadPairs(write('ok.json', good)).pairs.length, 50)
+  assert.equal(loadPairs(write('ok.json', good)).pairs.length, 51)
   const mutate = (fn) => {
     const copy = JSON.parse(JSON.stringify(good))
     fn(copy)

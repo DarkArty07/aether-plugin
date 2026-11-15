@@ -19,7 +19,7 @@ const delegateRun = require('../plugins/aether/lib/delegate-run.js')
 const PID = process.pid
 const ID = `snap-1-${PID}`
 const ID2 = `snap-2-${PID}`
-const rung = { model: 'gemini-3.8-flash', effort: 'medium', group: 'flash' }
+const rung = { model: 'gemini-4-hydrogen', effort: 'medium', group: 'hydrogen' }
 
 function setup(t) {
   const env = laneEnv(t)
@@ -263,7 +263,7 @@ test('AETHER-TREE names another worktree with uncommitted work of its own: the c
   fs.writeFileSync(path.join(side, 'side-only.txt'), 'uncommitted in the side\n')
   const dir = path.join(tempDir(t, 'aether-export-'), 'copy')
   const id = `side-${PID}`
-  const pick = { id: 'agy/gemini-3.8-flash@medium', harness: 'agy', model: 'gemini-3.8-flash', effort: 'medium', group: 'flash' }
+  const pick = { id: 'agy/gemini-4-hydrogen@medium', harness: 'agy', model: 'gemini-4-hydrogen', effort: 'medium', group: 'hydrogen' }
   const deps = {
     dataDir: s.dataDir,
     cwd: s.repo.dir,

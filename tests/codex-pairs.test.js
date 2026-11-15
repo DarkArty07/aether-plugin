@@ -9,11 +9,11 @@ const { loadPairs } = require('../plugins/aether/lib/pairs.js')
 const { pairs } = loadPairs()
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const AA = {
-  'gpt-6.1-sol': { base: 'gpt-6-1-sol', points: [34.5, 46.1, 50.2, 52.3, 54.5] },
-  'gpt-6.1-terra': { base: 'gpt-6-1-terra', points: [29.2, 38.1, 42.3, 45.0, 51.0] },
-  'gpt-6-luna': { base: 'gpt-6-luna', points: [9.7, 18.3, 21.4, 23.3, 27.8] },
+  'gpt-6.1-sol': { base: 'gpt-6-1-sol', points: [34.8, 46.3, 50.3, 52.5, 54.6] },
+  'gpt-6.1-terra': { base: 'gpt-6-1-terra', points: [29.4, 38.2, 42.4, 45.3, 51.3] },
+  'gpt-6-luna': { base: 'gpt-6-luna', points: [9.7, 18.5, 21.4, 23.5, 27.9] },
 }
-// The cost per index task that AA's model pages gave on 2026-10-30 (spec 023): all fifteen pairs are measured, none is an estimate any more.
+// The cost per index task that AA's model pages gave on 2026-10-30 and again on 2026-11-14 (spec 023): all fifteen pairs are measured, none is an estimate any more.
 // On 2026-10-26 only Sol max (0.724) and Luna max (0.068) were known, and the other thirteen were estimates anchored on them; AA's re-score
 // changed the basis of the cost (Sol max is 1.272 now), and the pages of the other thirteen rows could be read.
 const MEASURED = {
@@ -22,7 +22,7 @@ const MEASURED = {
   'gpt-6-luna': [0.005, 0.042, 0.073, 0.104, 0.152],
 }
 
-test('the table has the fifteen pairs of Sol, Terra and Luna with the figures of AA of 2026-10-29, read again on 2026-10-30 (R12)', () => {
+test('the table has the fifteen pairs of Sol, Terra and Luna with the figures of the photo of the model pages, read on 2026-11-14 (R12)', () => {
   assert.equal(pairs.filter((pair) => pair.harness === 'codex').length, 15)
   for (const [model, { base, points }] of Object.entries(AA)) {
     EFFORTS.forEach((effort, i) => {
@@ -31,14 +31,14 @@ test('the table has the fifteen pairs of Sol, Terra and Luna with the figures of
       assert.deepEqual([row.harness, row.group, row.family, row.model, row.effort], ['codex', 'codex', model, model, effort])
       assert.equal(row.slug, effort === 'max' ? base : `${base}-${effort}`)
       assert.equal(row.intelligence, points[i])
-      assert.equal(row.checked, '2026-10-30')
+      assert.equal(row.checked, '2026-11-14')
       assert.equal(row.costEstimate, undefined, 'a measured cost carries no estimate mark')
       assert.equal(typeof row.costPerTaskUsd, 'number')
     })
   }
 })
 
-test('the cost of each Codex pair is the one AA measured on 2026-10-30, and none is marked as an estimate (R13 of spec 022, redone by spec 023)', () => {
+test('the cost of each Codex pair is the one AA measured, and none is marked as an estimate (R13 of spec 022, redone by spec 023)', () => {
   for (const [model, costs] of Object.entries(MEASURED)) {
     EFFORTS.forEach((effort, i) => assert.equal(pairs.find((pair) => pair.id === `codex/${model}@${effort}`).costPerTaskUsd, costs[i], `${model} at ${effort}`))
   }
@@ -49,7 +49,7 @@ test('the cost of each Codex pair is the one AA measured on 2026-10-30, and none
 const open = { usable: true, unknown: false, mark: null, resetsAt: '2026-10-30T00:00:00.000Z' }
 const view = (group) => ({ installed: true, groups: { [group]: open } })
 const CODEX_ONLY = { codex: view('codex') }
-const ALL = { agy: { installed: true, groups: { argon: open, flash: open, claude: open } }, grok: view('grok'), muse: view('muse'), codex: view('codex') }
+const ALL = { agy: { installed: true, groups: { argon: open, hydrogen: open, claude: open } }, grok: view('grok'), muse: view('muse'), codex: view('codex') }
 const picked = (model, effort, harnesses) => choose({ pairs, reference: { model, effort }, harnesses }).picked?.id ?? null
 
 // On the scale AA published on 2026-10-29 and its costs of 2026-10-30. The steps the owner approved on 2026-10-29, on a table that mixed two scales,

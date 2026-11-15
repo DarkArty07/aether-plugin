@@ -77,17 +77,17 @@ test('the shipped table names each lane model with its group and roles', () => {
   assert.equal(Object.hasOwn(agy, 'maxParallelMeasured'), false)
   assert.equal(agy.waitSeconds, 540)
   assert.deepEqual(agy.timeouts, { implementer: 2700, supervisor: 900, reviewer: 1200, judge: 1200, writer: 2700, examiner: 1800 })
-  assert.deepEqual(agy.groups, { argon: 'Gemini Models', flash: 'Gemini Models', claude: 'Claude and GPT models' })
+  assert.deepEqual(agy.groups, { argon: 'Gemini Models', hydrogen: 'Gemini Models', claude: 'Claude and GPT models' })
   assert.deepEqual(
     Object.entries(agy.models).map(([id, m]) => [id, m.group, m.roles]),
     [
-      ['gemini-3.8-flash', 'flash', ['implementer']],
+      ['gemini-4-hydrogen', 'hydrogen', ['implementer']],
       ['claude-sonnet-5-5', 'claude', ['implementer', 'supervisor']],
       ['claude-opus-5-5', 'claude', ['implementer', 'reviewer']],
       ['gemini-4-argon', 'argon', ['judge', 'writer', 'examiner']],
     ],
   )
-  assert.deepEqual(agy.models['gemini-3.8-flash'].aa, { slug: 'gemini-3-8-flash', intelligence: 30.5, terminalBench: 0.2, checked: '2026-10-30' })
+  assert.deepEqual(agy.models['gemini-4-hydrogen'].aa, { slug: 'gemini-4-hydrogen-high', intelligence: 50.8, terminalBench: 0.54, checked: '2026-11-14' })
 })
 
 test('configPath follows AETHER_LANES_CONFIG, and a missing table means no lanes', (t) => {
@@ -104,8 +104,8 @@ test('loadConfig refuses a table it cannot trust, naming the file and the field'
     [(c) => (c.reserve = 2), /reserve/],
     [(c) => (c.harnesses.agy.waitSeconds = 'soon'), /waitSeconds/],
     [(c) => (c.harnesses.agy.timeouts.reviewer = -1), /timeouts/],
-    [(c) => (c.harnesses.agy.models['gemini-3.8-flash'].group = 'other'), /gemini-3\.8-flash.*group/],
-    [(c) => (c.harnesses.agy.models['gemini-3.8-flash'].roles = ['ops']), /gemini-3\.8-flash.*roles/],
+    [(c) => (c.harnesses.agy.models['gemini-4-hydrogen'].group = 'other'), /gemini-4-hydrogen.*group/],
+    [(c) => (c.harnesses.agy.models['gemini-4-hydrogen'].roles = ['ops']), /gemini-4-hydrogen.*roles/],
     [(c) => (c.harnesses.agy.models['claude-opus-5-5'].roles = ['implementer', 'designer']), /claude-opus-5-5.*roles/],
   ]
   for (const [mutate, pattern] of bad) {

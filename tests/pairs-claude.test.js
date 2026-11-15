@@ -49,7 +49,7 @@ test('the Claude rows carry intelligence, cost and code figures, and one date wh
 test('rows with a page may carry refreshed figures and one date; estimated rows keep estimateOf and estimateDistance (R9)', () => {
   const pairs = loadPairs().pairs
   const others = pairs.filter((pair) => pair.harness !== 'claude')
-  assert.equal(others.length, 35)
+  assert.equal(others.length, 36)
   const byId = (id) => others.find((pair) => pair.id === id)
   assert.equal(byId('agy/claude-opus-5-5@high').slug, 'claude-opus-5-5-high')
   assert.equal(byId('muse/muse-wonder-full-1.0@high').slug, 'claude-opus-5-5-high')
@@ -67,8 +67,9 @@ test('rows with a page may carry refreshed figures and one date; estimated rows 
     assert.ok(pair.costPerTaskUsd === null || typeof pair.costPerTaskUsd === 'number', pair.id)
     const present = codeFields.filter((field) => Object.hasOwn(pair, field))
     if (present.length === 0) continue
-    assert.deepEqual(present, codeFields, pair.id)
-    for (const field of codeFields) assert.equal(typeof pair[field], 'number', `${pair.id} ${field}`)
+    // Since 2026-11-14 the pages may not give the code cost and minutes: a row outside Claude carries `code` and, each only when the photo has it, the other two.
+    assert.ok(present.includes('code'), pair.id)
+    for (const field of present) assert.equal(typeof pair[field], 'number', `${pair.id} ${field}`)
     if (Object.hasOwn(pair, 'codeChecked')) assert.equal(typeof pair.codeChecked, 'string', pair.id)
     if (Object.hasOwn(pair, 'checked')) assert.match(pair.checked, /^\d{4}-\d{2}-\d{2}$/, `${pair.id}: checked`)
   }

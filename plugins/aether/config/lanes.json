@@ -16,20 +16,20 @@
       },
       "groups": {
         "argon": "Gemini Models",
-        "flash": "Gemini Models",
+        "hydrogen": "Gemini Models",
         "claude": "Claude and GPT models"
       },
       "models": {
-        "gemini-3.8-flash": {
-          "group": "flash",
+        "gemini-4-hydrogen": {
+          "group": "hydrogen",
           "roles": [
             "implementer"
           ],
           "aa": {
-            "slug": "gemini-3-8-flash",
-            "intelligence": 30.5,
-            "terminalBench": 0.2,
-            "checked": "2026-10-30"
+            "slug": "gemini-4-hydrogen-high",
+            "intelligence": 50.8,
+            "terminalBench": 0.54,
+            "checked": "2026-11-14"
           }
         },
         "claude-sonnet-5-5": {

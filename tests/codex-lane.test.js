@@ -288,13 +288,16 @@ test('an editing delegate runs on Codex in its own worktree and comes back as a 
   const json = r.json
   assert.equal(json.status, 'done', JSON.stringify(json))
   assert.equal(json.pair.harness, 'codex')
-  assert.equal(json.pair.id, 'codex/gpt-6.1-terra@low')
+  // Haiku high asks code 21.72 of an implementer (floor 20.72): Terra low has the points (29.4) but its code is 15.15, below that floor,
+  // so the cheapest Codex pair that reaches both is Sol low (34.8, code 30.81).
+  assert.equal(json.pair.id, 'codex/gpt-6.1-sol@low')
   assert.equal(repo.git('show', `${json.branch}:src/new.js`), 'hello')
   assert.equal(repo.git('status', '--porcelain'), '')
   assert.equal(repo.git('rev-parse', 'HEAD'), headBefore)
   assert.equal(json.review.status, 'done')
-  assert.notEqual(json.review.pair.id, json.pair.id, 'the reviewer is Sol')
-  assert.ok(json.review.pair.id.includes('gpt-6.1-sol'), json.review.pair.id)
+  // The review excludes the author's pair, Sol low, and of the Codex models only Sol takes the reviewer role: its next pair is Sol medium.
+  assert.notEqual(json.review.pair.id, json.pair.id)
+  assert.equal(json.review.pair.id, 'codex/gpt-6.1-sol@medium')
   assert.equal(json.review.verdict, 'ready')
 })
 

@@ -12,7 +12,7 @@ const FEATURE = 'specs/001-demo'
 const OPTIONS = ['--superdelegation', 'on', '--harnesses', 'agy']
 const DAY = 86400000
 // Gemini's weekly window resets before the Claude and GPT one. Argon (50.4) is below the Judge's floor
-// (Opus high is 51.7, at least 50.7), and the shipped table gives judge and examiner only to Argon, so a
+// (Opus high is 51.8, at least 50.8), and the shipped table gives judge and examiner only to Argon, so a
 // plain agy round is the native agent. A round that must run grants those roles to claude-opus-5-5.
 const geminiFirst = () => ({
   'Gemini Models': [0.9, 0.9, null, new Date(Date.now() + 2 * DAY).toISOString()],
@@ -148,7 +148,7 @@ test('a Judge round on the shipped agy table finds no external pair at Opus high
   assert.equal(done.value.unavailable, 'no-external')
   assert.equal(done.value.native.agent, 'aether:judge')
   assert.equal(done.value.native.model, 'opus')
-  assert.equal(done.value.native.intelligence, 51.7)
+  assert.equal(done.value.native.intelligence, 51.8)
   assert.equal(agyTurns(env).length, 0, 'Argon is below the floor and Opus has no judge role, so agy never runs')
 })
 
