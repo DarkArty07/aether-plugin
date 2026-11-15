@@ -148,10 +148,17 @@ function slugsOf(pairsTable, { harness = null } = {}) {
   return [...new Set(pairsTable.pairs.filter((row) => row.slug && !row.estimateOf && (!harness || row.harness === harness || row.harness === 'claude')).map((row) => row.slug))]
 }
 
+// The default cache is one folder per day: a page saved on another day is read again, so no figure is dated with a day it was not read on.
+function defaultCacheDir(today) {
+  return path.join(os.tmpdir(), 'aether-aa-pages', today)
+}
+
 async function main(argv, { fetch, pause, now = Date.now, cacheDir } = {}) {
   const usage = 'usage: node scripts/aa-pages.js read [slug ...] [--harness <name>] [--snapshot <file>] [--pairs <file>] [--cache <dir>]'
   if (argv[0] !== 'read') return { exitCode: 2, stdout: usage }
-  const options = { snapshot: SNAPSHOT_FILE, pairs: path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json'), cache: cacheDir ?? path.join(os.tmpdir(), 'aether-aa-pages') }
+  const date = new Date(now())
+  const today = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const options = { snapshot: SNAPSHOT_FILE, pairs: path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json'), cache: cacheDir ?? defaultCacheDir(today) }
   const slugs = []
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i]
@@ -164,15 +171,15 @@ async function main(argv, { fetch, pause, now = Date.now, cacheDir } = {}) {
   }
   const addresses = slugs.length ? [...new Set(slugs)] : slugsOf(JSON.parse(fs.readFileSync(options.pairs, 'utf8')), { harness: options.harness })
   let results
-  try { results = await readPages(addresses, { fetch, pause, cacheDir: options.cache }) } catch (error) {
+  const report = {}
+  try { results = await readPages(addresses, { fetch, pause, cacheDir: options.cache, report }) } catch (error) {
     if (error instanceof StopPass) return { exitCode: 1, stdout: error.message }
     throw error
   }
-  const date = new Date(now())
-  const today = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   const { snapshot, summary } = mergeSnapshot(loadSnapshot(options.snapshot), results, today)
   if (summary.written.length) fs.writeFileSync(options.snapshot, serializeSnapshot(snapshot))
   const lines = [`Read ${addresses.length} address(es): ${summary.written.length} written, ${summary.failed.length} not read.`]
+  lines.push(`Pages: ${report.network} from the network, ${report.cached} from the cache ${options.cache}.`)
   if (summary.written.length) lines.push(`Written: ${summary.written.join(', ')}`)
   if (summary.failed.length) lines.push(`Not read: ${summary.failed.map(({ slug, cause }) => `${slug} (${cause})`).join(', ')}`)
   const missing = Object.entries(summary.missing)
@@ -180,5 +187,5 @@ async function main(argv, { fetch, pause, now = Date.now, cacheDir } = {}) {
   return { exitCode: summary.failed.length ? 1 : 0, stdout: lines.join('\n') }
 }
 
-module.exports = { PAGE_URL, PAUSE_MS, TIMEOUT_MS, SNAPSHOT_FILE, FIGURES, parsePage, readPages, StopPass, mergeSnapshot, serializeSnapshot, loadSnapshot, slugsOf, main }
+module.exports = { PAGE_URL, PAUSE_MS, TIMEOUT_MS, SNAPSHOT_FILE, FIGURES, parsePage, readPages, StopPass, mergeSnapshot, serializeSnapshot, loadSnapshot, slugsOf, defaultCacheDir, main }
 if (require.main === module) main(process.argv.slice(2)).then(({ exitCode, stdout }) => { console.log(stdout); process.exitCode = exitCode }).catch((error) => { console.error(error.message); process.exitCode = 1 })

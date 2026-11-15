@@ -3,6 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
 const { tempDir } = require('./helpers.js')
 const { block, page, pageFromExtract, snapshotOf } = require('./aa-page-fixtures.js')
@@ -292,4 +293,48 @@ test('reads scalar benchmark and headline speeds from the live page shape', asyn
   const out = await run(files, ['live-model'], async () => ok(html))
   assert.equal(out.exitCode, 0)
   assert.match(out.stdout, /Missing fields: live-model: .*codeCostPerTaskUsd, codeMinutesPerTask.*briefcaseRubricPassRate/)
+})
+
+test('the default cache is one folder per day under the system temp directory, so a page cached on another day is not the reading of today', () => {
+  assert.equal(reader.defaultCacheDir('2026-11-13'), path.join(os.tmpdir(), 'aether-aa-pages', '2026-11-13'))
+  assert.notEqual(reader.defaultCacheDir('2026-11-13'), reader.defaultCacheDir('2026-11-06'))
+})
+
+test('with no --cache, a page saved under another day\'s folder is read again, and the pages of today are reused from today\'s folder', async (t) => {
+  const tmp = tempDir(t, 'aether-aa-tmp-')
+  const previous = process.env.TMPDIR
+  process.env.TMPDIR = tmp
+  t.after(() => { if (previous === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previous })
+  const files = setup(t)
+  const oldDay = path.join(tmp, 'aether-aa-pages', '2026-11-06')
+  const today = path.join(tmp, 'aether-aa-pages', '2026-11-13')
+  fs.mkdirSync(oldDay, { recursive: true })
+  fs.mkdirSync(today, { recursive: true })
+  fs.writeFileSync(path.join(oldDay, 'a.html'), page(block('a', NEIGHBOUR)))
+  fs.writeFileSync(path.join(today, 'b.html'), page(block('b', OWN)))
+  const asked = []
+  const fresh = page(block('a', OWN))
+  const fetch = async (url) => { asked.push(url); return ok(fresh) }
+  const out = await reader.main(['read', 'a', 'b', '--snapshot', files.snapshot, '--pairs', files.pairs], { fetch, pause: async () => {}, now: NOW })
+  assert.equal(out.exitCode, 0, out.stdout)
+  assert.deepEqual(asked, [URL_OF('a')])
+  assert.equal(read(files).pages.a.figures.intelligence.value, 51.8)
+  assert.equal(fs.readFileSync(path.join(today, 'a.html'), 'utf8'), fresh, 'the page read from the network is saved in the folder of today')
+  assert.ok(out.stdout.includes(`Pages: 1 from the network, 1 from the cache ${today}.`), out.stdout)
+})
+
+test('the summary counts the pages read from the network and from the cache, and an injected cacheDir or a --cache folder is used as given', async (t) => {
+  const files = setup(t)
+  const asked = []
+  const fetch = async (url) => { asked.push(url); return ok(page(block(url.split('/').pop(), OWN))) }
+  const first = await run(files, ['a', 'b'], fetch)
+  assert.ok(first.stdout.includes(`Pages: 2 from the network, 0 from the cache ${files.cache}.`), first.stdout)
+  assert.equal(fs.existsSync(path.join(files.cache, 'a.html')), true)
+  const second = await run(files, ['a', 'c'], fetch)
+  assert.ok(second.stdout.includes(`Pages: 1 from the network, 1 from the cache ${files.cache}.`), second.stdout)
+  assert.deepEqual(asked, [URL_OF('a'), URL_OF('b'), URL_OF('c')])
+  const injected = path.join(files.cache, '..', 'injected')
+  const third = await reader.main(['read', 'd', '--snapshot', files.snapshot, '--pairs', files.pairs], { fetch, pause: async () => {}, now: NOW, cacheDir: injected })
+  assert.ok(third.stdout.includes(`Pages: 1 from the network, 0 from the cache ${injected}.`), third.stdout)
+  assert.equal(fs.existsSync(path.join(injected, 'd.html')), true)
 })
