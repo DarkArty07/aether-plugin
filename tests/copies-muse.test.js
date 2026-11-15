@@ -23,8 +23,8 @@ test('Muse: the declared figures of muse-wonder-full-1.0 stay as the owner left 
   const lanes = json('plugins/aether/config/lanes.json').harnesses.muse.models['muse-wonder-full-1.0']
   const pair = json('plugins/aether/config/pairs.json').pairs.find((p) => p.id === 'muse/muse-wonder-full-1.0@high')
   const model = json('plugins/aether/config/models/models.json').withoutFigures.find((m) => m.harness === 'muse' && m.model === 'muse-wonder-full-1.0')
-  // The pair copies Opus high on the scale of 2026-10-29. The lane block keeps Wonder Full's own max figure, read on 2026-10-30.
-  assert.equal(pair.intelligence, 51.7)
+  // The pair copies Opus high, read from its page on 2026-11-14 (the photo). The lane block keeps Wonder Full's own max figure, read on 2026-10-30.
+  assert.equal(pair.intelligence, 51.8)
   assert.equal(pair.costPerTaskUsd, null)
   assert.ok(pair.ownerDecision.length > 0)
   assert.equal(lanes.aa.intelligence, 49.7)

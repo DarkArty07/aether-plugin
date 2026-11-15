@@ -224,7 +224,7 @@ test('store defaults to the new folder, falling back to the legacy folder', (t) 
 
 // ---- The Examiner seat ----
 
-// Gemini's window resets first. Argon (50.4) is below the Examiner's floor (Opus high 51.7, at least 50.7),
+// Gemini's window resets first. Argon (50.4) is below the Examiner's floor (Opus high 51.8, at least 50.8),
 // and the shipped table gives the examiner role only to Argon, so a plain round is the native agent. A round
 // that must run grants judge and examiner to claude-opus-5-5, and the rule picks agy/claude-opus-5-5@high.
 const geminiFirst = () => ({
@@ -288,7 +288,7 @@ test('an Examiner on the shipped agy table finds no external pair at Opus high, 
   assert.equal(r.json.unavailable, 'no-external')
   assert.equal(r.json.native.agent, 'aether:examiner')
   assert.equal(r.json.native.model, 'opus', 'the author is sonnet, so the native examiner stays opus')
-  assert.equal(r.json.native.intelligence, 51.7)
+  assert.equal(r.json.native.intelligence, 51.8)
   assert.equal(fs.existsSync(path.join(repo.dir, '.aether/exam')), false)
   assert.equal(repo.git('status', '--porcelain'), '')
   assert.equal(fs.existsSync(path.join(env.AETHER_DATA_DIR, 'exams')), false)
