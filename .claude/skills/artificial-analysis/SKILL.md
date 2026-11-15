@@ -1,39 +1,19 @@
 ---
 name: artificial-analysis
-description: Use when a decision about which model or effort a role runs on needs figures: intelligence, cost per task, tokens per task, or a benchmark by effort. Says where Artificial Analysis (AA) keeps each figure (its API, its model pages, its website charts), what each source does not give, and how to read the figures for Aether's roles.
+description: Use when a decision about which model or effort a role runs on needs figures: intelligence, cost per task, tokens per task, or a benchmark by effort. Says what the Artificial Analysis (AA) model pages give and how to read the figures for Aether's roles.
 ---
 
 # Artificial Analysis
 
 AA measures every model at every effort on the same tasks and publishes the intelligence index, the cost and the tokens of one task, and the score of each benchmark behind the index. It is the source of `config/pairs.json` and `config/models/models.json`. The owner reads it on the website and sends screenshots; this skill is how to read the same figures yourself.
 
-**Terms of use.** `docs/reference/artificial-analysis.md` records that AA's terms (section 3.3 (b)(vi), read on 2026-10-26) forbid automated requests to its website. Only the API is the supported way for a script. The `pages` command below reads the model pages and was used once, on 2026-10-26, before that was seen; it is kept at the owner's request and must not be run again without the owner's yes. The figures it gave are saved in a text file listed at the end.
-
-## Three sources, and what each gives
-
-| Source | Gives | Does not give |
-|---|---|---|
-| **API** (`/api/v2/language/models/free`, header `x-api-key`, paged with `?page=N`) | Intelligence index and its six area indexes, cost per task of the index, price per token, speed, first-token time | The coding index and the agentic index (null in every row of the API, and not figures on the model pages either, read on 2026-11-11), Terminal-Bench 4.0, long-context reasoning (LCR), HLE and SciCode, which are on the model pages; tokens per task, AA-Briefcase, GDPval, CritPt, AA-Omniscience |
-| **Model pages** (`https://artificialanalysis.ai/models/<slug>`) | Per benchmark: score, output tokens and cost of one task; the cost of an index task split by token type (answer, reasoning, cache write, cache read, input); AA-Briefcase (Elo, rubric pass rate, analytical quality, presentation) | A figure for a model that AA does not publish at that effort (Gemini 3.8 Flash `low` has no cost; Muse is measured only at `max`) |
-| **Website charts** (Intelligence, Capability Indexes, Benchmarks, Token Use, Cost, Speed, Latency) | The same figures for the 28 models the owner picks, and the Pareto line of each chart | Anything for a model that is not selected: the owner adds it with "Add model from specific provider" |
-
-The key is `ARTIFICIAL_ANALYSIS_API_KEY`, in the environment or in the `.env` of `~/.local/share/aether-plugin/`, used when querying the index via the API (`scripts/build-models-index.js`). Never print it.
+The model pages are the **only source** by the owner's decision: the owner wants to read AA pages directly and maintain the information. Read them on request, using the cache and leaving at least 1.5 seconds between pages. `docs/reference/artificial-analysis.md` records what AA's terms of use say about automated requests; the owner requested this reading.
 
 ## Run it
 
-Table refresh reads model pages (`aa-api.js`, `scripts/refresh-lanes.js`), only when the owner requests it and without an API key. It writes only the code figures of Claude rows (`code`, `codeCostPerTaskUsd`, `codeMinutesPerTask`, `codeChecked`); intelligence and cost per task are refreshed together in part 2. The stored ladder only changes with the owner's approval and is never written automatically.
-
-`node .claude/skills/artificial-analysis/aa-api.js <slug>...` reads the model pages without a key and prints the code figures for each slug.
-
-`node scripts/refresh-lanes.js [--pairs <path>] [--ladder <path>] [--write]` reads the model pages of Claude rows without a key, updates their code figures (with `--write`), and shows the recalculated ladder against the stored ladder.
-
-`node scripts/build-models-index.js --pages` reads the model page of each offered model for Terminal-Bench, which the free API no longer gives; it reads the website only with that flag, and only when the owner asks.
-
-`node .claude/skills/artificial-analysis/aa-pages.js api ["name regex"]` asks the free API with the key and prints, for each model whose name matches, the intelligence index, the cost per task, the price per token and the speed.
-
-`node .claude/skills/artificial-analysis/aa-pages.js pages [slug ...] [--json]` reads the pages (default: every slug of `pairs.json`), 1.2 s apart, and prints Briefcase, Terminal-Bench and the cost split of each. See the terms of use above before you run it.
-
-`node .claude/skills/artificial-analysis/aa-extract.js [slug ...] [--cache <dir>] [--out <file>]` reads every field a page carries about its own model (the capability indexes, the hallucination rate of AA-Omniscience, the cost split by token type, the cost and tokens of each benchmark, the time per task, the speeds, the prices of the cache) once, keeps each page in the cache and parses it from there, so a change to the parser never costs a new request. Same warning. `agent-prompt.md` is the brief for another agent to run it.
+- `node scripts/aa-pages.js read [slug …] [--harness <name>]` reads the pages and writes the snapshot at `plugins/aether/config/models/aa-pages.json`.
+- `node scripts/refresh-lanes.js [--write]` patches `pairs.json` from the snapshot without network access.
+- `node scripts/build-models-index.js [--write]` rebuilds `models.json` and the README from the snapshot without network access.
 
 ## Traps
 
@@ -44,7 +24,7 @@ Table refresh reads model pages (`aa-api.js`, `scripts/refresh-lanes.js`), only 
 - **Units.** The model pages give benchmark scores as fractions (Terminal-Bench 0.60); Briefcase and GDPval are Elo.
 - **Speed.** `max` efforts have first-token times of minutes (Sonnet `max` 322 s, Opus `max` 621 s, Haiku `max` 279 s). Speed is out of the policy, but a deadline can cut a call that is slow to start.
 - **The page can change.** The data is a script's JSON, not a public contract. If a field is missing, say so, and say which source the figure came from.
-- **The scores move.** AA re-scored its models between 2026-10-26 and 2026-10-29 (Haiku 5.5 `max` 43.4 to 36.2, GPT-6 Luna `max` 38.1 to 27.8, GPT-6 Astra `max` 52.7 to 56.9). Compare two models only with figures read on the same day from the same source; a row of `pairs.json` set against today's API is not a comparison. The table of pairs was refreshed on 2026-10-30 (spec 023) and is on the scale of 2026-10-29; its costs per task are still those read on 2026-10-26, because the API gave no cost then and the pages may not be read without the owner's yes.
+- **The scores move.** AA re-scored its models between 2026-10-26 and 2026-10-29 (Haiku 5.5 `max` 43.4 to 36.2, GPT-6 Luna `max` 38.1 to 27.8, GPT-6 Astra `max` 52.7 to 56.9). Compare two models only with figures read on the same day from the same source; a row of `pairs.json` set against a later reading is not a comparison. The table of pairs was refreshed on 2026-10-30 (spec 023) and is on the scale of 2026-10-29; its costs per task were read on 2026-10-26.
 
 ## Reading it for a role
 
@@ -60,7 +40,7 @@ Table refresh reads model pages (`aa-api.js`, `scripts/refresh-lanes.js`), only 
 The owner's rule (A43 for Fable, extended to GPT-6 Astra on 2026-10-29): the top model of a line stays out of use while a much cheaper model, from the same maker or another, reaches nearly the same points. It re-enters with the next generation of that top tier, not before, and then it is measured again like any new model.
 
 - **Fable 5.1** is out until Fable 5.5. On 2026-10-26 Opus 5.5 `high` scored 53.6 against Fable's 53.4 at US$ 1.82 per index task against US$ 7.63 (`docs/models/artificial-analysis-2026-10-26.md`), and Opus `max` scored 57.6.
-- **GPT-6 Astra** is out until GPT-6.1 Astra. On 2026-10-29 (API) Astra `max` scored 56.9 in intelligence and 59.1 % in Terminal-Bench 4.0 against GPT-6.1 Sol `max` at 54.5 and 56.1 %, a gap of 2.4 points, and Sol costs a fifth per token (2 / 10 against 10 / 50 US$/M).
+- **GPT-6 Astra** is out until GPT-6.1 Astra. On 2026-10-29 Astra `max` scored 56.9 in intelligence and 59.1 % in Terminal-Bench 4.0 against GPT-6.1 Sol `max` at 54.5 and 56.1 %, a gap of 2.4 points, and Sol costs a fifth per token (2 / 10 against 10 / 50 US$/M).
 - **How to apply it.** When a harness brings its models, set its top tier against the best cheaper model in reach with same-day figures, and write down the points and the dollars of both. If the cheaper one nearly matches it, the top tier goes to the `excluded` list of the harness (`harness-models.json`, then `models.json`) with the reason, the owner's words and the model whose release reopens the question. How near is "nearly" is the owner's call: bring him the gap and the price, not a threshold of your own.
 - **What it is not.** It is not a ban on a line. The middle and low tiers (Sol, Terra and Luna; Sonnet and Haiku) are the ones Aether uses, and a top tier is measured at once when its next generation is listed.
 
@@ -68,5 +48,5 @@ Record the date and the source of every figure you use in the evidence folder of
 
 ## The figures read on 2026-10-26
 
-- `aa-extract-2026-10-26.json`: every field of the 22 pages of `pairs.json`, read once with `aa-extract.js` (22 requests). The cost per task of each page equals the `costPerTaskUsd` of `pairs.json` for all 21 pairs that have one.
+- `aa-extract-2026-10-26.json`: every field of the 22 pages of `pairs.json`, read once with a reader that no longer exists (22 requests). The cost per task of each page equals the `costPerTaskUsd` of `pairs.json` for all 21 pairs that have one.
 - `aa-pages-extract-2026-10-26.txt`: the tables the first, partial reading printed, with its wrong rows marked. The JSON above replaces it.
