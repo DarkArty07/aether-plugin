@@ -55,17 +55,21 @@ function parsePage(html, slug) {
   const evaluation = /\{"slug":"terminalbench-4-0","score":[^{}]*\}/.exec(segment)
   let tb
   if (evaluation) { try { tb = JSON.parse(evaluation[0]) } catch {} }
+  const score = evaluation ? tb?.score : field(segment, 'terminalBench40')
+  const headline = field(segment, 'headline')
   const figures = {}
   const add = (key, value, digits) => { if (Number.isFinite(value)) { const f = 10 ** digits; figures[key] = Math.round(value * f) / f } }
   add('intelligence', field(segment, 'intelligenceIndex'), 1)
   add('costPerTaskUsd', field(segment, 'intelligenceIndexCostPerTask')?.cost?.total, 3)
-  add('code', Number.isFinite(tb?.score) ? tb.score * 100 : undefined, 2)
+  add('code', Number.isFinite(score) ? score * 100 : undefined, 2)
   add('codeCostPerTaskUsd', tb?.costPerTask, 3)
   add('codeMinutesPerTask', Number.isFinite(tb?.timePerTask) ? tb.timePerTask / 60 : undefined, 1)
-  add('terminalBench', tb?.score, 3)
+  add('terminalBench', score, 3)
   add('briefcaseElo', briefcase?.overall?.elo, 0)
   add('briefcaseRubricPassRate', briefcase?.rubricPassRate, 3)
-  for (const [key, source, digits] of [['hallucinationRate', 'omniscienceHallucinationRate', 3], ['timePerTaskSeconds', 'intelligenceIndexTimePerTask', 0], ['priceInput', 'price1mInputTokens', 4], ['priceOutput', 'price1mOutputTokens', 4], ['cacheReadPrice', 'cacheHitPrice', 4], ['outputTokensPerSecond', 'medianOutputSpeed', 1], ['timeToFirstTokenS', 'medianTimeToFirstAnswerToken', 2]]) add(key, field(segment, source), digits)
+  for (const [key, source, digits] of [['hallucinationRate', 'omniscienceHallucinationRate', 3], ['timePerTaskSeconds', 'intelligenceIndexTimePerTask', 0], ['priceInput', 'price1mInputTokens', 4], ['priceOutput', 'price1mOutputTokens', 4], ['cacheReadPrice', 'cacheHitPrice', 4]]) add(key, field(segment, source), digits)
+  add('outputTokensPerSecond', field(segment, 'medianOutputSpeed') ?? headline?.outputSpeed, 1)
+  add('timeToFirstTokenS', field(segment, 'medianTimeToFirstAnswerToken') ?? headline?.timeToFirstAnswerToken, 2)
   let name = start[2]
   try { name = JSON.parse(`"${name}"`) } catch {}
   return { name, figures }

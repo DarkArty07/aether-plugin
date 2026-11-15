@@ -103,8 +103,12 @@ function main(argv, { now = Date.now } = {}) {
       continue
     }
     const figures = page.figures
-    const hasCode = ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask'].every((field) => typeof figures[field]?.value === 'number')
+    const hasCode = typeof figures.code?.value === 'number'
     if (!hasCode) failures.push(`${row.id}: the page of ${row.slug} has no code figure`)
+    else {
+      const missing = ['codeCostPerTaskUsd', 'codeMinutesPerTask'].filter((field) => typeof figures[field]?.value !== 'number')
+      if (missing.length) failures.push(`${row.id}: the page of ${row.slug} gives the code figure but not ${missing.join(', ')}; the row keeps its earlier ones`)
+    }
 
     const updates = {}
     if (typeof figures.intelligence?.value === 'number') {
@@ -118,11 +122,12 @@ function main(argv, { now = Date.now } = {}) {
       record(row, updates, 'costPerTaskUsd', figures.costPerTaskUsd.value)
     }
     if (hasCode) {
-      for (const field of ['code', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) {
-        record(row, updates, field, figures[field].value)
-      }
+      record(row, updates, 'code', figures.code.value)
       row.codeChecked = figures.code.on
       updates.codeChecked = figures.code.on
+    }
+    for (const field of ['codeCostPerTaskUsd', 'codeMinutesPerTask']) {
+      if (typeof figures[field]?.value === 'number') record(row, updates, field, figures[field].value)
     }
     rowUpdates.set(row.id, updates)
   }

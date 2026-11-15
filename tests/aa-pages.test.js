@@ -48,8 +48,8 @@ test('parsePage reads the block of the page\'s own model, never a neighbour\'s o
   // A figure the page does not carry is absent from `figures`, never null.
   assert.equal(Object.hasOwn(found.figures, 'priceInput'), false)
   assert.equal(Object.values(found.figures).every((value) => Number.isFinite(value)), true)
-  // Without a Terminal-Bench eval the block has no code figure, and keeps the others.
-  const noCode = reader.parsePage(page(block('claude-opus-5-5-high', OWN).replace('terminalbench-4-0', 'other-bench')), 'claude-opus-5-5-high')
+  // Without either benchmark source the block has no code figure, and keeps the others.
+  const noCode = reader.parsePage(page(block('claude-opus-5-5-high', OWN).replace('terminalbench-4-0', 'other-bench').replace('terminalBench40', 'otherScalar')), 'claude-opus-5-5-high')
   assert.deepEqual([Object.hasOwn(noCode.figures, 'code'), noCode.figures.intelligence], [false, 51.8])
 })
 
@@ -70,8 +70,8 @@ test('parsePage reads every field of the 13 pages read on 2026-11-13, as the evi
     const figures = reader.parsePage(pageFromExtract(EVIDENCE[slug]), slug).figures
     for (const [key, value] of Object.entries(expected)) assert.equal(figures[key], value, `${slug} ${key}`)
   }
-  // Argon medium has no Terminal-Bench eval on its page: no code figure, and the reader does not invent one.
-  assert.equal(Object.hasOwn(reader.parsePage(pageFromExtract(EVIDENCE['gemini-4-argon-medium']), 'gemini-4-argon-medium').figures, 'code'), false)
+  // Argon medium has no evaluation, but its scalar still supplies the score.
+  assert.equal(reader.parsePage(pageFromExtract(EVIDENCE['gemini-4-argon-medium']), 'gemini-4-argon-medium').figures.code, 55.05)
 })
 
 test('a field the page does not bring keeps its previous value with its previous date, and the others of the same address take the new date', () => {
@@ -277,4 +277,19 @@ test('readPages counts network attempts and cached reads, including failed reque
   await reader.readPages(['cached', 'fresh'], options)
   assert.deepEqual(report, { network: 2, cached: 3 })
   assert.equal(fs.existsSync(path.join(files.cache, 'failed.html')), false)
+})
+
+test('reads scalar benchmark and headline speeds from the live page shape', async (t) => {
+  const html = page(JSON.stringify({ slug: 'live-model', name: 'Live model', shortName: 'Live',
+    scalars: { terminalBench40: 0.432156 },
+    intelligenceIndexCostPerTask: { evaluations: [{ slug: 'terminalbench-4-0', weightedCostPerTask: 0.123 }] },
+    briefcaseBreakdown: { overall: { elo: 1234, lower95ci: 1200, upper95ci: 1260 } },
+    headline: { outputSpeed: 87.65, timeToFirstToken: 2.5, timeToFirstAnswerToken: 3.456 }
+  }))
+  const figures = reader.parsePage(html, 'live-model').figures
+  assert.deepEqual(figures, { code: 43.22, terminalBench: 0.432, briefcaseElo: 1234, outputTokensPerSecond: 87.7, timeToFirstTokenS: 3.46 })
+  const files = setup(t)
+  const out = await run(files, ['live-model'], async () => ok(html))
+  assert.equal(out.exitCode, 0)
+  assert.match(out.stdout, /Missing fields: live-model: .*codeCostPerTaskUsd, codeMinutesPerTask.*briefcaseRubricPassRate/)
 })

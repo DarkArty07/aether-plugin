@@ -112,3 +112,15 @@ test('last numeric field retains its space and ladder changes are shown but neve
   const f = setup(t, [last]); const before = fs.readFileSync(f.ladder, 'utf8'); writeSnapshot(f, snapshotOf({ [last.slug]: { figures: { intelligence: 29.9, ...code } } }))
   const out = run(f, ['--write']); assert.match(out.stdout, /Recalculated ladder: haiku high/); assert.match(out.stdout, /Stored ladder: changed\n  extra rung 2: haiku xhigh\n  extra rung 3: sonnet high\n  extra rung 4: opus high\n  extra rung 5: opus xhigh\n/); assert.match(out.stdout, /The stored ladder was not written:/); assert.equal(fs.readFileSync(f.ladder, 'utf8'), before); assert.match(fs.readFileSync(f.pairs, 'utf8'), /"codeMinutesPerTask": 12.3 \}/)
 })
+
+test('partial code figures update Claude and external rows while preserving earlier costs and minutes', t => {
+  const external = { ...argonHigh, code: 40, codeCostPerTaskUsd: 2, codeMinutesPerTask: 10, codeChecked: '2026-11-10' }
+  const f = setup(t, [haikuHigh, external])
+  writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { code: 25 } }, [external.slug]: { figures: { code: 55 } } }))
+  const out = run(f, ['--write'])
+  assert.equal(out.exitCode, 0)
+  const [a, b] = rowsOf(f)
+  assert.deepEqual([a.code, a.codeChecked, a.codeCostPerTaskUsd, a.codeMinutesPerTask], [25, '2026-11-13', 0.331, 12.1])
+  assert.deepEqual([b.code, b.codeChecked, b.codeCostPerTaskUsd, b.codeMinutesPerTask], [55, '2026-11-13', 2, 10])
+  for (const r of [haikuHigh, external]) assert.ok(out.stdout.includes(`${r.id}: the page of ${r.slug} gives the code figure but not codeCostPerTaskUsd, codeMinutesPerTask; the row keeps its earlier ones`))
+})
