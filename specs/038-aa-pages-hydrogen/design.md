@@ -70,3 +70,13 @@ La tarjeta es `specs/038-aa-pages-hydrogen/intent.md`. La evidencia (la lectura 
 ## Acciones irreversibles
 
 Ninguna durante la construcción. Leer las páginas de Artificial Analysis está pedido por el dueño. Fusionar a `main`, hacer push y publicar esperan su sí.
+
+## Enmienda del 2026-11-15: el método usa solo el índice de inteligencia y su costo por tarea
+
+Decisión del dueño después de la construcción y antes de publicar (issue #286). Sus palabras: «Lo que no quiero es que te bases en algo que no vaya estar moviendo AA. Lo que se mantiene siempre estable en AA es el inteligence index los benchmarks secunaduoes cambian muy seguido», «terminal bench depender de el es un error» y «Sí, quítalo. […] es más estable nada más estar dependiendo de costo tarea y de inteligencia general».
+
+1. **El criterio 7 queda retirado.** La regla de código del papel `implementer` (punto 6 del diseño, supuestos 2 y 3) sale de `choose`: todos los papeles se juzgan por inteligencia.
+2. **El criterio 5 cambia de resultado.** Solo con el índice, con agy encendido y su cuota Claude seca, Hydrogen medium toma los escalones 1 a 3 y Hydrogen high el 4; el 5 sigue en Claude.
+3. **La ley de la escalera** (`lib/pareto.js`) lee solo inteligencia y costo por tarea. Con las cifras del 14 de noviembre da los mismos cinco escalones.
+4. **La tabla de pares** deja de llevar y de exigir `code`, `codeChecked`, `codeCostPerTaskUsd` y `codeMinutesPerTask`, y `scripts/refresh-lanes.js` deja de escribirlos. El criterio 3 ya no los pide.
+5. **Terminal-Bench queda como dato informativo** en la foto y en el índice de modelos. Nada lo exige ni elige con él.
