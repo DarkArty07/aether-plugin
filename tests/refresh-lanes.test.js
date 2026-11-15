@@ -44,7 +44,14 @@ test('patches every page row in place only with --write, including external code
   assert.equal(run(f, ['--write']).exitCode, 0)
   const [a,b] = rowsOf(f); assert.deepEqual([a.intelligence,a.checked,a.codeMinutesPerTask], [29.9,'2026-11-13',12.3]); assert.deepEqual([b.costPerTaskUsd,b.code,b.codeCostPerTaskUsd,b.codeMinutesPerTask,b.codeChecked], [null,57.07,6.78,42.7,'2026-11-13'])
   assert.equal(a.costPerTaskUsd, 0.159, 'an existing numeric cost updates from the snapshot')
-  assert.equal(fs.readFileSync(f.pairs, 'utf8').split('\n').filter(l => l.includes('"id"')).length, 2)
+  const expected = before
+    .replace('"intelligence": 29.6', '"intelligence": 29.9')
+    .replace('"costPerTaskUsd": 0.1', '"costPerTaskUsd": 0.159')
+    .replace('"checked": "2026-11-10"', '"checked": "2026-11-13"')
+    .replace('"codeMinutesPerTask": 12.1', '"codeMinutesPerTask": 12.3')
+    .replace('"codeChecked": "2026-11-10"', '"codeChecked": "2026-11-13"')
+    .replace('"intelligence": 50, "costPerTaskUsd": null }', '"intelligence": 50.4, "costPerTaskUsd": null, "code": 57.07, "codeCostPerTaskUsd": 6.78, "codeMinutesPerTask": 42.7, "checked": "2026-11-13", "codeChecked": "2026-11-13" }')
+  assert.equal(fs.readFileSync(f.pairs, 'utf8'), expected, 'patches only the intended values in each row without duplicate fields')
   const text = fs.readFileSync(f.pairs, 'utf8'); const again = run(f, ['--write']); assert.match(again.stdout, /^No figure changed\./); assert.doesNotMatch(again.stdout, /written to/); assert.equal(fs.readFileSync(f.pairs, 'utf8'), text)
 })
 test('a 0.3 Claude scale shift preserves the recalculated rung order and stored ladder', t => {
@@ -95,7 +102,7 @@ test('missing code preserves code fields and estimate follows its reference', t 
   const pick = pairs => choose({ pairs, reference: { model: 'haiku', effort: 'high' }, harnesses }).picked?.id
   assert.equal(pick(rowsOf(f)), spark.id)
   writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { intelligence: 29.9 } } }))
-  const out = run(f, ['--write']); assert.match(out.stdout, /the page of claude-haiku-5-5-high has no code figure/); const [a,b] = rowsOf(f); assert.deepEqual([a.code,a.codeCostPerTaskUsd,a.codeMinutesPerTask,a.codeChecked], [21.72,0.331,12.1,'2026-11-10']); assert.equal(b.intelligence, 29); assert.equal(pick(rowsOf(f)), spark.id); assert.equal(fs.readFileSync(f.ladder, 'utf8'), ladder)
+  const out = run(f, ['--write']); assert.match(out.stdout, /the page of claude-haiku-5-5-high has no code figure/); const [a,b] = rowsOf(f); assert.deepEqual([a.code,a.codeCostPerTaskUsd,a.codeMinutesPerTask,a.codeChecked], [21.72,0.331,12.1,'2026-11-10']); assert.deepEqual([a.intelligence, a.checked], [29.9, '2026-11-13']); assert.equal(b.intelligence, 29); assert.equal(pick(rowsOf(f)), spark.id); assert.equal(fs.readFileSync(f.ladder, 'utf8'), ladder)
 })
 test('missing intelligence keeps checked, while code updates', t => {
   const f = setup(t, [haikuHigh]); writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: code } })); run(f, ['--write']); const r = rowsOf(f)[0]; assert.deepEqual([r.intelligence,r.checked,r.codeMinutesPerTask,r.codeChecked], [29.6,'2026-11-10',12.3,'2026-11-13'])
@@ -103,5 +110,5 @@ test('missing intelligence keeps checked, while code updates', t => {
 test('last numeric field retains its space and ladder changes are shown but never written', t => {
   const last = { ...haikuHigh }; delete last.codeMinutesPerTask; last.codeMinutesPerTask = 12.1
   const f = setup(t, [last]); const before = fs.readFileSync(f.ladder, 'utf8'); writeSnapshot(f, snapshotOf({ [last.slug]: { figures: { intelligence: 29.9, ...code } } }))
-  const out = run(f, ['--write']); assert.match(out.stdout, /Recalculated ladder:/); assert.match(out.stdout, /Stored ladder: changed/); assert.match(out.stdout, /The stored ladder was not written:/); assert.equal(fs.readFileSync(f.ladder, 'utf8'), before); assert.match(fs.readFileSync(f.pairs, 'utf8'), /"codeMinutesPerTask": 12.3 \}/)
+  const out = run(f, ['--write']); assert.match(out.stdout, /Recalculated ladder: haiku high/); assert.match(out.stdout, /Stored ladder: changed\n  extra rung 2: haiku xhigh\n  extra rung 3: sonnet high\n  extra rung 4: opus high\n  extra rung 5: opus xhigh\n/); assert.match(out.stdout, /The stored ladder was not written:/); assert.equal(fs.readFileSync(f.ladder, 'utf8'), before); assert.match(fs.readFileSync(f.pairs, 'utf8'), /"codeMinutesPerTask": 12.3 \}/)
 })
