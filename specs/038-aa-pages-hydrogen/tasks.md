@@ -16,10 +16,10 @@ Esta función tiene un diseño corto aprobado y no tiene `spec.md` ni `plan.md`:
   |---|---|---|
   | `intelligence` | `intelligenceIndex` | 1 decimal |
   | `costPerTaskUsd` | `intelligenceIndexCostPerTask.cost.total` | 3 |
-  | `code` | puntaje de `terminalbench-4-0` por 100 | 2 |
+  | `code` | puntaje de `terminalbench-4-0` por 100; si la página no trae esa eval, `terminalBench40` por 100 | 2 |
   | `codeCostPerTaskUsd` | `costPerTask` de la eval `terminalbench-4-0` de la página (`costUsd` en la salida de `aa-extract`) | 3 |
   | `codeMinutesPerTask` | `timePerTask` de la eval `terminalbench-4-0` de la página (`seconds` en la salida de `aa-extract`), entre 60 | 1 |
-  | `terminalBench` | puntaje de `terminalbench-4-0` (fracción) | 3 |
+  | `terminalBench` | puntaje de `terminalbench-4-0` (fracción); si no, `terminalBench40` | 3 |
   | `briefcaseElo` | `briefcaseBreakdown.overall.elo` | 0 |
   | `briefcaseRubricPassRate` | `briefcaseBreakdown.rubricPassRate` | 3 |
   | `hallucinationRate` | `omniscienceHallucinationRate` | 3 |
@@ -27,8 +27,10 @@ Esta función tiene un diseño corto aprobado y no tiene `spec.md` ni `plan.md`:
   | `priceInput` | `price1mInputTokens` | 4 |
   | `priceOutput` | `price1mOutputTokens` | 4 |
   | `cacheReadPrice` | `cacheHitPrice` | 4 |
-  | `outputTokensPerSecond` | `medianOutputSpeed` | 1 |
-  | `timeToFirstTokenS` | `medianTimeToFirstAnswerToken` | 2 |
+  | `outputTokensPerSecond` | `medianOutputSpeed`; si no, `headline.outputSpeed` | 1 |
+  | `timeToFirstTokenS` | `medianTimeToFirstAnswerToken`; si no, `headline.timeToFirstAnswerToken` | 2 |
+
+  **Cambio del 2026-11-14** (diario de la corrida, D9 y D10). Ese día las páginas ya no traían el objeto de la eval `terminalbench-4-0` con `costPerTask` y `timePerTask`, ni `briefcaseBreakdown.rubricPassRate`. Dan Terminal-Bench 4.0 como el número `terminalBench40` y las velocidades en `headline`. El lector lee esas formas. `codeCostPerTaskUsd`, `codeMinutesPerTask` y `briefcaseRubricPassRate` quedan ausentes cuando la página no los da, y la pasada los nombra en «Missing fields». Nunca se sacan de `weightedCostPerTask`: la página no da el peso de la eval. El refresco escribe `code` y `codeChecked` cuando la foto trae `code`. El costo y los minutos de código se escriben cada uno solo si la foto los trae; si no, la fila conserva los que tenía.
 
 - **Declaraciones en `harness-models.json`** (las lee la Tarea 3 y las llena la Tarea 7). Dentro de la entrada de un harness, dos mapas opcionales, con el id del modelo como el índice lo agrupa (para un harness con el esfuerzo en el id, el id sin el esfuerzo: `gemini-3.8-flash`): `"superseded": { "<id>": { "by": "<id del sucesor>", "on": "AAAA-MM-DD", "reason": "<motivo>", "figures": "<cifras con su fecha>" } }` y `"outOfScope": { "<id>": { "on": "AAAA-MM-DD", "reason": "<motivo>" } }`. Los `excluded` de texto que ya hay en los harness de bandera no cambian. Las claves de primer nivel de `harness-models.json` y de `profiles.json` siguen siendo `harnesses` y `profiles` (`tests/config-keys.test.js`).
 - **Valores por omisión elegidos** (reversibles; la tarea que los usa los repite en su mensaje final): (a) `released` de una entrada de `models.json` sale del campo `released` del perfil en `profiles.json`, y se omite cuando el perfil no lo tiene, porque las páginas no traen la fecha de salida (la Tarea 7 copia el `released` de hoy a cada perfil antes de regenerar); (b) el `generatedAt` de `models.json` es la lectura más reciente (`readOn`) de la foto, no la fecha de hoy, para que dos corridas den los mismos archivos; (c) `timeToFirstTokenS` de la foto sale de `medianTimeToFirstAnswerToken`; las páginas leídas el 2026-11-13 traen nulas las velocidades y el primer token, así que el lector las nombra como campos que faltan; (d) `scripts/build-models-index.js` conserva sus constantes `HARNESSES`, `DEFAULT_HARNESSES` y `CAPTURE` tal cual (`tests/new-harness-skill.test.js` y `tests/copies-harness-config.test.js` las leen) y el `note` de `withoutFigures` conserva su texto `offered, with no Artificial Analysis entry, so no figures` (`tests/copies-muse.test.js`).
@@ -699,7 +701,7 @@ Reglas (las de hoy, salvo lo marcado):
 
 - Las filas con página son las que no tienen `estimateOf`; cada una toma sus cifras de `snapshot.pages[row.slug].figures`. Las filas con `estimateOf` siguen a su referencia (`intelligence = ref + estimateDistance`, redondeado a una décima) como hoy.
 - `intelligence` y `checked`: cuando la foto tiene `intelligence` de la dirección, la fila toma el valor y `checked` toma **la fecha `on` de esa cifra** (ya no la de hoy). `costPerTaskUsd` solo se actualiza cuando la fila ya tiene un número y la foto trae la cifra; un `null` de la fila se queda `null` (decisión del dueño, Muse).
-- Código: `code`, `codeCostPerTaskUsd`, `codeMinutesPerTask` se escriben **en toda fila cuya dirección dé las tres cifras, también las externas**, y `codeChecked` toma la fecha `on` de la cifra `code`. Si la foto no tiene las tres, la fila conserva sus campos de código y el resumen dice `<id>: the page of <slug> has no code figure`.
+- Código: `code`, `codeCostPerTaskUsd`, `codeMinutesPerTask` se escriben **en toda fila cuya dirección dé las tres cifras, también las externas**, y `codeChecked` toma la fecha `on` de la cifra `code`. Si la foto no tiene las tres, la fila conserva sus campos de código y el resumen dice `<id>: the page of <slug> has no code figure`. **Desde el 2026-11-14** (D10 del diario): `code` y `codeChecked` se escriben cuando la foto trae `code`. `codeCostPerTaskUsd` y `codeMinutesPerTask` se escriben cada uno solo si la foto lo trae; si no, la fila conserva el suyo y el resumen nombra el que falta. Sin `code`, el resumen dice lo mismo de antes.
 - Una fila cuya dirección no está en la foto: `<id>: the snapshot has no page for <slug>: run node scripts/aa-pages.js read <slug>`, la fila queda intacta y el código de salida es 1; las demás filas se parchean.
 - El resumen lista los cambios `<id>: <campo> <antes> → <después>` o `No figure changed.`, y avisa cuando las filas de un harness y las de Claude se leyeron en días distintos: por cada harness distinto de `claude` con páginas, si la `readOn` más reciente de sus direcciones no es la de las direcciones de las filas de Claude, la línea `Read dates differ: <harness> was read on <fecha>, claude on <fecha>.`
 - La escalera se recalcula y se compara, nunca se escribe: las líneas `Recalculated ladder: …`, `Stored ladder: unchanged` o `Stored ladder: changed` y su detalle, y `The stored ladder was not written: to approve the recalculated one, edit <ruta> in a commit.` son las de hoy. `--write` parchea `pairs.json` con `patchPairsText` (una fila por línea, como hoy) y escribe `written to <ruta>` solo si el texto cambió.
@@ -1059,7 +1061,10 @@ test('every row with a page carries its code figures, the external rows too, dat
   for (const pair of loadPairs().pairs.filter((row) => !Object.hasOwn(row, 'estimateOf'))) {
     const figures = SNAPSHOT.pages[pair.slug].figures
     if (!figures.code) continue
-    assert.deepEqual([pair.code, pair.codeCostPerTaskUsd, pair.codeMinutesPerTask, pair.codeChecked], [figures.code.value, figures.codeCostPerTaskUsd.value, figures.codeMinutesPerTask.value, figures.code.on], pair.id)
+    assert.deepEqual([pair.code, pair.codeChecked], [figures.code.value, figures.code.on], pair.id)
+    // Since 2026-11-14 the pages may not give the code cost and minutes: when the photo has them they are the row's; when not, the row keeps its earlier ones.
+    if (figures.codeCostPerTaskUsd) assert.equal(pair.codeCostPerTaskUsd, figures.codeCostPerTaskUsd.value, pair.id)
+    if (figures.codeMinutesPerTask) assert.equal(pair.codeMinutesPerTask, figures.codeMinutesPerTask.value, pair.id)
   }
 })
 
