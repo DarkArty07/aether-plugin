@@ -37,10 +37,10 @@ const onlyMuse = (days = 2) => ({ muse: { installed: true, groups: { muse: open(
 const withMuse = (days, base = world()) => ({ ...base, ...onlyMuse(days) })
 
 test('C4: a call asks for the points of its reference pair, never for a model name alone', () => {
-  assert.equal(ask('sonnet', 'xhigh').requested, 49.6)
-  assert.equal(ask('sonnet', 'high').requested, 41.1)
+  assert.equal(ask('sonnet', 'xhigh').requested, 49.9)
+  assert.equal(ask('sonnet', 'high').requested, 41.5)
   assert.equal(ask('haiku', 'high').reference.id, 'claude/haiku@high')
-  assert.equal(ask('opus', 'max').requested, 58.4)
+  assert.equal(ask('opus', 'max').requested, 59.1)
   assert.throws(() => choose({ pairs, reference: { model: 'gpt', effort: 'high' }, harnesses: world() }), /no reference pair/)
   assert.equal(TOLERANCE_POINTS, 1)
 })
@@ -52,7 +52,7 @@ test('E2: a Haiku high call takes the cheapest pair of the quota that renews fir
   assert.deepEqual([d.candidates[0].outcome, d.candidates[0].rank], ['picked', 1])
   assert.match(d.reason, /grok\/grok-4\.7@low/)
   assert.equal(d.native.id, 'claude/haiku@high')
-  // With grok dry, the next quota to renew is gemini, and its cheapest pair that reaches 36.8 is Hydrogen medium (39.8).
+  // With grok dry, the next quota to renew is gemini, and its cheapest pair that reaches 28.9 is Hydrogen medium (41.2 at US$ 0.798; Hydrogen low, 26.9, is below).
   const next = ask('haiku', 'high', { harnesses: world({ grok: dry }) })
   assert.equal(pickedId(next), 'agy/gemini-4-hydrogen@medium')
   assert.equal(why(next, 'grok/grok-4.7@low'), 'dry')
@@ -69,7 +69,7 @@ test('issue 038: a refusal of Argon leaves Hydrogen usable in the choice, and a 
   assert.deepEqual(states(argonHeld, 'gemini-4-argon'), ['dry'])
   assert.ok(!states(argonHeld, 'gemini-4-hydrogen').includes('dry'))
 
-  // Hydrogen is held: no Hydrogen pair is a candidate, and Argon takes a call that Hydrogen could not reach anyway.
+  // Hydrogen is held: no Hydrogen pair is a candidate, and Argon takes the Sonnet xhigh call that Hydrogen high (50.8) would have taken.
   const hydrogenHeld = ask('sonnet', 'xhigh', { harnesses: world({ ...alone, hydrogen: held }) })
   assert.equal(pickedId(hydrogenHeld), 'agy/gemini-4-argon@high')
   assert.ok(states(hydrogenHeld, 'gemini-4-hydrogen').every((why) => why === 'dry'))
@@ -89,11 +89,13 @@ test('E3: with only Grok healthy, a Sonnet xhigh call runs native and nothing is
 })
 
 test('E4 and C6: the quota that renews first takes the call, at the cheapest pair of that quota, even when the other has a cheaper pair', () => {
-  assert.equal(pickedId(ask('sonnet', 'xhigh')), 'agy/gemini-4-argon@high')
-  // Sonnet xhigh asks 49.6 (floor 48.6). Opus medium is 48.1, below that floor, so the cheapest pair of the Claude quota is Opus high.
+  // Sonnet xhigh asks 49.9 (floor 48.9). In the gemini quota Hydrogen high (50.8, US$ 1.873) is cheaper than Argon high (50.4, US$ 4.973).
+  assert.equal(pickedId(ask('sonnet', 'xhigh')), 'agy/gemini-4-hydrogen@high')
+  // Opus medium is 48.2, below that floor, so the cheapest pair of the Claude quota is Opus high (US$ 3.465), which wins although Hydrogen high costs 1.873.
   assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ claude: open(1) }) })), 'agy/claude-opus-5-5@high')
-  // gemini renews first: Argon (1.99) wins although Opus high of the other quota costs 1.82.
-  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ gemini: open(0), claude: open(1) }) })), 'agy/gemini-4-argon@high')
+  // gemini renews first with Hydrogen held: Argon (4.973) wins although Opus high of the other quota costs 3.465.
+  const held = { usable: false, unknown: false, mark: { reason: 'quota refusal' }, resetsAt: at(2) }
+  assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: world({ gemini: open(0), hydrogen: held, claude: open(1) }) })), 'agy/gemini-4-argon@high')
 })
 
 test('C6: Grok, which reaches only 35, never receives a Sonnet xhigh or an Opus call, even when its quota renews first', () => {
@@ -112,9 +114,11 @@ test('C5: a pair reaches a call at the points asked minus 1, inclusive, and not 
   assert.equal(why(d, 'y/b@high'), 'below')
 })
 
-test('C5: a pair with no cost per task is never a candidate, and Hydrogen low is one of them', () => {
+test('C5: a pair with no cost per task is never a candidate', () => {
+  // Flash low was the shipped pair with no cost. Hydrogen low, which replaced it, has a cost from its page (US$ 0.292), so the real table has none left outside the owner decision of Muse.
   const real = ask('haiku', 'low')
-  assert.equal(why(real, 'agy/gemini-4-hydrogen@low'), 'no-cost')
+  assert.equal(why(real, 'agy/gemini-4-hydrogen@low'), null)
+  assert.equal(real.candidates.some((c) => c.why === 'no-cost'), false)
   const table = [...natives(), row('a/hydrogen@high', { intelligence: 40, costPerTaskUsd: null })]
   const d = choose({ pairs: table, reference: { model: 'haiku', effort: 'high' }, harnesses: only('a') })
   assert.equal(d.picked, null)
@@ -122,7 +126,7 @@ test('C5: a pair with no cost per task is never a candidate, and Hydrogen low is
 })
 
 test('C5 and R9: within a quota a pair that gives no more points than a cheaper candidate of the same call is never used: Grok xhigh against Grok high', () => {
-  // Haiku high asks 29.6. Grok high is 35 and Grok xhigh is 34.3, so the cheaper high dominates xhigh. Sonnet high asks 41.1, which neither reaches.
+  // Haiku high asks 29.9. Grok high is 35.2 and Grok xhigh is 35.5, so the cheaper high, within a point of xhigh, dominates it. Sonnet high asks 41.5, which neither reaches.
   assert.equal(why(ask('haiku', 'high'), 'grok/grok-4.7@xhigh'), 'dominated')
   // haiku asks 46.8, sonnet 47.4, opus 50.9 in this table.
   const table = [
@@ -174,9 +178,10 @@ test('C8: no pair is ever picked below the points asked minus 1, and a Sonnet xh
     }
   }
   const xhigh = ask('sonnet', 'xhigh')
-  assert.ok(xhigh.picked.intelligence >= 48.6)
+  assert.ok(xhigh.picked.intelligence >= 48.9)
   assert.equal(ask('opus', 'max').picked, null)
-  assert.equal(ask('sonnet', 'max').picked, null)
+  // Sonnet max asks 54.5 (floor 53.5): Hydrogen xhigh (53.9) reaches it, and with no role there is no code floor, so it takes the call.
+  assert.equal(pickedId(ask('sonnet', 'max')), 'agy/gemini-4-hydrogen@xhigh')
 })
 
 test('C11: with every eligible quota dry the call runs native, in its reference pair; with one dry and one healthy it goes to the healthy', () => {
@@ -193,10 +198,10 @@ test('C11: with every eligible quota dry the call runs native, in its reference 
 test('C16: Muse as the only healthy harness takes a call up to Opus high by the owner decision, and nothing above it', () => {
   const high = ask('opus', 'high', { harnesses: onlyMuse() })
   assert.equal(pickedId(high), MUSE)
-  assert.equal(high.requested, 51.7)
-  // Sonnet xhigh asks 49.6 (floor 48.6). Wonder 1.0 at max is 43.3, below that floor. Wonder Full is 51.7 and has no cost, so the owner decision is what lets it take the call.
+  assert.equal(high.requested, 51.8)
+  // Sonnet xhigh asks 49.9 (floor 48.9). Wonder 1.0 at max is 43.6, below that floor. Wonder Full is 51.8 and has no cost, so the owner decision is what lets it take the call.
   assert.equal(pickedId(ask('sonnet', 'xhigh', { harnesses: onlyMuse() })), MUSE)
-  // Haiku high asks 29.6 (floor 28.6). Spark high is 28.7 at US$ 0.66, the cheapest pair that reaches; Spark medium (22.5) is below.
+  // Haiku high asks 29.9 (floor 28.9). Spark high is 29 at US$ 0.824, the cheapest pair that reaches; Spark medium (22.5) is below.
   assert.equal(pickedId(ask('haiku', 'high', { harnesses: onlyMuse() })), 'muse/muse-spark-1.3@high')
   for (const [model, effort] of [['opus', 'xhigh'], ['opus', 'max'], ['sonnet', 'max']]) {
     const d = ask(model, effort, { harnesses: onlyMuse() })
@@ -248,9 +253,10 @@ test('the same cost within a quota goes to the pair with more points, then to th
 })
 
 test('a retry excludes the pair that failed, and a harness that is off or not installed is never a candidate', () => {
-  const d = ask('sonnet', 'xhigh', { exclude: ['agy/gemini-4-argon@high'] })
-  assert.equal(pickedId(d), 'agy/claude-opus-5-5@high')
-  assert.equal(why(d, 'agy/gemini-4-argon@high'), 'excluded')
+  // Hydrogen high took the Sonnet xhigh call; with it excluded, the gemini quota still renews first and its next pair is Hydrogen xhigh (US$ 3.16, cheaper than Argon high).
+  const d = ask('sonnet', 'xhigh', { exclude: ['agy/gemini-4-hydrogen@high'] })
+  assert.equal(pickedId(d), 'agy/gemini-4-hydrogen@xhigh')
+  assert.equal(why(d, 'agy/gemini-4-hydrogen@high'), 'excluded')
   const off = choose({ pairs, reference: { model: 'haiku', effort: 'high' }, harnesses: { agy: world().agy } })
   assert.equal(why(off, 'grok/grok-4.7@low'), 'harness-off')
   const missing = choose({ pairs, reference: { model: 'haiku', effort: 'high' }, harnesses: { agy: { installed: false, groups: {} }, grok: world().grok } })
