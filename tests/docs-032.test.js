@@ -20,7 +20,7 @@ test('decision A121 is recorded with the owner\'s words, and the index names the
   assert.match(decisions, /^\| A121 \|/m)
   assert.match(decisions, /como lo trasladamos como ley o puntaje o regla o benchmark/)
   assert.match(decisions, /Decided 2026-11-10; spec 032/)
-  assert.match(read('docs/index.md'), /A1–A125/)
+  assert.match(read('docs/index.md'), /A1–A126/)
 })
 
 test('the changelog has the Pareto ladder entry for version 0.37.0 (R16)', () => {
@@ -53,11 +53,9 @@ test('methodology.md and roadmap.md no longer describe the old climb by correcti
 })
 
 test('the texts say the refresh reads every row with a page, writes their figures together, and still does not save the ladder (spec 036 R9)', () => {
-  assert.doesNotMatch(read('AGENTS.md'), /refreshes the lane table \(needs `ARTIFICIAL_ANALYSIS_API_KEY`\)/)
   assert.match(read('AGENTS.md'), /model pages/)
   assert.match(read('AGENTS.md'), /every row with a page/)
   assert.match(read('AGENTS.md'), /does not save it/)
-  assert.doesNotMatch(read('docs/contributing.md'), /refresh-lanes\.js` updates the lane table[^\n]*ARTIFICIAL_ANALYSIS_API_KEY/)
   assert.doesNotMatch(read('docs/contributing.md'), /part 2/)
   assert.match(read('docs/contributing.md'), /every row with a page/)
   assert.match(read('docs/contributing.md'), /does not save it/)
@@ -67,4 +65,15 @@ test('the texts say the refresh reads every row with a page, writes their figure
   assert.match(read('docs/reference/artificial-analysis.md'), /does not save it/)
   assert.match(read('docs/guide/lanes.md'), /every row with a page/)
   assert.match(read('docs/guide/lanes.md'), /never saves it/)
+})
+
+test('the decision of spec 038 is recorded with the owner\'s words, and the index names its number (C1, C7)', () => {
+  const decisions = read('docs/decisions.md')
+  const row = decisions.split('\n').find((line) => /^\| A\d+ \|/.test(line) && line.includes('ya no quiero usar la API de AA no sirve'))
+  assert.ok(row, 'a numbered decision quotes the owner on the API')
+  for (const phrase of ['leeremos la pagina directamente', 'hydrogen esta pensnaod para reemplazar a 3.8 flash', 'Decided 2026-11-13; spec 038']) assert.ok(row.includes(phrase), phrase)
+  assert.match(row, /Hydrogen/)
+  assert.match(row, /code/i)
+  const number = row.match(/^\| (A\d+) \|/)[1].slice(1)
+  assert.match(read('docs/index.md'), new RegExp(`A1–A${number}\\b`))
 })
