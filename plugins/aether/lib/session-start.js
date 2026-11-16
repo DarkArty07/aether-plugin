@@ -442,15 +442,23 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     } catch {}
   }
 
-  // 5. Clean project temporary and stale items (spec 030 R17).
+  // 5. Clean project temporary and stale items (spec 030 R17). With a run open anywhere in the
+  // project the tmp folders are left alone (spec 043 R13).
   let cleanNote = ''
   if (mainRoot !== null && injects) {
     try {
       const { cleanProject } = require('./tree-clean.js')
       const { dataDir } = require('./run.js')
-      const cleanRes = cleanProject(cwd, { dataDir: dataDir(env), now })
+      let openRun = false
+      try {
+        openRun = require('./autonomy.js').openRuns(mainRoot).length > 0
+      } catch {}
+      const cleanRes = cleanProject(cwd, { dataDir: dataDir(env), now, openRun })
       if (cleanRes?.removed?.length > 0) {
-        cleanNote = `Aether cleaned ${cleanRes.removed.length} old item(s) of .aether/.`
+        const names = cleanRes.removed.map((r) => path.relative(cwd, r.path))
+        const shown = names.slice(0, 3).join(', ')
+        const rest = names.length > 3 ? ` and ${names.length - 3} more.` : '.'
+        cleanNote = `Aether cleaned ${names.length} old item(s) of .aether/: ${shown}${rest}`
       }
     } catch {}
   }

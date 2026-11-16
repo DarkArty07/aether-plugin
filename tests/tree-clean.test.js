@@ -78,6 +78,48 @@ test('nothing outside the cleaned folders is touched: runs, autonomy, pending an
   for (const f of keep) assert.equal(fs.readFileSync(f, 'utf8'), 'keep', f)
 })
 
+test('with openRun the tmp folders are left alone but old seats still go, and autonomy never goes (R13)', (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const tmpOld = path.join(repo.dir, '.aether', 'tmp', 'old.md')
+  const legacyOld = path.join(repo.dir, '.aether-tmp', 'old.md')
+  file(tmpOld, 'o', 48)
+  file(legacyOld, 'o', 48)
+  const seat = path.join(repo.dir, '.aether', 'work', 'seats', 'judge-20260101-000000-eeee')
+  file(path.join(seat, 'pair.json'), '{}', 24 * 9)
+  age(seat, 24 * 9)
+  const script = path.join(repo.dir, '.aether', 'autonomy', 'some-run', 'guion.sh')
+  file(script, 'x', 48)
+  const tmpRoot = path.join(repo.dir, '.aether', 'tmp') + path.sep
+  const legacyRoot = path.join(repo.dir, '.aether-tmp') + path.sep
+
+  const skipped = clean.cleanProject(repo.dir, { now: NOW, dataDir, openRun: true })
+  assert.equal(skipped.ran, true)
+  assert.equal(fs.existsSync(tmpOld), true, 'an open run keeps .aether/tmp')
+  assert.equal(fs.existsSync(legacyOld), true, 'an open run keeps .aether-tmp')
+  assert.ok(skipped.removed.every((r) => !r.path.startsWith(tmpRoot) && !r.path.startsWith(legacyRoot)), 'removed names nothing of step 1')
+  assert.equal(fs.existsSync(seat), false, 'step 2 still removes a seat older than 7 days with an open run')
+  assert.ok(skipped.removed.some((r) => r.path === seat))
+  assert.equal(fs.existsSync(script), true, 'autonomy is never removed')
+
+  const cleaned = clean.cleanProject(repo.dir, { now: NOW + clean.STAMP_INTERVAL_MS + 1, dataDir, openRun: false })
+  assert.equal(fs.existsSync(tmpOld), false)
+  assert.equal(fs.existsSync(legacyOld), false)
+  assert.ok(cleaned.removed.some((r) => r.path === tmpOld), 'removed names the tmp file')
+  assert.ok(cleaned.removed.some((r) => r.path === legacyOld), 'removed names the .aether-tmp file')
+  assert.equal(fs.existsSync(script), true, 'autonomy is never removed, even without an open run')
+})
+
+test('without openRun the 24-hour threshold still holds: a 23-hour file stays (R13)', (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const fresh = path.join(repo.dir, '.aether', 'tmp', 'fresh.md')
+  file(fresh, 'f', 23)
+  const result = clean.cleanProject(repo.dir, { now: NOW, dataDir })
+  assert.equal(fs.existsSync(fresh), true)
+  assert.ok(result.removed.every((r) => r.path !== fresh))
+})
+
 test('the stamp is of each project and each kind: a second project is cleaned in its own start (R18, issue 186, H2 scenario 13)', (t) => {
   const a = makeRepo(t)
   const b = makeRepo(t)

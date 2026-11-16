@@ -116,6 +116,45 @@ test('the cleanup runs once per project and removes old temporary files after th
   assert.ok(fs.readdirSync(path.join(w.data, 'sweep')).length >= 1)
 })
 
+test('with an open run of another session the startup keeps old tmp files; once the run ends it removes them and names them, three at most plus "and N more" (R13)', (t) => {
+  const { STAMP_INTERVAL_MS } = require('../plugins/aether/lib/tree-clean.js')
+  const w = world(t)
+  const runDir = path.join(w.repo.dir, '.aether', 'autonomy', 'auto-20261101-120000-ab12')
+  fs.mkdirSync(runDir, { recursive: true })
+  const runFile = path.join(runDir, 'run.json')
+  const run = {
+    id: 'auto-20261101-120000-ab12',
+    session: 'other-session',
+    quote: 'work on this for hours',
+    quoteTime: '2026-11-01T11:50:00.000Z',
+    started: '2026-11-01T12:00:00.000Z',
+    ceilings: { hours: 8, usd: 50, source: { hours: 'default', usd: 'default' } },
+    spend: [],
+    ended: null,
+    outcome: null,
+  }
+  fs.writeFileSync(runFile, JSON.stringify(run))
+  const names = ['a.md', 'b.md', 'c.md', 'd.md', 'e.md']
+  const stale = names.map((n) => path.join(w.repo.dir, '.aether', 'tmp', n))
+  for (const f of stale) {
+    fs.mkdirSync(path.dirname(f), { recursive: true })
+    fs.writeFileSync(f, 'x')
+    fs.utimesSync(f, hours(48), hours(48))
+  }
+
+  const first = w.start('s1')
+  for (const f of stale) assert.equal(fs.existsSync(f), true, `an open run keeps ${path.basename(f)}`)
+  assert.ok(!first.hookSpecificOutput.additionalContext.includes('Aether cleaned'))
+
+  fs.writeFileSync(runFile, JSON.stringify({ ...run, ended: '2026-11-07T12:00:00.000Z', outcome: 'done' }))
+  const second = w.start('s2', 'startup', { now: Date.now() + STAMP_INTERVAL_MS + 60000 })
+  for (const f of stale) assert.equal(fs.existsSync(f), false, `an ended run lets ${path.basename(f)} go`)
+  const ctx = second.hookSpecificOutput.additionalContext
+  const m = ctx.match(/Aether cleaned 5 old item\(s\) of \.aether\/: (.*?) and 2 more\./)
+  assert.ok(m, `the notice names the removed paths with "and 2 more.": ${JSON.stringify(ctx.slice(0, 400))}`)
+  assert.equal(names.filter((n) => m[1].includes(n)).length, 3, 'at most three paths are named')
+})
+
 test('outside git nothing of this runs and the start does not fail', (t) => {
   const dir = tempDir(t)
   const data = tempDir(t, 'aether-data-')
