@@ -260,7 +260,7 @@ for (const id of Object.keys(units)) {
 
 // A stuck unit (spec 034): its wait runs while the other units go on. Only these blocks wait: a question of
 // the supervisor, a lane block, an unverified merge or an internal error never does.
-const STUCK_REASONS = ['blocked-same-cause:', 'blocked-outside-owns:', 'the ladder is spent (exhausted)', 'merge failed again:']
+const STUCK_REASONS = ['blocked-same-cause:', 'blocked-foreign-tests:', 'blocked-outside-owns:', 'the ladder is spent (exhausted)', 'merge failed again:']
 function isStuck(unit) {
   return stuckWait > 0 && unit.status === 'blocked' && unit.attempts > 0 && typeof unit.reason === 'string' && STUCK_REASONS.some((prefix) => unit.reason.startsWith(prefix))
 }
@@ -507,7 +507,8 @@ async function step(unit, kind, body) {
   }
   // The ladder blocks the unit itself on a repeated plan error (issue 179): the reason says what to fix.
   if (verdictResult.kind === 'blocked' || verdictResult.status === 'blocked') {
-    const why = verdictResult.reason ? `${verdictResult.cause}: ${verdictResult.reason}` : 'the ladder is blocked'
+    let why = verdictResult.reason ? `${verdictResult.cause}: ${verdictResult.reason}` : 'the ladder is blocked'
+    if (why.startsWith('blocked-outside-owns:')) why = `${why}${/[.!?]$/.test(why) ? '' : '.'} ${workLocationHint(unit)}`
     return { blocked: why }
   }
   if (verdictResult.kind === 'rise') {
@@ -1292,6 +1293,19 @@ function gateFindingsOf(gate, task) {
   return gate.findings && gate.findings.length ? gate.findings : [{ file: task.owns[0], what: gate.checks || 'la puerta falló' }]
 }
 
+function workLocationHint(unit) {
+  return `During the wait, the work is in the unit's worktree (the \`worktree\` field of \`aether-wt watch\`); if the wait ends with no delivery, it is saved to ${runDir}/patches/${unit.id}.patch.`
+}
+
+function foreignTestSet(findings) {
+  if (!Array.isArray(findings) || findings.length === 0) return null
+  if (!findings.every((f) => f && f.own === false)) return null
+  const names = findings.map((f) => (typeof f.what === 'string' && f.what.startsWith('falló: ') ? f.what.slice(7) : String(f.file || '')))
+  return [...new Set(names)].sort()
+}
+
+const sameTestSet = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i])
+
 // One held merge: the merge, the status check and the rerun stay in one turn of the merge queue, so no
 // other unit merges between a cut and its rerun (issue #2). Used by work() and by rescue() (spec 034) without
 // changing its behavior or its labels. Resolves to { done: 'merged' }, to { done: 'blocked', reason } when the
@@ -1413,6 +1427,7 @@ async function work(unit, task) {
   let mergeRetry = false
   let lastPair = null
   let previousBlocked = Boolean(view.blockedCount)
+  let lastForeignTests = null
   const runGate = () => gated(() => ops(`aether-wt gate ${runId} ${unit.id}`, { phase: 'Supervise', label: `${unit.id}: gate`, long: true }))
 
   for (;;) {
@@ -1547,6 +1562,12 @@ async function work(unit, task) {
         file: f.file,
         evidence: f.evidence || gate.detail || '',
       }))
+      const foreign = foreignTestSet(findings)
+      if (foreign && sameTestSet(foreign, lastForeignTests)) {
+        const reason = `blocked-foreign-tests: ${foreign.join(', ')}; these tests are outside Owns (check whether the unit's change caused a regression before widening Owns). ${workLocationHint(unit)}`
+        return finish(unit, 'blocked', reason)
+      }
+      lastForeignTests = foreign
       const res = await step(unit, 'fix', { findings })
       if (res.blocked) return finish(unit, 'blocked', res.blocked)
       if (res.rejected) return finish(unit, 'blocked', `the ladder rejected the verdict: ${res.rejected}`)
@@ -1555,6 +1576,7 @@ async function work(unit, task) {
       effort = view.effort
       continue
     }
+    lastForeignTests = null
 
     let supervisorTries = 0
     let supervisorFailReason = null

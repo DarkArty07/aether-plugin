@@ -82,7 +82,7 @@ test('a test that fails and was not failing before the run names its file', (t) 
   commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
   const g = gate(u)
   assert.equal(g.pass, false)
-  assert.deepEqual(g.findings, [{ file: 'tests/new.test.js', what: 'la prueba falló' }])
+  assert.deepEqual(g.findings, [{ file: 'tests/new.test.js', what: 'la prueba falló', own: null }])
 })
 
 test('a failing subtest whose name is not a path is a finding that names it, with npm test as the file when the output names no file', (t) => {
@@ -90,15 +90,15 @@ test('a failing subtest whose name is not a path is a finding that names it, wit
   commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
   const g = gate(u)
   assert.equal(g.pass, false)
-  assert.deepEqual(g.findings, [{ file: 'npm test', what: 'falló: adds the numbers' }])
+  assert.deepEqual(g.findings, [{ file: 'npm test', what: 'falló: adds the numbers', own: null }])
 })
 
 test('a subtest name takes its file from a path-like failure of the same output', (t) => {
   const u = unit(t, CHECKS.subtestAndFile)
   commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
   assert.deepEqual(gate(u).findings, [
-    { file: 'tests/new.test.js', what: 'falló: adds the numbers' },
-    { file: 'tests/new.test.js', what: 'la prueba falló' },
+    { file: 'tests/new.test.js', what: 'falló: adds the numbers', own: null },
+    { file: 'tests/new.test.js', what: 'la prueba falló', own: null },
   ])
 })
 
@@ -129,7 +129,7 @@ test('a failure that the baseline already had does not fail the gate, however lo
 test('a known failure does not excuse a new one: only the new one is a finding', (t) => {
   const u = unit(t, CHECKS.knownAndNew)
   commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
-  assert.deepEqual(gate(u).findings, [{ file: 'tests/new.test.js', what: 'la prueba falló' }])
+  assert.deepEqual(gate(u).findings, [{ file: 'tests/new.test.js', what: 'la prueba falló', own: null }])
 })
 
 test('tests cut at the limit are a gate failure that says so', (t) => {
@@ -156,4 +156,79 @@ test('runTests keeps a longer tail when asked, and 4000 characters otherwise', (
   const command = "node -e \"console.log('x'.repeat(9000))\""
   assert.equal(runTests(process.cwd(), command).outputTail.length, 4000)
   assert.ok(runTests(process.cwd(), command, { tailChars: 20000 }).outputTail.length > 9000)
+})
+
+test('a red test with a location outside Owns carries own: false, and one inside Owns carries own: true', (t) => {
+  const tapForeign = [
+    "if (require('fs').existsSync('src/t1/bad.js')) {",
+    "  console.log('not ok 1 - foreign assertion');",
+    "  console.log('  ---');",
+    "  console.log(\"  location: '\" + process.cwd() + \"/tests/other.test.js:12:3'\");",
+    "  console.log('  ...');",
+    "  process.exit(1);",
+    "}",
+  ].join('\n')
+  const u1 = unit(t, tapForeign)
+  commitIn(u1.repo, u1.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  const g1 = gate(u1)
+  assert.equal(g1.pass, false)
+  assert.equal(g1.findings[0].own, false)
+
+  const tapOwned = [
+    "if (require('fs').existsSync('src/t1/bad.js')) {",
+    "  console.log('not ok 1 - owned assertion');",
+    "  console.log('  ---');",
+    "  console.log(\"  location: '\" + process.cwd() + \"/src/t1/a.test.js:4:5'\");",
+    "  console.log('  ...');",
+    "  process.exit(1);",
+    "}",
+  ].join('\n')
+  const u2 = unit(t, tapOwned)
+  commitIn(u2.repo, u2.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  const g2 = gate(u2)
+  assert.equal(g2.pass, false)
+  assert.equal(g2.findings[0].own, true)
+})
+
+test('a red test without a location carries own: null explicitly, unless its name appears in an owned test file', (t) => {
+  const u1 = unit(t, CHECKS.namedSubtest)
+  commitIn(u1.repo, u1.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  const g1 = gate(u1)
+  assert.equal(g1.pass, false)
+  assert.equal('own' in g1.findings[0], true)
+  assert.equal(g1.findings[0].own, null)
+
+  const u2 = unit(t, CHECKS.namedSubtest)
+  commitIn(u2.repo, u2.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  commitIn(u2.repo, u2.wt, 'src/t1/a.test.js', "test('adds the numbers', () => {})\n", 'add owned test')
+  const g2 = gate(u2)
+  assert.equal(g2.pass, false)
+  assert.equal(g2.findings[0].own, true)
+})
+
+test('a red test without a location whose name appears only in an owned source file does not carry own: true', (t) => {
+  const u = unit(t, CHECKS.namedSubtest)
+  commitIn(u.repo, u.wt, 'src/t1/bad.js', "const label = 'adds the numbers'\n", 'mention test name in owned source')
+  const g = gate(u)
+  assert.equal(g.pass, false)
+  assert.notEqual(g.findings[0].own, true)
+  assert.equal(g.findings[0].own, null)
+})
+
+test('a red test whose location is outside the worktree carries own: null explicitly', (t) => {
+  const tapOutside = [
+    "if (require('fs').existsSync('src/t1/bad.js')) {",
+    "  console.log('not ok 1 - outside wt');",
+    "  console.log('  ---');",
+    "  console.log(\"  location: '/tmp/outside-worktree/foo.test.js:1:1'\");",
+    "  console.log('  ...');",
+    "  process.exit(1);",
+    "}",
+  ].join('\n')
+  const u = unit(t, tapOutside)
+  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  const g = gate(u)
+  assert.equal(g.pass, false)
+  assert.equal('own' in g.findings[0], true)
+  assert.equal(g.findings[0].own, null)
 })
