@@ -155,6 +155,21 @@ test('with an open run of another session the startup keeps old tmp files; once 
   assert.equal(names.filter((n) => m[1].includes(n)).length, 3, 'at most three paths are named')
 })
 
+test('an unreadable run.json keeps old tmp files: what cannot be read fails closed, never open (R13)', (t) => {
+  const w = world(t)
+  const runDir = path.join(w.repo.dir, '.aether', 'autonomy', 'auto-20261101-120000-ab12')
+  fs.mkdirSync(runDir, { recursive: true })
+  fs.writeFileSync(path.join(runDir, 'run.json'), 'not json{{{')
+  const stale = path.join(w.repo.dir, '.aether', 'tmp', 'stale.md')
+  fs.mkdirSync(path.dirname(stale), { recursive: true })
+  fs.writeFileSync(stale, 'x')
+  fs.utimesSync(stale, hours(48), hours(48))
+  fs.utimesSync(path.dirname(stale), hours(5), hours(5))
+  const out = w.start('s1')
+  assert.equal(fs.existsSync(stale), true, 'an unreadable run.json keeps the old tmp file')
+  assert.ok(!out.hookSpecificOutput.additionalContext.includes('Aether cleaned'), 'no cleanup note')
+})
+
 test('outside git nothing of this runs and the start does not fail', (t) => {
   const dir = tempDir(t)
   const data = tempDir(t, 'aether-data-')

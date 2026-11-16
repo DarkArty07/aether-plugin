@@ -113,6 +113,39 @@ test('near the output limit the trim drops the notice line before the base conte
   assert.equal(resultOf(dir).harnesses.grok.noticed, true)
 })
 
+test('a new model is a line of the startup message to the person too, not only of the context', (t) => {
+  const dir = dataWithResult(t, { grok: { new: ['grok-new-1'], retired: [] } })
+  const first = startIn(dir)
+  assert.match(first.out.hookSpecificOutput.additionalContext, /new models in grok:.*grok-new-1/)
+  assert.match(first.out.systemMessage, /new models in grok:.*grok-new-1/)
+  assert.equal(resultOf(dir).harnesses.grok.noticed, true, 'shown at startup, so marked')
+  const second = startIn(dir)
+  assert.doesNotMatch(second.out.hookSpecificOutput.additionalContext, /new models in grok:/)
+  assert.doesNotMatch(String(second.out.systemMessage || ''), /new models in grok:/)
+})
+
+test('clear and compact keep the line in the context but never mark it, and show nothing to the person', (t) => {
+  for (const source of ['clear', 'compact']) {
+    const dir = dataWithResult(t, { grok: { new: ['grok-new-1'], retired: [] } })
+    const r = startIn(dir, { source })
+    assert.match(r.out.hookSpecificOutput.additionalContext, /new models in grok:.*grok-new-1/, source)
+    assert.doesNotMatch(String(r.out.systemMessage || ''), /new models in grok:/, `${source} shows nothing of the line to the person`)
+    assert.equal(resultOf(dir).harnesses.grok.noticed, false, `${source} leaves it pending`)
+    const next = startIn(dir)
+    assert.match(next.out.hookSpecificOutput.additionalContext, /new models in grok:.*grok-new-1/, `${source} leaves it for the next startup`)
+    assert.match(next.out.systemMessage, /new models in grok:.*grok-new-1/, `${source} leaves it for the next startup message`)
+  }
+})
+
+test('resume with a pending difference prints nothing and leaves it pending', (t) => {
+  const dir = dataWithResult(t, { grok: { new: ['grok-new-1'], retired: [] } })
+  let output = ''
+  const envFile = path.join(dir, 'env.sh')
+  main({ input: { ...AETHER, source: 'resume' }, env: { CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: dir, CLAUDE_ENV_FILE: envFile }, cwd: dir, stdout: { write(s) { output += s } } })
+  assert.equal(output, '', 'resume prints nothing')
+  assert.equal(resultOf(dir).harnesses.grok.noticed, false, 'resume leaves it pending')
+})
+
 test('a part command with a pending difference neither shows the line nor marks it', (t) => {
   const repo = makeRepo(t)
   const dir = dataWithResult(t, { grok: { new: ['grok-new-1'], retired: [] } })

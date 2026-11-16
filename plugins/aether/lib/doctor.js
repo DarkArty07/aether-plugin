@@ -278,8 +278,10 @@ function harnessesCheck(found, options) {
 // The models of the last daily reading, per active harness (spec 043 R4): new and retired ids, when each harness was
 // read and, when it could not be read, why. It only reads the result of lib/model-watch.js; it never writes anything,
 // not even `noticed`. info when every active harness was read (or there is no reading yet); warn when one could not be
-// read; never error, so it never fails the report on its own.
-function modelsCheck({ dataDir = null, harnesses = [], result = undefined } = {}) {
+// read while superdelegation is on: the other harnesses are optional extras, so with superdelegation off the check is
+// info, and a harness that is not installed is info even when it is on. Never error, so it never fails the report on
+// its own.
+function modelsCheck({ dataDir = null, harnesses = [], result = undefined, superdelegation = false } = {}) {
   let res = result
   if (res === undefined) {
     try {
@@ -311,6 +313,8 @@ function modelsCheck({ dataDir = null, harnesses = [], result = undefined } = {}
       lines.push(`${name}: ${parts.join('; ')}`)
     } else if (entry.status === 'no-capture') {
       lines.push(`${name}: ${entry.reason || 'no capture means without a model call'} (${readAt})`)
+    } else if (entry.status === 'not-installed') {
+      lines.push(`${name}: not installed (${entry.reason || `${cliOf(name)} not found on PATH`}; ${readAt})`)
     } else {
       unreadable = true
       const cause = entry.reason || (entry.skipped ? `skipped: ${entry.skipped}` : '')
@@ -318,7 +322,7 @@ function modelsCheck({ dataDir = null, harnesses = [], result = undefined } = {}
       lines.push(`${name}: could not be read (${entry.status || 'failed'}${why}; ${readAt})`)
     }
   }
-  return check('models', unreadable ? 'warn' : 'info', lines.join('\n'))
+  return check('models', unreadable && superdelegation ? 'warn' : 'info', lines.join('\n'))
 }
 
 function projectCheck(exec, cwd, name) {
@@ -385,9 +389,14 @@ function run({ name = DEFAULT_NAME, env = process.env, cwd = process.cwd(), exec
   // The option names of the harnesses whose CLI is on the PATH.
   const found = ADAPTER_NAMES.filter((name) => findOnPath(cliOf(name), env, cwd) !== null)
   const { command, check: commandCheck } = commandState(name, env, cwd)
-  // The harnesses the owner enabled, for the models check; the data dir holds their last daily reading.
+  // The harnesses the owner enabled, for the models check; the data dir holds their last daily reading. The saved
+  // option wins, as in harnessesCheck: a terminal has neither CLAUDE_PLUGIN_OPTION_HARNESSES nor AETHER_LANE_HARNESSES.
+  // Then the environment, then the default that enabledHarnesses gives.
   const { enabledHarnesses } = require('./lanes.js')
-  const active = enabledHarnesses({ AETHER_LANE_HARNESSES: env.CLAUDE_PLUGIN_OPTION_HARNESSES ?? env.AETHER_LANE_HARNESSES })
+  const savedHarnesses = options && options.harnesses !== null && options.harnesses !== undefined
+    ? (Array.isArray(options.harnesses) ? options.harnesses.join(',') : options.harnesses)
+    : null
+  const active = enabledHarnesses({ AETHER_LANE_HARNESSES: savedHarnesses ?? env.CLAUDE_PLUGIN_OPTION_HARNESSES ?? env.AETHER_LANE_HARNESSES })
   let modelsDir = null
   try {
     modelsDir = require('./run.js').dataDir(env)
@@ -403,7 +412,7 @@ function run({ name = DEFAULT_NAME, env = process.env, cwd = process.cwd(), exec
     workflowsCheck(env, settingsSources(configDir, cwd)),
     ...[planCheck(exec, env, configDir)].filter(Boolean),
     harnessesCheck(found, options),
-    modelsCheck({ dataDir: modelsDir, harnesses: active }),
+    modelsCheck({ dataDir: modelsDir, harnesses: active, superdelegation: Boolean(options && isOn(options.superdelegation)) }),
     projectCheck(exec, cwd, name),
   ]
   return {
