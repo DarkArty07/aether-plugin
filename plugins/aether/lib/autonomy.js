@@ -9,7 +9,7 @@ const fs = require('node:fs')
 const crypto = require('node:crypto')
 const path = require('node:path')
 const { ownerMessages, findTranscript } = require('./voice.js')
-const { newRunId, isRunId, dataDir: runDataDir, aetherDir, runDir } = require('./run.js')
+const { newRunId, isRunId, dataDir: runDataDir, aetherDir, runDir, installDirs } = require('./run.js')
 const { readBrakeSettings, isAetherSession } = require('./session.js')
 const { repoPaths, isRepository } = require('./git.js')
 const { isObject } = require('./common.js')
@@ -576,6 +576,91 @@ function mergeWindows(intervals) {
   return merged
 }
 
+// Timestamp in ms of a runs.jsonl record, or NaN when no known time field is valid.
+function recordTime(record) {
+  for (const key of ['finalizedAt', 'sweptAt', 'at', 'timestamp', 'ts']) {
+    if (record[key] !== undefined && record[key] !== null) {
+      const t = typeof record[key] === 'number' ? record[key] : Date.parse(record[key])
+      if (Number.isFinite(t)) return t
+    }
+  }
+  return NaN
+}
+
+// Swarm runs of `mainRoot` whose latest record in runs.jsonl (by record time across all install
+// files) is `abandoned` and whose run folder shows no activity after `sweptAt` (other than
+// `saved.json`), mapped to their `sweptAt` timestamp in ms (or NaN when absent/invalid).
+function abandonedRuns(mainRoot, dataDir = runDataDir()) {
+  const latest = new Map()
+  for (const install of installDirs(dataDir)) {
+    let text
+    try {
+      text = fs.readFileSync(path.join(install, 'runs.jsonl'), 'utf8')
+    } catch {
+      continue
+    }
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue
+      let record
+      try {
+        record = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (!record || !isRunId(record.runId)) continue
+      if (record.repo && record.repo !== mainRoot) continue
+      const time = recordTime(record)
+      const prev = latest.get(record.runId)
+      const newer = !prev || (Number.isFinite(time) ? (!Number.isFinite(prev.time) || time >= prev.time) : !Number.isFinite(prev.time))
+      if (newer) latest.set(record.runId, { status: record.status, time, sweptAt: Date.parse(record.sweptAt) })
+    }
+  }
+  const abandoned = new Map()
+  for (const [id, entry] of latest) {
+    if (entry.status !== 'abandoned') continue
+    if (Number.isFinite(entry.sweptAt) && latestRunFileMtime(runDir(mainRoot, id)) > entry.sweptAt) continue
+    abandoned.set(id, entry.sweptAt)
+  }
+  return abandoned
+}
+
+// Latest mtimeMs of files inside `dir`, skipping symlinks and `saved.json` (which an earlier
+// quota-brake may have written after abandonment). Returns -Infinity when none can be read.
+function latestRunFileMtime(dir, isRoot = true) {
+  let latest = -Infinity
+  let entries
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return latest
+  }
+  for (const entry of entries) {
+    if (isRoot && entry.name === 'saved.json') continue
+    const full = path.join(dir, entry.name)
+    let stat
+    try {
+      stat = fs.lstatSync(full)
+    } catch {
+      continue
+    }
+    if (stat.isSymbolicLink()) continue
+    if (stat.isDirectory()) latest = Math.max(latest, latestRunFileMtime(full, false))
+    else if (stat.isFile()) latest = Math.max(latest, stat.mtimeMs)
+  }
+  return latest
+}
+
+// End of an abandoned swarm run's window: its last recorded activity in `dir` when it falls
+// between `start` and `sweptAt` (or `sweptAt` is absent), capped at `sweptAt`, and never "now".
+function abandonedEnd(dir, start, sweptAt) {
+  const activity = latestRunFileMtime(dir)
+  if (Number.isFinite(activity) && activity >= start && (!Number.isFinite(sweptAt) || activity <= sweptAt)) {
+    return activity
+  }
+  if (Number.isFinite(sweptAt) && sweptAt >= start) return sweptAt
+  return start
+}
+
 // The swarm runs of this repository that belong to the open run: compiled at or after the run started and before it
 // ended (issue 191). Each one's figure is the lanes total of aether-report --run, read now from the usage meter and the
 // lane logs, or from its record in runs.jsonl once it is finalized; the larger reading counts when both exist. A run
@@ -585,6 +670,7 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
   const from = Date.parse(run.started)
   const until = run.ended ? Date.parse(run.ended) : Infinity
   const inWindow = (start) => Number.isFinite(start) && start >= from && start < until
+  const abandoned = abandonedRuns(mainRoot, dataDir)
   const runsInfo = new Map()
   const failed = new Set()
   const keep = (id, rep) => {
@@ -616,8 +702,11 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
       continue
     }
     if (!inWindow(start)) continue
+    const reportNow = abandoned.has(id) && !fs.existsSync(path.join(dir, 'result.json'))
+      ? abandonedEnd(dir, start, abandoned.get(id))
+      : now
     try {
-      keep(id, reportRun(mainRoot, id, { tests: false, dataDir, now }))
+      keep(id, reportRun(mainRoot, id, { tests: false, dataDir, now: reportNow }))
     } catch {
       failed.add(id)
     }
@@ -1069,4 +1158,5 @@ module.exports = {
   brakeOff,
   recordSaved,
   trustAuthor,
+  abandonedRuns,
 }

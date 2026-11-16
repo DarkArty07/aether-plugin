@@ -267,14 +267,21 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     const named = flagValues(rest, '--run')
     const ids = named.length ? namedRuns(named) : inFlightRuns(mainRoot, open.started)
     ensureExcluded(gitCommonDir)
-    const settings = autonomy.brakeSettings(mainRoot, { session, dataDir: env.AETHER_DATA_DIR || dataDir(env) })
+    const data = env.AETHER_DATA_DIR || dataDir(env)
+    const settings = autonomy.brakeSettings(mainRoot, { session, dataDir: data })
+    const abandoned = autonomy.abandonedRuns(mainRoot, data)
     const pushOn = settings.push === true
     const mayPush = pushOn && Boolean(autonomy.check(mainRoot, 'push', { session }))
     const saved = []
     const pushed = []
+    const skipped = []
     const failures = []
     let recorded = false
     for (const id of ids) {
+      if (abandoned.has(id)) {
+        skipped.push(id)
+        continue
+      }
       let body
       try {
         const child = spawnSync(process.execPath, [WT_BIN, 'save', id], { cwd, encoding: 'utf8', env })
@@ -308,6 +315,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
       }
     }
     const out = { saved, recorded, pushed }
+    if (skipped.length) out.skipped = skipped
     if (pushOn && !mayPush) out.notPushed = 'push needs a grant'
     if (failures.length) out.failures = failures
     return { code: failures.length ? 1 : 0, out }
