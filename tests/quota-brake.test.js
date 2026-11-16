@@ -61,7 +61,7 @@ test('a five-hour crossing pauses the run: status says quota, the diary holds it
     { kind: 'five_hour', percentUsed: 96.5, resetsAt: RESET, threshold: 95, notify: { sent: true, reason: null } },
     { now: T0, dataDir: s.dataDir },
   )
-  assert.deepEqual(out, { recorded: true, paused: true, run: r.run.id, resetsAt: RESET, resumeAt: RESUME })
+  assert.deepEqual(out, { recorded: true, paused: true, run: r.run.id, resetsAt: RESET, resumeAt: RESUME, runs: [{ run: r.run.id, paused: true }] })
   const st = autonomy.status(s.mainRoot, { now: T0 + 3600000 })
   assert.equal(st.stop, 'quota')
   assert.equal(st.open, true)
@@ -86,7 +86,7 @@ test('the same crossing twice records one pause, and a failed notice is in the d
   const crossing = { kind: 'five_hour', percentUsed: 97, resetsAt: RESET, threshold: 95, notify: { sent: false, reason: 'no-channel' } }
   assert.equal(autonomy.recordCrossing(s.mainRoot, crossing, { now: T0, dataDir: s.dataDir }).paused, true)
   const again = autonomy.recordCrossing(s.mainRoot, crossing, { now: T0 + 60000, dataDir: s.dataDir })
-  assert.deepEqual(again, { recorded: true, paused: true, duplicate: true, run: r.run.id, resetsAt: RESET, resumeAt: RESUME })
+  assert.deepEqual(again, { recorded: true, paused: true, duplicate: true, run: r.run.id, resetsAt: RESET, resumeAt: RESUME, runs: [{ run: r.run.id, paused: true, duplicate: true }] })
   assert.equal(runJson(s.mainRoot, r.run.id).quotaPauses.length, 1)
   assert.equal(diary(s.mainRoot, r.run.id).split('## Pausa de cuota').length, 2)
   assert.ok(diary(s.mainRoot, r.run.id).includes('- Aviso al dueño: no enviado (no-channel).'))
@@ -121,7 +121,7 @@ test('brakeOff takes only the owner words the transcript verifies, and a later c
     { kind: 'five_hour', percentUsed: 98, resetsAt: RESET, threshold: 95, notify: { sent: true, reason: null } },
     { now: T0, dataDir: s.dataDir },
   )
-  assert.deepEqual(out, { recorded: true, paused: false, brakeOff: true, run: r.run.id, quote: UNLIMITED })
+  assert.deepEqual(out, { recorded: true, paused: false, brakeOff: true, run: r.run.id, quote: UNLIMITED, runs: [{ run: r.run.id, paused: false, brakeOff: true }] })
   assert.equal(autonomy.status(s.mainRoot, { now: T0 }).stop, null)
   assert.equal(autonomy.status(s.mainRoot, { now: T0 }).quota.brakeOff, true)
   assert.ok(diary(s.mainRoot, r.run.id).includes(`- El freno estaba apagado por las palabras del dueño: «${UNLIMITED}».`))
@@ -130,6 +130,9 @@ test('brakeOff takes only the owner words the transcript verifies, and a later c
 test('recordSaved folds the saved units into the last pause and the diary', (t) => {
   const s = setup(t)
   const r = startRun(s)
+  const swarmDir = path.join(s.mainRoot, '.aether', 'runs', '20261021-100000-ab12')
+  fs.mkdirSync(swarmDir, { recursive: true })
+  fs.writeFileSync(path.join(swarmDir, 'state.json'), JSON.stringify({ runId: '20261021-100000-ab12', session: SESSION, compiledAt: new Date(T0).toISOString() }))
   const saved = {
     run: '20261021-100000-ab12',
     at: '2026-10-21T10:01:00.000Z',
@@ -181,6 +184,9 @@ test('the bin drives the brake verbs end to end', (t) => {
   assert.deepEqual([r.json.recorded, r.json.paused, r.json.run], [true, true, runId])
   r = cli(['status'])
   assert.equal(r.json.stop, 'quota')
+  const swarmDir = path.join(repo.dir, '.aether', 'runs', '20261021-100000-ab12')
+  fs.mkdirSync(swarmDir, { recursive: true })
+  fs.writeFileSync(path.join(swarmDir, 'state.json'), JSON.stringify({ runId: '20261021-100000-ab12', session: SESSION, compiledAt: new Date().toISOString() }))
   const savedFile = path.join(tempDir(t, 'aether-saved-'), 'saved.json')
   fs.writeFileSync(savedFile, JSON.stringify({ run: '20261021-100000-ab12', at: resetsAt, units: [{ task: 'task-3', branch: 'aether/20261021-100000-ab12/task-3', head: 'feed123', merged: false, salvaged: true, committed: ['x.js'], left: [] }] }))
   r = cli(['quota-saved', '--from', savedFile])
