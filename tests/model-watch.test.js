@@ -256,3 +256,44 @@ test('aether-observe models-read worker exits 0 and writes result.json', (t) => 
   assert.deepEqual(parsed.harnesses.agy.new, ['m1'])
   assert.equal(parsed.harnesses.muse.status, 'no-capture')
 })
+
+test('aether-observe models-read worker exits 0 and respects totalSeconds without hanging', (t) => {
+  const dir = tempDir(t)
+  const binDir = tempDir(t)
+  const fakeAgy = path.join(binDir, 'agy')
+  fs.writeFileSync(fakeAgy, '#!/bin/sh\nsleep 30\n')
+  fs.chmodSync(fakeAgy, 0o755)
+  const fakeGrok = path.join(binDir, 'grok')
+  fs.writeFileSync(fakeGrok, '#!/bin/sh\necho "g1"\n')
+  fs.chmodSync(fakeGrok, 0o755)
+
+  const cfgPath = path.join(dir, 'model-watch.json')
+  fs.writeFileSync(cfgPath, JSON.stringify({
+    perHarnessSeconds: 0.5,
+    totalSeconds: 0.12,
+    captureVia: {
+      agy: { args: ['models'] },
+      grok: { args: ['models'] },
+    },
+  }))
+
+  const bin = path.join(PLUGIN, 'bin', 'aether-observe')
+  const started = Date.now()
+  const r = spawnSync('node', [bin, 'models-read'], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH}`,
+      AETHER_DATA_DIR: dir,
+      AETHER_LANE_HARNESSES: 'agy,grok',
+      AETHER_MODEL_WATCH_CONFIG: cfgPath,
+    },
+    timeout: 4000,
+  })
+  const elapsed = Date.now() - started
+  assert.equal(r.status, 0)
+  assert.ok(elapsed < 2000, `worker took too long: ${elapsed}ms`)
+  const parsed = JSON.parse(r.stdout.trim())
+  assert.equal(parsed.harnesses.agy.status, 'timeout')
+  assert.equal(parsed.harnesses.grok.skipped, 'total-timeout')
+})

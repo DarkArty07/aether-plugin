@@ -144,6 +144,7 @@ function runCommandList(command, args, { env, timeoutMs, spawn }) {
         if (child && typeof child.kill === 'function') child.kill('SIGTERM')
         if (child && child.stdout && typeof child.stdout.destroy === 'function') child.stdout.destroy()
         if (child && child.stderr && typeof child.stderr.destroy === 'function') child.stderr.destroy()
+        if (child && typeof child.unref === 'function') child.unref()
       } catch {}
       finish({ status: 'timeout', reason: `timed out after ${timeoutMs}ms` })
     }, timeoutMs)
@@ -173,7 +174,7 @@ function runCommandList(command, args, { env, timeoutMs, spawn }) {
 async function listModels(harnessName, options = {}) {
   const env = options.env || process.env
   const spawn = options.spawn || childProcess.spawn
-  const configPath = options.configPath || DEFAULT_CONFIG_PATH
+  const configPath = options.configPath || (env && env.AETHER_MODEL_WATCH_CONFIG) || DEFAULT_CONFIG_PATH
   const lanesConfigPath = options.lanesConfigPath || DEFAULT_LANES_PATH
   const home = options.home || env.HOME || os.homedir()
 

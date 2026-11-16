@@ -81,7 +81,8 @@ function main(args) {
   return fail(USAGE)
 }
 
-Promise.resolve(main(process.argv.slice(2)))
+Promise.resolve()
+  .then(() => main(process.argv.slice(2)))
   .then((code) => { process.exitCode = code })
   .catch((err) => {
     process.exitCode = process.argv[2] === 'hook' || process.argv[2] === 'models-read' ? 0 : fail(err.message)
