@@ -42,12 +42,13 @@ test('aether-plan next-spec finds the highest number on a remote-tracking branch
 
   repo.git('remote', 'add', 'origin', bare)
   repo.git('-c', 'protocol.file.allow=always', 'fetch', '-q', 'origin')
+  repo.git('remote', 'set-head', 'origin', 'main')
 
   const r = runBin(PLAN_BIN, ['next-spec'], repo.dir)
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.json.next, '039')
   assert.equal(r.json.highest, '038')
-  assert.ok(r.json.where.includes('origin/main'), JSON.stringify(r.json))
+  assert.deepEqual(r.json.where, ['origin/main'])
 })
 
 test('aether-plan next-spec counts an uncommitted folder in another worktree on disk', (t) => {
@@ -82,4 +83,26 @@ test('aether-plan next-spec falls back to working tree specs/ outside a git repo
   const r = runBin(PLAN_BIN, ['next-spec'], dir)
   assert.equal(r.status, 0, r.stderr)
   assert.deepEqual(r.json, { next: '004', highest: '003', where: [dir] })
+})
+
+test('aether-plan next-spec returns the exact set of holders when two branches share the highest number, and aether-plan check without args prints the full usage', (t) => {
+  const repo = makeRepo(t)
+  repo.git('switch', '-q', '-c', 'feature/a', 'main')
+  commitIn(repo, repo.dir, 'specs/015-shared/spec.md', '# 015\n', 'add 015 on a')
+  repo.git('switch', '-q', '-c', 'feature/b', 'main')
+  commitIn(repo, repo.dir, 'specs/015-shared/spec.md', '# 015\n', 'add 015 on b')
+  repo.git('switch', '-q', 'main')
+
+  const r = runBin(PLAN_BIN, ['next-spec'], repo.dir)
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.json.next, '016')
+  assert.equal(r.json.highest, '015')
+  assert.deepEqual([...r.json.where].sort(), ['feature/a', 'feature/b'])
+
+  const checkNoArg = runBin(PLAN_BIN, ['check'], repo.dir)
+  const unknownVerb = runBin(PLAN_BIN, ['unknown-verb'], repo.dir)
+  assert.equal(checkNoArg.status, 1)
+  assert.equal(unknownVerb.status, 1)
+  assert.equal(checkNoArg.json.errors[0], unknownVerb.json.errors[0])
+  assert.match(checkNoArg.json.errors[0], /next-spec/)
 })

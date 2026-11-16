@@ -56,7 +56,18 @@ test('the guides and components reference document aether-report --skills, confi
     assert.ok(text.includes('`aether-report --skills`'), `${rel} names aether-report --skills`)
     assert.ok(text.includes('`config/skills.json`'), `${rel} names config/skills.json`)
   }
+  const en = read(EN)
+  for (const notice of ['Practical-topic search', 'Skill location', 'Repeated delegate findings', '30-day idle skills', '--repo', '--since', '--until', '--session']) {
+    assert.ok(en.includes(notice), `${EN} names ${notice}`)
+  }
+  const es = read(ES)
+  for (const notice of ['Búsqueda por señales visibles', 'Ubicación de skills', 'Hallazgos repetidos', 'Skills sin uso a 30 días']) {
+    assert.ok(es.includes(notice), `${ES} names ${notice}`)
+  }
   const comp = read('docs/reference/components.md')
   assert.ok(comp.includes('`--skills`'))
   assert.ok(comp.includes('`config/skills.json`'))
+  for (const token of ['`topic-search`', '`skill-location`', '`skill-unloaded`', '`repeated-finding`', '`lib/skill-idle.js`']) {
+    assert.ok(comp.includes(token), `components.md names ${token}`)
+  }
 })

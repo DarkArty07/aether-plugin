@@ -102,11 +102,13 @@ test('the components page counts the commands of bin/ and says the ladder adds n
   assert.match(components, /delegate ladder[^\n]*adds nothing at the start of a plain session/)
 })
 
-test('the components page lists the stuck, deliver, decline and watch verbs of aether-wt (#256 9)', () => {
+test('the components page lists every verb of aether-wt (#256 9)', () => {
   const components = read('docs', 'reference', 'components.md')
   const row = components.split('\n').find((line) => line.startsWith('| `aether-wt` |'))
   assert.ok(row, 'the page has a row for aether-wt')
-  for (const verb of ['stuck', 'stuck-tick', 'stuck-end', 'deliver', 'decline', 'watch']) {
+  const verbs = [...new Set([...read('plugins', 'aether', 'bin', 'aether-wt').matchAll(/^\/\/ aether-wt ([\w-]+)/gm)].map((m) => m[1]))]
+  assert.ok(verbs.includes('settle'), 'aether-wt bin declares settle')
+  for (const verb of verbs) {
     assert.ok(row.includes(`\`${verb}\``), `the row names ${verb}`)
   }
 })

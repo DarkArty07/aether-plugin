@@ -94,11 +94,14 @@ test('unsourced figures are removed or carry a source (R15)', () => {
   }
   for (const [name, text] of Object.entries(files)) {
     for (const figure of ['10-100x', 'about 2.5 times']) {
-      if (text.includes(figure)) {
-        assert.ok(
-          text.includes('source') || text.includes('http'),
-          `${name} cites ${figure} without a link or source`,
-        )
+      for (const sentence of text.split(/(?<=[.;\n])\s+/)) {
+        if (sentence.includes(figure)) {
+          assert.match(
+            sentence,
+            /\(source:|https?:\/\//,
+            `${name} cites ${figure} without a link or source in that sentence: ${sentence.trim()}`,
+          )
+        }
       }
     }
   }
@@ -115,7 +118,6 @@ test('turn budgets read as guidance, never as a limit (R16)', () => {
     lines(text).find((line) => line.includes(turn) && /turn|budget/i.test(line))
   const cases = [
     ['judge', budgets.judge, '30 turns'],
-    ['reviewer', budgets.reviewer, '30 turns'],
     ['implementer', budgets.implementer, 'turn 45'],
   ]
   for (const [name, text, turn] of cases) {
@@ -126,6 +128,10 @@ test('turn budgets read as guidance, never as a limit (R16)', () => {
     assert.ok(!/\bhard\b/i.test(line), `${name}.md budget never says hard: ${line.trim()}`)
     assert.ok(!/at the latest/i.test(line), `${name}.md budget never says at the latest: ${line.trim()}`)
   }
+  const reviewerBudget = budgetLine(budgets.reviewer, '30 turns')
+  assert.ok(reviewerBudget, 'reviewer.md states its 30-turn maxTurns budget')
+  assert.ok(reviewerBudget.includes('maxTurns: 30'), 'reviewer.md names maxTurns: 30 once and accurately')
+  assert.ok(!/as a guide.*about 30 turns/i.test(reviewerBudget), 'reviewer.md does not contradict itself')
   // The turn-28 line of the Judge and the reviewer reads as guidance too.
   for (const [name, text] of [['judge', budgets.judge], ['reviewer', budgets.reviewer]]) {
     const line = budgetLine(text, 'turn 28')
@@ -144,7 +150,12 @@ test('turn budgets read as guidance, never as a limit (R16)', () => {
     }
   }
   // No budget contradicts the time limit on another harness (lib/seats.js):
-  // none of the three files caps the other harness by turns.
+  // seats.js overrides the 30-turn reading plan with the round's time, and none of the agent files caps another harness by turns.
+  const seats = fs.readFileSync(path.join(PLUGIN, 'lib', 'seats.js'), 'utf8')
+  assert.ok(
+    seats.includes("Your limit here is the round's time, not the 30 turns of your reading plan"),
+    'lib/seats.js overrides the 30-turn reading plan with the round time',
+  )
   for (const [name, text] of Object.entries(budgets)) {
     assert.equal(
       text.includes('Your limit here is the round'),
