@@ -198,3 +198,30 @@ test('R14: quota-brake saves a swarm launched by session B after A started and r
   assert.deepEqual(pauseA.savedUnits, [])
   assert.ok(Array.isArray(pauseB.savedUnits) && pauseB.savedUnits.some((u) => u.swarmRun === swarmId && u.task === 'task-1'))
 })
+
+test('quota-brake saves only swarms of runs paused by the brake, never a run whose brake is off', (t) => {
+  const { repo, config, cli, start } = setup(t)
+  const a = start(A)
+  const b = start(B)
+  const resetsAt = new Date(Date.now() + 3 * 3600 * 1000).toISOString()
+  assert.equal(cli(A, ['brake-crossing', '--kind', 'five_hour', '--percent', '96', '--resets-at', resetsAt, '--threshold', '95', '--notify', 'sent']).status, 0)
+  assert.equal(cli(A, ['brake-off', '--quote', OFF_QUOTE]).status, 0)
+
+  const compiledA = runBin(PLAN_BIN, ['compile', writePlan(repo.dir, plan([task(1)]))], repo.dir, {
+    CLAUDE_CONFIG_DIR: config,
+    CLAUDE_CODE_SESSION_ID: A,
+  })
+  assert.equal(compiledA.status, 0, compiledA.stdout + compiledA.stderr)
+  const swarmA = compiledA.json.runId
+  const wtA = runBin(WT_BIN, ['ensure', swarmA, 'task-1'], repo.dir)
+  assert.equal(wtA.status, 0, wtA.stdout + wtA.stderr)
+  fs.mkdirSync(path.join(wtA.json.path, 'src', 't1'), { recursive: true })
+  fs.writeFileSync(path.join(wtA.json.path, 'src', 't1', 'wip.js'), 'wip\n')
+
+  const braked = cli(B, ['quota-brake'])
+  assert.equal(braked.status, 0, braked.stdout + braked.stderr)
+  assert.deepEqual(braked.json, { saved: [], recorded: false, pushed: [] })
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'runs', swarmA, 'saved.json')), false)
+  void a
+  void b
+})

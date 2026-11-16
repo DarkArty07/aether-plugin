@@ -4,6 +4,7 @@
 // Called by bin/aether-autonomy to handle grant, revoke, check, and status verbs.
 // Family: none.
 
+// Supported subcommands (source reference only, not user-facing help; CLI errors print USAGE):
 // It does not stop workflows, delegates or lane calls (those stay with the Lead: TaskStop, aether-lane stop).
 // aether-autonomy grant  --class <class> --quote <text> [--session <id>] [--scope repo|session]
 // aether-autonomy revoke --class <class> --quote <text> [--session <id>] [--all]
@@ -315,9 +316,11 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
 
   if (sub === 'quota-brake') {
     const session = getSession(rest, false, env)
+    const now = Date.now()
     const open = autonomy.openRuns(mainRoot)
-    if (!open.length) return { code: 0, out: { saved: [], recorded: false, pushed: [] } }
-    const earliest = open.reduce((min, { run }) => (Date.parse(run.started) < Date.parse(min) ? run.started : min), open[0].run.started)
+    const paused = open.filter(({ run }) => autonomy.activePause(run, now) !== null)
+    if (!paused.length) return { code: 0, out: { saved: [], recorded: false, pushed: [] } }
+    const earliest = paused.reduce((min, { run }) => (Date.parse(run.started) < Date.parse(min) ? run.started : min), paused[0].run.started)
     const named = flagValues(rest, '--run')
     const ids = named.length ? namedRuns(named) : inFlightRuns(mainRoot, earliest)
     ensureExcluded(gitCommonDir)
@@ -332,6 +335,8 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     const failures = []
     let recorded = false
     for (const id of ids) {
+      const targets = autonomy.attributeSavedRuns(mainRoot, open, id, now)
+      if (!targets.some(({ run }) => autonomy.activePause(run, now) !== null)) continue
       if (abandoned.has(id)) {
         skipped.push(id)
         continue

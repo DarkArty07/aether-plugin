@@ -170,3 +170,38 @@ test('R6: the quota-pause message names the run another session left open, and w
   assert.ok(message.includes(`aether-autonomy end ${b.run.id} --outcome incomplete`), message)
   assert.ok(!message.includes('aether-autonomy end --outcome incomplete'), message)
 })
+
+test('selectRun covers same-session latest, known caller with sessionless runs, mixed runs for foreign caller, and unknown id on end', (t) => {
+  // 1. Two open runs with the same session: the latest wins.
+  const s1 = setupRuns(t)
+  const first = s1.open(A)
+  const second = s1.open(B)
+  s1.patch(second.run.id, (run) => { run.session = A })
+  const latest = autonomy.selectRun(s1.repo.dir, { session: A })
+  assert.equal(latest.ok, true)
+  assert.equal(latest.item.run.id, second.run.id)
+  void first
+
+  // 2. Known caller with several runs that have no session: ambiguous.
+  const s2 = setupRuns(t)
+  const u1 = s2.open(A)
+  const u2 = s2.open(B)
+  s2.patch(u1.run.id, (run) => { delete run.session })
+  s2.patch(u2.run.id, (run) => { delete run.session })
+  const amb = autonomy.selectRun(s2.repo.dir, { session: C })
+  assert.equal(amb.ok, false)
+  assert.equal(amb.code, 'ambiguous')
+
+  // 3. Mix of runs with and without a session and a foreign caller: foreign, no item.
+  const s3 = setupRuns(t)
+  s3.open(A)
+  const noSess = s3.open(B)
+  s3.patch(noSess.run.id, (run) => { delete run.session })
+  const mix = autonomy.selectRun(s3.repo.dir, { session: C })
+  assert.equal(mix.ok, false)
+  assert.equal(mix.code, 'foreign')
+  assert.equal(mix.item, undefined)
+
+  // 4. end with an unknown id throws no run <id>.
+  assert.throws(() => autonomy.end(s3.repo.dir, 'done', { id: 'auto-20200101-000000-dead', now: LATER }), /no run auto-20200101-000000-dead/)
+})

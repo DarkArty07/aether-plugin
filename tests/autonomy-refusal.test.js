@@ -42,7 +42,9 @@ test('an open run whose run.json is unreadable is a refusal, not a throw (#232 1
     refusal = autonomy.launchRefusal(repo.dir, { session: SESSION, dataDir, now: Date.parse('2026-10-09T20:00:01.000Z') })
   })
   assert.ok(refusal, 'an unreadable run state refuses the launch')
-  assert.match(refusal.message, /the open run's state could not be read/)
+  assert.match(refusal.message, /could not be read/)
+  assert.match(refusal.message, /run\.json/)
+  assert.match(refusal.message, new RegExp(`aether-autonomy quarantine run ${started.run.id}`))
 })
 
 test('the not-a-repository probe lives in git.js as isRepository (#232 14)', (t) => {

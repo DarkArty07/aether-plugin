@@ -139,3 +139,19 @@ test('R8 and R12: an old-format run with no session receives saved units of a se
   assert.deepEqual([r.recorded, r.run], [true, a.run.id])
   assert.equal(s.read(a.run.id).quotaPauses[0].savedUnits.length, 1)
 })
+
+test('recordSaved without state.json records into a single open run, and refuses with no-attribution when several are open', (t) => {
+  const s1 = setupRuns(t)
+  const only = s1.open(A)
+  autonomy.recordCrossing(s1.repo.dir, crossing, { now: NOW, dataDir: s1.dataDir, session: A })
+  const r1 = autonomy.recordSaved(s1.repo.dir, { run: '20261116-100800-aa11', at: NOW, units: [unit] }, { now: NOW })
+  assert.deepEqual([r1.recorded, r1.run], [true, only.run.id])
+  assert.equal(s1.read(only.run.id).quotaPauses[0].savedUnits.length, 1)
+
+  const s2 = setupRuns(t)
+  s2.open(A)
+  s2.open(B)
+  autonomy.recordCrossing(s2.repo.dir, crossing, { now: NOW, dataDir: s2.dataDir, session: A })
+  const r2 = autonomy.recordSaved(s2.repo.dir, { run: '20261116-100800-bb22', at: NOW, units: [unit] }, { now: NOW })
+  assert.deepEqual([r2.recorded, r2.reason], [false, 'no-attribution'])
+})

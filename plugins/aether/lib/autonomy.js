@@ -404,14 +404,6 @@ function * runs(mainRoot) {
   }
 }
 
-function findOpenRun(mainRoot) {
-  let open = null
-  for (const item of runs(mainRoot)) {
-    if (item.run.ended === null) open = item
-  }
-  return open
-}
-
 function openRuns(mainRoot) {
   const list = []
   for (const item of runs(mainRoot)) {
@@ -424,8 +416,10 @@ function runsSummary(open) {
   return open.map(({ run }) => ({ id: run.id, session: run.session ?? null }))
 }
 
-function formatRunList(open) {
-  return open.map(({ run }) => `${run.id} (session ${run.session || 'unknown'})`).join(', ')
+function formatRunList(open, limit = Infinity) {
+  const shown = open.slice(0, limit)
+  const text = shown.map(({ run }) => `${run.id} (session ${run.session || 'unknown'})`).join(', ')
+  return open.length > limit ? `${text}, and ${open.length - limit} more` : text
 }
 
 function ambiguousMessage(open) {
@@ -487,11 +481,6 @@ function latestSessionRunStart(mainRoot, session) {
     if (latest === null || started > latest) latest = started
   }
   return latest
-}
-
-function openRun(mainRoot) {
-  const open = findOpenRun(mainRoot)
-  return open ? open.run : null
 }
 
 function ceiling(value, fallback) {
@@ -680,6 +669,8 @@ function abandonedRuns(mainRoot, dataDir = runDataDir()) {
       if (record.repo && record.repo !== mainRoot) continue
       const time = recordTime(record)
       const prev = latest.get(record.runId)
+      // Identical finite timestamps let the record read later win (`time >= prev.time`); a record with no readable time
+      // never displaces one with a finite timestamp. Neither case is produced by real writers today.
       const newer = !prev || (Number.isFinite(time) ? (!Number.isFinite(prev.time) || time >= prev.time) : !Number.isFinite(prev.time))
       if (newer) latest.set(record.runId, { status: record.status, time, sweptAt: Date.parse(record.sweptAt) })
     }
@@ -806,7 +797,12 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
   const until = run.ended ? Date.parse(run.ended) : Infinity
   const inWindow = (start) => Number.isFinite(start) && start >= from && start < until
   const sessions = runSessions(run)
-  const matchesSession = (launchSession) => !run.session || !launchSession || sessions.has(launchSession)
+  const unattributedBefore = typeof run.unattributedBefore === 'string' ? Date.parse(run.unattributedBefore) : NaN
+  const matchesSession = (launchSession, startedAt = NaN) =>
+    !run.session ||
+    !launchSession ||
+    sessions.has(launchSession) ||
+    (Number.isFinite(unattributedBefore) && Number.isFinite(startedAt) && startedAt <= unattributedBefore)
   const abandoned = abandonedRuns(mainRoot, dataDir)
   const delegateWindows = delegateAttemptWindows(dataDir)
   const briefCache = new Map()
@@ -840,7 +836,7 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
     } catch {
       // Missing or unreadable state.json: treated as no launching session recorded (R8).
     }
-    if (!matchesSession(launchSession)) continue
+    if (run.session && launchSession && !sessions.has(launchSession) && !Number.isFinite(unattributedBefore)) continue
     let start
     try {
       start = runStartOf(dir)
@@ -848,7 +844,7 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
       failed.add(id)
       continue
     }
-    if (!inWindow(start)) continue
+    if (!inWindow(start) || !matchesSession(launchSession, start)) continue
     let reportNow = now
     if (!fs.existsSync(path.join(dir, 'result.json'))) {
       if (abandoned.has(id)) {
@@ -881,7 +877,6 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
   for (const record of finalizedRecords(dataDir)) {
     if (record.repo !== mainRoot || !isRunId(record.runId)) continue
     const launchSession = typeof record.session === 'string' && record.session ? record.session : null
-    if (!matchesSession(launchSession)) continue
     const report = record.report || {}
     const recordStart = Date.parse(report.speed && report.speed.run && report.speed.run.start)
     if (!inWindow(recordStart)) {
@@ -892,6 +887,9 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
       if (Number.isFinite(recordStart)) continue
       const finalizedAt = Date.parse(record.finalizedAt)
       if (!inWindow(finalizedAt)) continue
+      if (!matchesSession(launchSession, finalizedAt)) continue
+    } else if (!matchesSession(launchSession, recordStart)) {
+      continue
     }
     keep(record.runId, report, launchSession)
   }
@@ -1089,7 +1087,9 @@ function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date
     if (!st.open || !st.stop) return null
     others = st.stop === 'quota' ? runsFor(mainRoot, session).others : null
   } catch (error) {
-    return { stop: 'unreadable', id: null, message: `the open run's state could not be read: ${error.message}` }
+    const match = typeof error.message === 'string' && error.message.match(/(auto-[0-9]{8}-[0-9]{6}-[0-9a-f]+)[/\\]run\.json/)
+    const badId = match ? match[1] : '<id>'
+    return { stop: 'unreadable', id: null, message: `a run's state could not be read (${error.message}); set it aside with: aether-autonomy quarantine run ${badId}` }
   }
   let message
   if (st.stop === 'time') message = `autonomous run ${st.id} reached its time ceiling (${st.hours.elapsed}h / ${st.hours.ceiling}h); close it with: aether-autonomy end --outcome ceiling`
@@ -1147,6 +1147,7 @@ function continueRun(mainRoot, id, { session = null, now = Date.now() } = {}) {
   run.previousSessions = from ? [...prev, from] : [...prev]
   run.session = session
   const iso = new Date(now).toISOString()
+  if (!from && !run.unattributedBefore) run.unattributedBefore = iso
   writeJsonFile(paths.runFile, run)
   fs.appendFileSync(
     paths.diary,
@@ -1310,12 +1311,12 @@ function readSwarmState(mainRoot, swarmRunId) {
 
 function attributeSavedRuns(mainRoot, open, swarmRunId, now) {
   const state = readSwarmState(mainRoot, swarmRunId)
-  if (!state) return []
+  if (!state) return open.length === 1 ? open : []
   if (typeof state.session === 'string' && state.session) {
     return open.filter(({ run }) => !run.session || runSessions(run).has(state.session))
   }
   const compiledMs = typeof state.compiledAt === 'string' ? Date.parse(state.compiledAt) : NaN
-  if (!Number.isFinite(compiledMs)) return []
+  if (!Number.isFinite(compiledMs)) return open.length === 1 ? open : []
   return open.filter(({ run }) => {
     const startMs = Date.parse(run.started)
     const endMs = run.ended ? Date.parse(run.ended) : now
@@ -1422,10 +1423,12 @@ module.exports = {
   check,
   list,
   openRuns,
+  formatRunList,
   runSessions,
   selectRun,
   runsFor,
-  openRun,
+  activePause,
+  attributeSavedRuns,
   start,
   extend,
   launchRefusal,

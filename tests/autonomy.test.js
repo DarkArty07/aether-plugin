@@ -269,7 +269,7 @@ test('start opens a run with the default ceilings and writes the diary skeleton'
       '',
     ].join('\n'),
   )
-  assert.equal(autonomy.openRun(mainRoot).id, run.id)
+  assert.equal(autonomy.selectRun(mainRoot).item.run.id, run.id)
 })
 
 test("the owner's numbers override the default ceilings", (t) => {
@@ -285,12 +285,12 @@ test('start refuses an unverified quote, a ceiling that is not a positive number
     ok: false,
     reason: `the quote is not in the owner's messages of session ${SESSION}`,
   })
-  assert.equal(autonomy.openRun(mainRoot), null)
+  assert.deepEqual(autonomy.openRuns(mainRoot), [])
   for (const bad of [0, -1, Number.NaN, Infinity, '8']) {
     assert.throws(() => autonomy.start(mainRoot, { quote: HOURS, session: SESSION, hours: bad }, { configDir, now: T0 }), /invalid ceiling/)
     assert.throws(() => autonomy.start(mainRoot, { quote: HOURS, session: SESSION, usd: bad }, { configDir, now: T0 }), /invalid ceiling/)
   }
-  assert.equal(autonomy.openRun(mainRoot), null)
+  assert.deepEqual(autonomy.openRuns(mainRoot), [])
   const { run } = autonomy.start(mainRoot, { quote: HOURS, session: SESSION }, { configDir, now: T0 })
   assert.throws(() => autonomy.start(mainRoot, { quote: HOURS, session: SESSION }, { configDir, now: T0 + 1000 }), new RegExp(`run ${run.id} is already open`))
 })
@@ -361,7 +361,7 @@ test('end closes the run with its outcome, and then a new run may start', (t) =>
   assert.throws(() => autonomy.end(mainRoot, 'finished', { now: T0 }), /unknown outcome: finished/)
   const ended = autonomy.end(mainRoot, 'done', { now: T0 + 2 * HOUR })
   assert.deepEqual([ended.id, ended.outcome, ended.ended], [run.id, 'done', '2026-10-09T22:00:00.000Z'])
-  assert.equal(autonomy.openRun(mainRoot), null)
+  assert.deepEqual(autonomy.openRuns(mainRoot), [])
   assert.deepEqual(autonomy.status(mainRoot, { now: T0 }), { open: false })
   assert.throws(() => autonomy.end(mainRoot, 'done', { now: T0 }), /no open run/)
   assert.equal(autonomy.start(mainRoot, { quote: HOURS, session: SESSION }, { configDir, now: T0 + 3 * HOUR }).ok, true)
@@ -372,7 +372,7 @@ test('a run.json that cannot be read is an error', (t) => {
   const dir = path.join(mainRoot, '.aether', 'autonomy', 'auto-20261009-200000-abcd')
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'run.json'), 'nope')
-  assert.throws(() => autonomy.openRun(mainRoot), /cannot read .*run\.json/)
+  assert.throws(() => autonomy.openRuns(mainRoot), /cannot read .*run\.json/)
 })
 
 test('a quote taken from a negated clause is refused, and sin, a plain repeat and a negated revocation are not (R5)', (t) => {
@@ -391,7 +391,7 @@ test('a quote taken from a negated clause is refused, and sin, a plain repeat an
   assert.deepEqual(autonomy.grant(mainRoot, { class: 'push', quote: 'hagas push a origin ni publiques nada', session: SESSION }, { configDir, now: T0 }), denied)
   assert.equal(fs.existsSync(grantsFile(mainRoot)), false, 'a refused grant writes nothing')
   assert.deepEqual(autonomy.start(mainRoot, { quote: 'run all night on this branch', session: SESSION }, { configDir, now: T0 }), denied)
-  assert.equal(autonomy.openRun(mainRoot), null)
+  assert.deepEqual(autonomy.openRuns(mainRoot), [])
 
   for (const quote of ['Haz push sin preguntarme', 'Trabaja toda la noche sin parar', HOURS]) {
     assert.equal(autonomy.verifyQuote(SESSION, quote, { configDir }).ok, true, quote)
@@ -1011,10 +1011,10 @@ test('extend refuses an unverified quote and writes nothing, and refuses with no
     reason: 'no open run',
   })
   assert.equal(autonomy.start(mainRoot, { quote: HOURS, session: SESSION }, { configDir, now: T0 }).ok, true)
-  const before = fs.readFileSync(autonomy.runPaths(mainRoot, autonomy.openRun(mainRoot).id).runFile, 'utf8')
+  const before = fs.readFileSync(autonomy.runPaths(mainRoot, autonomy.selectRun(mainRoot).item.run.id).runFile, 'utf8')
   const r = autonomy.extend(mainRoot, { hours: 16, quote: 'trabaja toda la noche sin parar', session: SESSION }, { configDir, now: T0 + HOUR })
   assert.deepEqual(r, { ok: false, reason: `the quote is not in the owner's messages of session ${SESSION}` })
-  assert.equal(fs.readFileSync(autonomy.runPaths(mainRoot, autonomy.openRun(mainRoot).id).runFile, 'utf8'), before)
+  assert.equal(fs.readFileSync(autonomy.runPaths(mainRoot, autonomy.selectRun(mainRoot).item.run.id).runFile, 'utf8'), before)
 })
 
 test('extend needs a positive number, or unlimited for dollars', (t) => {
@@ -1025,7 +1025,7 @@ test('extend needs a positive number, or unlimited for dollars', (t) => {
     assert.throws(() => autonomy.extend(mainRoot, { hours: bad, quote: EXTEND, session: SESSION }, { configDir, now: T0 }), /invalid ceiling/, String(bad))
     assert.throws(() => autonomy.extend(mainRoot, { usd: bad, quote: EXTEND, session: SESSION }, { configDir, now: T0 }), /invalid ceiling/, String(bad))
   }
-  assert.equal(autonomy.openRun(mainRoot).ceilings.usd, 50)
+  assert.equal(autonomy.selectRun(mainRoot).item.run.ceilings.usd, 50)
 })
 
 test('launchRefusal recognizes non-repository errors in a localized Git environment', (t) => {

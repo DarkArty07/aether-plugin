@@ -729,5 +729,3 @@ test('the state of a delegate run holds the session of the call (spec 041 R7)', 
   const state = JSON.parse(fs.readFileSync(path.join(repo.dir, '.aether', 'runs', r.json.id, 'state.json'), 'utf8'))
   assert.equal(state.session, 'sess-delegate-1')
 })
-
-

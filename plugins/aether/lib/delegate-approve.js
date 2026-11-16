@@ -176,15 +176,18 @@ function mergeExternal(cwd, env, { runId, taskId }) {
   const merged = spawnSync(process.execPath, [binOf('aether-wt'), 'merge', runId, taskId], { cwd, env, encoding: 'utf8' })
   const body = lastJson(merged.stdout)
   if (merged.status === 0 && body?.merged === true) {
-    const after = gitOrNull(['rev-parse', 'HEAD'], cwd)?.stdout ?? ''
-    const contains = unitTip === '' || git(['merge-base', '--is-ancestor', unitTip, after], cwd, { allowFail: true }).status === 0
-    if (!contains) {
-      return { ok: false, reason: 'merge did not advance the target branch to contain the delegate commit' }
+    if (unitTip !== '') {
+      const after = gitOrNull(['rev-parse', 'HEAD'], cwd)?.stdout ?? ''
+      const contains = after !== '' && git(['merge-base', '--is-ancestor', unitTip, after], cwd, { allowFail: true }).status === 0
+      if (!contains) {
+        return { ok: false, reason: 'merge did not advance the target branch to contain the delegate commit' }
+      }
+      if (body?.already === true || (before !== '' && after === before)) {
+        return { ok: true, already: true }
+      }
+      return { ok: true }
     }
-    if (body?.already === true || (before !== '' && after === before && contains)) {
-      return { ok: true, already: true }
-    }
-    return { ok: true }
+    return body?.already === true ? { ok: true, already: true } : { ok: true }
   }
   const reason = body && (body.detail || body.reason || body.error)
   return { ok: false, reason: typeof reason === 'string' && reason !== '' ? reason : `aether-wt merge ${runId} ${taskId} failed` }
@@ -201,7 +204,7 @@ function mergeWorktree(cwd, worktree, task) {
   if (merged.status === 0) {
     const after = git(['rev-parse', 'HEAD'], cwd).stdout
     const contains = git(['merge-base', '--is-ancestor', commit, after], cwd, { allowFail: true }).status === 0
-    if (after === before || !contains) {
+    if (!contains) {
       return { ok: false, reason: 'merge did not advance the target branch to contain the delegate commit' }
     }
     return { ok: true }
