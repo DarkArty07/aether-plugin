@@ -275,6 +275,52 @@ function harnessesCheck(found, options) {
   return check('harnesses', 'info', `no other harness is installed (${HARNESS_NAMES.map(cliOf).join(', ')}): Aether runs on Claude alone`)
 }
 
+// The models of the last daily reading, per active harness (spec 043 R4): new and retired ids, when each harness was
+// read and, when it could not be read, why. It only reads the result of lib/model-watch.js; it never writes anything,
+// not even `noticed`. info when every active harness was read (or there is no reading yet); warn when one could not be
+// read; never error, so it never fails the report on its own.
+function modelsCheck({ dataDir = null, harnesses = [], result = undefined } = {}) {
+  let res = result
+  if (res === undefined) {
+    try {
+      res = dataDir ? require('./model-watch.js').readResult(dataDir) : null
+    } catch {
+      res = null
+    }
+  }
+  const entries = res && typeof res === 'object' && res.harnesses && typeof res.harnesses === 'object' ? res.harnesses : null
+  const names = Array.isArray(harnesses) && harnesses.length > 0 ? harnesses : (entries ? Object.keys(entries) : [])
+  if (!entries || names.length === 0) {
+    return check('models', 'info', 'no model reading yet: Aether reads the models of the active harnesses once a day and shows new and retired ones here')
+  }
+  const lines = []
+  let unreadable = false
+  for (const name of names) {
+    const entry = entries[name]
+    if (!entry || typeof entry !== 'object') {
+      lines.push(`${name}: not read yet`)
+      continue
+    }
+    const readAt = Number.isFinite(entry.readAt) ? `readAt ${new Date(entry.readAt).toISOString()}` : 'not read yet'
+    if (entry.status === 'ok') {
+      const added = Array.isArray(entry.new) ? entry.new : []
+      const retired = Array.isArray(entry.retired) ? entry.retired : []
+      const parts = [`new models: ${added.length > 0 ? added.join(', ') : 'none'}`, `retired: ${retired.length > 0 ? retired.join(', ') : 'none'}`, readAt]
+      // The codex listing is a cache on disk, so its reading is only as fresh as the last codex run.
+      if (name === 'codex') parts.push('cache is as fresh as the last codex run')
+      lines.push(`${name}: ${parts.join('; ')}`)
+    } else if (entry.status === 'no-capture') {
+      lines.push(`${name}: ${entry.reason || 'no capture means without a model call'} (${readAt})`)
+    } else {
+      unreadable = true
+      const cause = entry.reason || (entry.skipped ? `skipped: ${entry.skipped}` : '')
+      const why = cause ? `: ${cause}` : ''
+      lines.push(`${name}: could not be read (${entry.status || 'failed'}${why}; ${readAt})`)
+    }
+  }
+  return check('models', unreadable ? 'warn' : 'info', lines.join('\n'))
+}
+
 function projectCheck(exec, cwd, name) {
   const out = output(exec, 'git', ['-C', cwd, 'rev-parse', '--is-inside-work-tree'])
   if (out !== null && out.trim() === 'true') return check('project', 'ok', `${cwd} is a git repository`)
@@ -339,6 +385,15 @@ function run({ name = DEFAULT_NAME, env = process.env, cwd = process.cwd(), exec
   // The option names of the harnesses whose CLI is on the PATH.
   const found = HARNESS_NAMES.filter((name) => findOnPath(cliOf(name), env, cwd) !== null)
   const { command, check: commandCheck } = commandState(name, env, cwd)
+  // The harnesses the owner enabled, for the models check; the data dir holds their last daily reading.
+  const { enabledHarnesses } = require('./lanes.js')
+  const active = enabledHarnesses({ AETHER_LANE_HARNESSES: env.CLAUDE_PLUGIN_OPTION_HARNESSES ?? env.AETHER_LANE_HARNESSES })
+  let modelsDir = null
+  try {
+    modelsDir = require('./run.js').dataDir(env)
+  } catch {
+    modelsDir = null
+  }
   const checks = [
     claudeCheck(exec),
     nodeCheck(nodeVersion),
@@ -348,6 +403,7 @@ function run({ name = DEFAULT_NAME, env = process.env, cwd = process.cwd(), exec
     workflowsCheck(env, settingsSources(configDir, cwd)),
     ...[planCheck(exec, env, configDir)].filter(Boolean),
     harnessesCheck(found, options),
+    modelsCheck({ dataDir: modelsDir, harnesses: active }),
     projectCheck(exec, cwd, name),
   ]
   return {
@@ -362,4 +418,4 @@ function run({ name = DEFAULT_NAME, env = process.env, cwd = process.cwd(), exec
   }
 }
 
-module.exports = { run, usageError, DoctorError, MIN_CLAUDE, MIN_GIT, MIN_NODE_MAJOR }
+module.exports = { run, modelsCheck, usageError, DoctorError, MIN_CLAUDE, MIN_GIT, MIN_NODE_MAJOR }

@@ -18,7 +18,7 @@ const doctor = require('../plugins/aether/lib/doctor.js')
 const ROOT = path.join(__dirname, '..')
 const BIN = path.join(ROOT, 'plugins', 'aether', 'bin', 'aether-doctor')
 const MARKER = '# aether-first-setup stub'
-const IDS = ['claude', 'node', 'git', 'aether', 'command', 'workflows', 'harnesses', 'project']
+const IDS = ['claude', 'node', 'git', 'aether', 'command', 'workflows', 'harnesses', 'models', 'project']
 const KEYS = ['checks', 'command', 'harnesses', 'installed', 'ok', 'options', 'version']
 const STATUSES = ['ok', 'info', 'warn', 'error']
 const INSTALL_FIX = 'claude plugin install aether --marketplace DarkArty07/aether-plugin'
@@ -159,7 +159,7 @@ test('a fully set up machine has no problem: every check is ok or info', (t) => 
   settings(box.config, 'settings.json', { enableWorkflows: true })
   const r = report(box, { env: { PATH: [box.bin, box.local, box.other].join(path.delimiter) } })
   assert.deepEqual(r.checks.map((entry) => `${entry.id} ${entry.status}`), [
-    'claude ok', 'node ok', 'git ok', 'aether ok', 'command ok', 'workflows ok', 'harnesses info', 'project ok',
+    'claude ok', 'node ok', 'git ok', 'aether ok', 'command ok', 'workflows ok', 'harnesses info', 'models info', 'project ok',
   ])
   assert.equal(r.installed, '0.29.0')
   assert.deepEqual(r.harnesses, ['codex'])
@@ -665,6 +665,84 @@ test('options: the saved superdelegation and harnesses, as saved, or null when t
   assert.deepEqual(report(box).options, { superdelegation: null, harnesses: 'grok' })
   settings(box.config, 'settings.json', '{ not json')
   assert.equal(report(box).options, null)
+})
+
+// ---- models: the last daily reading of new and retired models (spec 043 R4)
+function writeResult(dir, harnesses) {
+  const at = Date.now()
+  const watch = path.join(dir, 'model-watch')
+  fs.mkdirSync(watch, { recursive: true })
+  const entries = {}
+  for (const [name, diff] of Object.entries(harnesses)) entries[name] = { status: 'ok', readAt: at, new: [], retired: [], noticed: true, ...diff }
+  const file = path.join(watch, 'result.json')
+  fs.writeFileSync(file, `${JSON.stringify({ at, harnesses: entries }, null, 2)}\n`)
+  return file
+}
+
+const withModels = (box, dir, harnesses) => ({ AETHER_DATA_DIR: dir, AETHER_LANE_HARNESSES: harnesses })
+
+test('models: a reading with differences is an info that names the harness, the ids and readAt, and never fails the report', (t) => {
+  const box = sandbox(t)
+  const dir = tempDir(t, 'aether-data-')
+  const at = Date.now()
+  writeResult(dir, { grok: { new: ['grok-new-1'], retired: ['grok-old-1'], readAt: at } })
+  const r = report(box, { env: withModels(box, dir, 'grok') })
+  const entry = byId(r, 'models')
+  assert.equal(entry.status, 'info')
+  assert.ok(entry.detail.includes('grok'), entry.detail)
+  assert.ok(entry.detail.includes('grok-new-1'), entry.detail)
+  assert.ok(entry.detail.includes('grok-old-1'), entry.detail)
+  assert.ok(entry.detail.includes('readAt'), entry.detail)
+  assert.equal(entry.fix, null)
+  assert.equal(r.ok, true)
+  // The reading stays byte for byte as it was: the doctor only reads, not even `noticed`.
+  const before = fs.readFileSync(path.join(dir, 'model-watch', 'result.json'))
+  report(box, { env: withModels(box, dir, 'grok') })
+  assert.deepEqual(fs.readFileSync(path.join(dir, 'model-watch', 'result.json')), before)
+})
+
+test('models: without differences, without a reading, or without a file it is an info and the report stays ok', (t) => {
+  const box = sandbox(t)
+  const dir = tempDir(t, 'aether-data-')
+  writeResult(dir, { grok: { new: [], retired: [] } })
+  const same = byId(report(box, { env: withModels(box, dir, 'grok') }), 'models')
+  assert.equal(same.status, 'info')
+  assert.ok(same.detail.includes('grok') && same.detail.includes('none'), same.detail)
+  assert.equal(report(box, { env: withModels(box, dir, 'grok') }).ok, true)
+  const missing = byId(report(box, { env: withModels(box, tempDir(t, 'aether-data-'), 'grok') }), 'models')
+  assert.equal(missing.status, 'info')
+  assert.ok(missing.detail.includes('no model reading yet'), missing.detail)
+  const broken = tempDir(t, 'aether-data-')
+  fs.mkdirSync(path.join(broken, 'model-watch'), { recursive: true })
+  fs.writeFileSync(path.join(broken, 'model-watch', 'result.json'), 'not json{{{')
+  assert.equal(byId(report(box, { env: withModels(box, broken, 'grok') }), 'models').status, 'info')
+})
+
+test('models: a harness that could not be read is a warning that says why, and the report still passes', (t) => {
+  const box = sandbox(t)
+  const dir = tempDir(t, 'aether-data-')
+  writeResult(dir, { grok: { status: 'failed', reason: 'timed out after 10000ms' } })
+  const r = report(box, { env: withModels(box, dir, 'grok') })
+  const entry = byId(r, 'models')
+  assert.equal(entry.status, 'warn')
+  assert.ok(entry.detail.includes('grok') && entry.detail.includes('timed out after 10000ms'), entry.detail)
+  assert.equal(r.ok, true, 'a warning is not an error')
+})
+
+test('models: codex names its cache limit and muse its missing capture, without a warning', (t) => {
+  const box = sandbox(t)
+  const dir = tempDir(t, 'aether-data-')
+  writeResult(dir, {
+    codex: { new: ['codex-new-1'], retired: [] },
+    muse: { status: 'no-capture', reason: 'no capture means without a model call' },
+  })
+  const r = report(box, { env: withModels(box, dir, 'codex,muse') })
+  const entry = byId(r, 'models')
+  assert.equal(entry.status, 'info', entry.detail)
+  assert.ok(entry.detail.includes('codex-new-1'), entry.detail)
+  assert.ok(entry.detail.includes('cache is as fresh as the last codex run'), entry.detail)
+  assert.ok(entry.detail.includes('muse') && entry.detail.includes('no capture means'), entry.detail)
+  assert.equal(r.ok, true)
 })
 
 // ---- project
