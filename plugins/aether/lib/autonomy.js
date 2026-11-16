@@ -27,7 +27,7 @@ const WINDOW_KINDS = ['five_hour', 'seven_day']
 
 const CONFIG_FILE = path.join(__dirname, '..', 'config', 'autonomy.json')
 const NO_TRANSCRIPT = 'no transcript for session '
-const SOURCE_LABELS = { owner: 'del dueño', default: 'por defecto' }
+const SOURCE_LABELS = { flag: 'por bandera', plan: 'del plan', owner: 'del dueño', default: 'por defecto' }
 
 function assertClass(cls) {
   if (!CLASSES.includes(cls)) throw new Error(`unknown class: ${cls}`)
@@ -79,9 +79,12 @@ function isHeadlessTranscript(records) {
     records.every((r) => !r || typeof r.entrypoint !== 'string' || r.entrypoint === 'sdk-cli')
 }
 
-function hasApprovedPlanMode(records, latestStarted) {
+const PLAN_HEADING = '## Approved Plan:'
+
+function approvedPlanEntry(records, latestStarted) {
   const uses = new Set()
   const counted = new Set()
+  let matched = null
   for (const record of records) {
     if (record && record.isSidechain === true) continue
     const content = record && record.message && record.message.content
@@ -93,11 +96,62 @@ function hasApprovedPlanMode(records, latestStarted) {
       const texts = typeof block.content === 'string' ? [block.content] : Array.isArray(block.content) ? block.content.filter((part) => part && part.type === 'text' && typeof part.text === 'string').map((part) => part.text) : []
       if (texts.some((text) => text.startsWith('User has approved your plan.') || text.includes('\nUser has approved your plan.'))) {
         counted.add(block.tool_use_id)
-        if (latestStarted === null || Date.parse(record.timestamp) > latestStarted) return true
+        if (latestStarted === null || Date.parse(record.timestamp) > latestStarted) {
+          const joined = texts.join('\n')
+          const idx = joined.indexOf(PLAN_HEADING)
+          matched = { planText: idx === -1 ? null : joined.slice(idx + PLAN_HEADING.length).trim() }
+        }
       }
     }
   }
-  return false
+  return matched
+}
+
+function hasApprovedPlanMode(records, latestStarted) {
+  return approvedPlanEntry(records, latestStarted) !== null
+}
+
+function approvedPlanText(records, latestStarted) {
+  const entry = approvedPlanEntry(records, latestStarted)
+  return entry ? entry.planText : null
+}
+
+function parsePlanNumber(raw) {
+  const n = Number(String(raw).replace(/,/g, ''))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function collectUniqueNumbers(text, regex) {
+  const values = new Set()
+  for (const match of text.matchAll(regex)) {
+    const n = parsePlanNumber(match[1])
+    if (n !== null) values.add(n)
+  }
+  return values
+}
+
+function resolvePlanKind(values, kind, unreadable) {
+  if (values.size === 1) return [...values][0]
+  if (values.size > 1) unreadable.push(kind)
+  return null
+}
+
+function ceilingsFromPlan(text) {
+  if (typeof text !== 'string' || !text.trim()) return { hours: null, usd: null, unreadable: [] }
+  const num = '((?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?)'
+  const hoursRe = new RegExp(`(?<![\\p{L}\\p{N}.$,])${num}\\s*(?:horas?|hours?|h)(?![\\p{L}\\p{N}])`, 'giu')
+  const usdPrefixRe = new RegExp(`(?<![\\p{L}\\p{N}])(?:US\\s*\\$|USD|\\$)\\s*${num}(?![\\p{L}\\p{N}]|\\.\\d)`, 'giu')
+  const usdSuffixRe = new RegExp(`(?<![\\p{L}\\p{N}.$,])${num}\\s*(?:d[oó]lares|d[oó]lar|dollars?)(?![\\p{L}\\p{N}])`, 'giu')
+
+  const hoursValues = collectUniqueNumbers(text, hoursRe)
+  const usdValues = new Set([
+    ...collectUniqueNumbers(text, usdPrefixRe),
+    ...collectUniqueNumbers(text, usdSuffixRe),
+  ])
+  const unreadable = []
+  const hours = resolvePlanKind(hoursValues, 'hours', unreadable)
+  const usd = resolvePlanKind(usdValues, 'usd', unreadable)
+  return { hours, usd, unreadable }
 }
 
 const NEGATED_REASON = "the quote is in a negated clause of the owner's message"
@@ -483,10 +537,16 @@ function latestSessionRunStart(mainRoot, session) {
   return latest
 }
 
-function ceiling(value, fallback) {
-  if (value === null || value === undefined) return { value: fallback, source: 'default' }
-  if (!isPositive(value)) throw new Error(`invalid ceiling: ${value}`)
-  return { value, source: 'owner' }
+function ceiling(flagValue, planValue, fallback) {
+  if (flagValue !== null && flagValue !== undefined) {
+    if (!isPositive(flagValue)) throw new Error(`invalid ceiling: ${flagValue}`)
+    return { value: flagValue, source: 'flag' }
+  }
+  if (planValue !== null && planValue !== undefined) {
+    if (!isPositive(planValue)) throw new Error(`invalid ceiling: ${planValue}`)
+    return { value: planValue, source: 'plan' }
+  }
+  return { value: fallback, source: 'default' }
 }
 
 function diarySkeleton(run) {
@@ -519,18 +579,36 @@ function diarySkeleton(run) {
 
 function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { configDir, dataDir = runDataDir(), now = Date.now() } = {}) {
   const defaults = loadCeilings()
-  const h = ceiling(hours, defaults.hours)
-  const u = ceiling(usd, defaults.usd)
+  if (hours !== null && hours !== undefined && !isPositive(hours)) throw new Error(`invalid ceiling: ${hours}`)
+  if (usd !== null && usd !== undefined && !isPositive(usd)) throw new Error(`invalid ceiling: ${usd}`)
   const sel = selectRun(mainRoot, { session })
   if (sel.ok && (!session || sel.item.run.session === session)) {
     throw new Error(`run ${sel.item.run.id} is already open`)
   }
   const verified = verifyQuote(session, quote, { configDir })
   if (!verified.ok) return { ok: false, reason: verified.reason }
+  const { records } = readSessionRecords(configDir, session)
+  const latestStart = latestSessionRunStart(mainRoot, session)
   if (isAetherSession(resolveDataDir(dataDir), session)) {
-    const { records } = readSessionRecords(configDir, session)
-    if (!isHeadlessTranscript(records) && !hasApprovedPlanMode(records, latestSessionRunStart(mainRoot, session))) {
+    if (!isHeadlessTranscript(records) && !hasApprovedPlanMode(records, latestStart)) {
       return { ok: false, reason: 'interactive session requires an approved plan in plan mode (ExitPlanMode) before starting an autonomous run; present the plan in plan mode and wait for the owner to approve it before running aether-autonomy start' }
+    }
+  }
+  const planText = approvedPlanText(records, latestStart)
+  const planCeilings = planText !== null ? ceilingsFromPlan(planText) : { hours: null, usd: null, unreadable: [] }
+  const h = ceiling(hours, planCeilings.hours, defaults.hours)
+  const u = ceiling(usd, planCeilings.usd, defaults.usd)
+  const notices = []
+  if (h.source === 'flag' && planCeilings.hours !== null && h.value !== planCeilings.hours) {
+    notices.push(`--hours ${h.value} overrides the approved plan's ${planCeilings.hours} h`)
+  }
+  if (u.source === 'flag' && planCeilings.usd !== null && u.value !== planCeilings.usd) {
+    notices.push(`--usd ${u.value} overrides the approved plan's US$ ${planCeilings.usd}`)
+  }
+  for (const kind of planCeilings.unreadable) {
+    const source = kind === 'hours' ? h.source : u.source
+    if (source === 'default') {
+      notices.push(`the approved plan named more than one ${kind} figure, so start could not read it`)
     }
   }
   const run = {
@@ -554,7 +632,9 @@ function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { co
   fs.mkdirSync(paths.dir)
   writeJsonFile(paths.runFile, run)
   fs.writeFileSync(paths.diary, diarySkeleton(run))
-  return { ok: true, run, runFile: paths.runFile, diary: paths.diary }
+  const out = { ok: true, run, runFile: paths.runFile, diary: paths.diary }
+  if (notices.length) out.notices = notices
+  return out
 }
 
 // Widens the ceilings of the open run without closing it (issue 253): the new
@@ -1432,6 +1512,8 @@ module.exports = {
   readSwarmState,
   start,
   extend,
+  approvedPlanText,
+  ceilingsFromPlan,
   launchRefusal,
   spend,
   status,

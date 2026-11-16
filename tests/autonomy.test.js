@@ -275,8 +275,8 @@ test('start opens a run with the default ceilings and writes the diary skeleton'
 test("the owner's numbers override the default ceilings", (t) => {
   const { configDir, mainRoot } = setup(t)
   const { run, diary } = autonomy.start(mainRoot, { quote: HOURS, session: SESSION, hours: 3, usd: 20 }, { configDir, now: T0 })
-  assert.deepEqual(run.ceilings, { hours: 3, usd: 20, source: { hours: 'owner', usd: 'owner' } })
-  assert.ok(fs.readFileSync(diary, 'utf8').includes('- Horas: 3 (del dueño)\n- USD: 20 (del dueño)\n'))
+  assert.deepEqual(run.ceilings, { hours: 3, usd: 20, source: { hours: 'flag', usd: 'flag' } })
+  assert.ok(fs.readFileSync(diary, 'utf8').includes('- Horas: 3 (por bandera)\n- USD: 20 (por bandera)\n'))
 })
 
 test('start refuses an unverified quote, a ceiling that is not a positive number, and a second open run', (t) => {
@@ -573,7 +573,10 @@ function planUse(toolUseId = 'toolu_plan_1', timestamp = '2026-04-06T10:00:02.00
   })
 }
 
-function planResult(toolUseId = 'toolu_plan_1', approved = true, timestamp = '2026-04-06T10:00:03.000Z') {
+function planResult(toolUseId = 'toolu_plan_1', approved = true, timestamp = '2026-04-06T10:00:03.000Z', planText = null) {
+  const approvedContent = planText !== null
+    ? `User has approved your plan. You can now start coding.\n\n## Approved Plan:\n${planText}`
+    : 'User has approved your plan. You can now start coding.'
   return JSON.stringify({
     type: 'user',
     entrypoint: 'cli',
@@ -586,7 +589,7 @@ function planResult(toolUseId = 'toolu_plan_1', approved = true, timestamp = '20
           tool_use_id: toolUseId,
           is_error: !approved,
           content: approved
-            ? 'User has approved your plan. You can now start coding.'
+            ? approvedContent
             : "The user doesn't want to proceed with this tool use.",
         },
       ],
@@ -1057,5 +1060,212 @@ test('launchRefusal recognizes non-repository errors in a localized Git environm
     childProcess.spawnSync = original
     require.cache[gitPath] = gitModule
     require.cache[autonomyPath] = autonomyModule
+  }
+})
+
+test('ceilingsFromPlan parses hours and usd figures, rejects conflicting duplicates, and handles empty/null', () => {
+  const cases = [
+    ['10 horas', { hours: 10, usd: null, unreadable: [] }],
+    ['$300', { hours: null, usd: 300, unreadable: [] }],
+    ['300 dollars', { hours: null, usd: 300, unreadable: [] }],
+    ['USD 1,000', { hours: null, usd: 1000, unreadable: [] }],
+    ['- **Topes:** 10 h y US$ 300, hasta cerrar.', { hours: 10, usd: 300, unreadable: [] }],
+    ['2.5 hours and 12.50 dólares', { hours: 2.5, usd: 12.5, unreadable: [] }],
+    ['10 h primero y 10 horas después', { hours: 10, usd: null, unreadable: [] }],
+    ['4 h y luego 10 h, US$ 300', { hours: null, usd: 300, unreadable: ['hours'] }],
+    ['10 h, $300 y $500', { hours: 10, usd: null, unreadable: ['usd'] }],
+    ['', { hours: null, usd: null, unreadable: [] }],
+    [null, { hours: null, usd: null, unreadable: [] }],
+  ]
+  for (const [input, expected] of cases) {
+    assert.deepEqual(autonomy.ceilingsFromPlan(input), expected, String(input))
+  }
+})
+
+test('start reads ceilings from the approved plan, lets flags override with notice, and handles missing/unreadable figures', (t) => {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const planWithBoth = '# Plan\n- **Topes:** 10 h y US$ 300'
+
+  // 1. Approved plan with 10 h and US$ 300, no flags -> source: plan, no notices
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', planWithBoth),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const res = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(res.ok, true)
+    assert.deepEqual(res.run.ceilings, { hours: 10, usd: 300, source: { hours: 'plan', usd: 'plan' } })
+    assert.equal(res.notices, undefined)
+  }
+
+  // 2. Same approval with hours: 12 flag -> flag overrides with notice; same value (hours: 10) -> no notice
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', planWithBoth),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const diff = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION, hours: 12 }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(diff.ok, true)
+    assert.deepEqual(diff.run.ceilings, { hours: 12, usd: 300, source: { hours: 'flag', usd: 'plan' } })
+    assert.deepEqual(diff.notices, ["--hours 12 overrides the approved plan's 10 h"])
+
+    // Earlier approval before the ended run cannot open another run or supply plan text
+    autonomy.end(mainRoot, 'done', { session: SESSION, now: Date.parse('2026-04-06T10:01:00.000Z') })
+    const reused = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse('2026-04-06T10:02:00.000Z') })
+    assert.equal(reused.ok, false)
+  }
+
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', planWithBoth),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const same = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION, hours: 10 }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(same.ok, true)
+    assert.deepEqual(same.run.ceilings, { hours: 10, usd: 300, source: { hours: 'flag', usd: 'plan' } })
+    assert.equal(same.notices, undefined)
+  }
+
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', planWithBoth),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const usdDiff = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION, usd: 400 }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(usdDiff.ok, true)
+    assert.deepEqual(usdDiff.run.ceilings, { hours: 10, usd: 400, source: { hours: 'plan', usd: 'flag' } })
+    assert.deepEqual(usdDiff.notices, ["--usd 400 overrides the approved plan's US$ 300"])
+  }
+
+  // 3. Plan without figures -> defaults (8 h, US$ 50), no notice; with usd flag -> flag + default
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', '# Plan\nSolo pasos técnicos sin topes.'),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const def = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(def.ok, true)
+    assert.deepEqual(def.run.ceilings, { hours: 8, usd: 50, source: { hours: 'default', usd: 'default' } })
+    assert.equal(def.notices, undefined)
+  }
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', '# Plan\nSolo pasos técnicos sin topes.'),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const flagged = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION, usd: 25 }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(flagged.ok, true)
+    assert.deepEqual(flagged.run.ceilings, { hours: 8, usd: 25, source: { hours: 'default', usd: 'flag' } })
+    assert.equal(flagged.notices, undefined)
+  }
+
+  // 4. Plan with two distinct hours figures (4 h and 10 h) and US$ 300 -> default hours + unreadable notice, usd from plan; conflicting usd -> default usd + unreadable notice; flag overrides unreadable without unreadable notice
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', '# Plan\nFase 1: 4 h. Total: 10 h y US$ 300.'),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const res = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(res.ok, true)
+    assert.deepEqual(res.run.ceilings, { hours: 8, usd: 300, source: { hours: 'default', usd: 'plan' } })
+    assert.deepEqual(res.notices, ['the approved plan named more than one hours figure, so start could not read it'])
+  }
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', '# Plan\n10 h, $100 o $300.'),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const res = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(res.ok, true)
+    assert.deepEqual(res.run.ceilings, { hours: 10, usd: 50, source: { hours: 'plan', usd: 'default' } })
+    assert.deepEqual(res.notices, ['the approved plan named more than one usd figure, so start could not read it'])
+  }
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', '# Plan\nFase 1: 4 h. Total: 10 h y US$ 300.'),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const res = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION, hours: 12 }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(res.ok, true)
+    assert.deepEqual(res.run.ceilings, { hours: 12, usd: 300, source: { hours: 'flag', usd: 'plan' } })
+    assert.equal(res.notices, undefined)
+  }
+
+  // 5. Rejected plan (not approved) -> start refuses; no approval -> refuses; human message after approval with different figures -> ignored (R10)
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', false, '2026-04-06T10:00:03.000Z', planWithBoth),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const refused = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(refused.ok, false)
+  }
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', planWithBoth),
+        human('mejor usa 20 h y US$ 999', '2026-04-06T10:00:04.000Z', { entrypoint: 'cli' }),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const res = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(res.ok, true)
+    assert.deepEqual(res.run.ceilings, { hours: 10, usd: 300, source: { hours: 'plan', usd: 'plan' } })
+    assert.equal(res.notices, undefined)
+  }
+
+  // 6. approvedPlanText respects latestStarted and takes the latest matching approval
+  {
+    const records = [
+      JSON.parse(planUse('p1', '2026-04-06T10:00:02.000Z')),
+      JSON.parse(planResult('p1', true, '2026-04-06T10:00:03.000Z', '4 h y US$ 100')),
+      JSON.parse(planUse('p2', '2026-04-06T10:01:02.000Z')),
+      JSON.parse(planResult('p2', true, '2026-04-06T10:01:03.000Z', '10 h y US$ 300')),
+    ]
+    assert.equal(autonomy.approvedPlanText(records, null), '10 h y US$ 300')
+    assert.equal(autonomy.approvedPlanText(records, Date.parse('2026-04-06T10:02:00.000Z')), null)
   }
 })

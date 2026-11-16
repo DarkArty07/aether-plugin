@@ -86,7 +86,7 @@ test('R13 and R15: continue reads no transcript, preserves pauses and spend, cha
   const run = read(a.run.id)
   assert.equal(run.session, stranger)
   assert.deepEqual(run.previousSessions, [A, C])
-  assert.deepEqual(run.ceilings, { hours: 2, usd: 15, source: { hours: 'owner', usd: 'owner' } })
+  assert.deepEqual(run.ceilings, { hours: 2, usd: 15, source: { hours: 'flag', usd: 'flag' } })
   assert.deepEqual(run.quotaPauses, [pause])
   assert.deepEqual(run.spend.map((e) => e.usd), [3.5])
   assert.equal(raw(b.run.id).includes(stranger), false)

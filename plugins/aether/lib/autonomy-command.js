@@ -107,7 +107,7 @@ function getSession(args, required = false, env = process.env) {
   return id
 }
 
-function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
+function main(argv, { cwd = process.cwd(), env = process.env, stderr = process.stderr } = {}) {
   const sub = argv[0]
   // --all and --remove are boolean flags; they take no value, so they leave `rest`
   // before assertFlags checks that every flag is followed by a value.
@@ -193,6 +193,10 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     ensureExcluded(gitCommonDir)
     const res = autonomy.start(mainRoot, { quote, session, hours, usd }, { dataDir: env.AETHER_DATA_DIR || dataDir(env), configDir: env.CLAUDE_CONFIG_DIR })
     if (!res.ok) return { code: 2, out: { verified: false, reason: res.reason } }
+    const c = res.run.ceilings
+    const usdLabel = c.usd === null ? 'unlimited' : c.usd
+    stderr.write(`hours ${c.hours} (${c.source.hours}), usd ${usdLabel} (${c.source.usd})\n`)
+    for (const notice of res.notices || []) stderr.write(`${notice}\n`)
     return {
       code: 0,
       out: {
@@ -200,7 +204,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
           id: res.run.id,
           runFile: res.runFile,
           diary: res.diary,
-          ceilings: res.run.ceilings,
+          ceilings: c,
         },
       },
     }
