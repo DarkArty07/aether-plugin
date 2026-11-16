@@ -109,12 +109,21 @@ test('the last field of a row keeps its space, and ladder changes are shown but 
   const out = run(f, ['--write']); assert.match(out.stdout, /Recalculated ladder: haiku high/); assert.match(out.stdout, /Stored ladder: changed\n  extra rung 2: haiku xhigh\n  extra rung 3: sonnet high\n  extra rung 4: opus high\n  extra rung 5: opus xhigh\n/); assert.match(out.stdout, /The stored ladder was not written:/); assert.equal(fs.readFileSync(f.ladder, 'utf8'), before); assert.match(fs.readFileSync(f.pairs, 'utf8'), /"checked": "2026-11-13" \}/)
 })
 test('the code figures are not read: a row keeps the code fields it carries, and the report names none', t => {
-  const carried = { ...haikuHigh, code: 21.72, codeCostPerTaskUsd: 0.331, codeMinutesPerTask: 12.1, codeChecked: '2026-11-10' }
+  const carried = { ...haikuHigh, code: 21.72, codeChecked: '2026-11-10' }
   const f = setup(t, [carried])
-  writeSnapshot(f, snapshotOf({ [carried.slug]: { figures: { intelligence: 29.9, code: 25, codeCostPerTaskUsd: 0.5, codeMinutesPerTask: 9 } } }))
+  writeSnapshot(f, snapshotOf({ [carried.slug]: { figures: { intelligence: 29.9, code: 25 } } }))
   const out = run(f, ['--write'])
   assert.equal(out.exitCode, 0, out.stdout)
   const r = rowsOf(f)[0]
-  assert.deepEqual([r.intelligence, r.code, r.codeCostPerTaskUsd, r.codeMinutesPerTask, r.codeChecked], [29.9, 21.72, 0.331, 12.1, '2026-11-10'])
+  assert.deepEqual([r.intelligence, r.code, r.codeChecked], [29.9, 21.72, '2026-11-10'])
   assert.doesNotMatch(out.stdout, /code/)
+})
+test('bad arguments and usage print usage and exit 2', t => {
+  const f = setup(t, [haikuHigh])
+  for (const bad of [['--nope'], ['--pairs'], ['--ladder'], ['--snapshot'], ['positional']]) {
+    const out = main(bad)
+    assert.equal(out.exitCode, 2, bad.join(' '))
+    assert.match(out.stdout, /^usage: node scripts\/refresh-lanes\.js /, bad.join(' '))
+  }
+  assert.equal(fs.readFileSync(f.pairs, 'utf8').includes('haiku'), true)
 })

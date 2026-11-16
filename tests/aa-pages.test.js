@@ -35,7 +35,7 @@ test('parsePage selects the matching start whose briefcase is closest', () => {
   const closer = block(slug, OWN)
   const found = reader.parsePage(page(farther, closer), slug)
   assert.equal(found.figures.intelligence, 51.8)
-  assert.equal(found.figures.code, 56.57)
+  assert.equal(found.figures.terminalBench, 0.566)
 })
 
 test('parsePage reads the block of the page\'s own model, never a neighbour\'s or the first of the page, rounded as the tables keep them', () => {
@@ -43,23 +43,24 @@ test('parsePage reads the block of the page\'s own model, never a neighbour\'s o
   const found = reader.parsePage(html, 'claude-opus-5-5-high')
   assert.equal(found.name, 'Model claude-opus-5-5-high')
   assert.deepEqual(
-    [found.figures.intelligence, found.figures.costPerTaskUsd, found.figures.code, found.figures.codeCostPerTaskUsd, found.figures.codeMinutesPerTask, found.figures.terminalBench, found.figures.briefcaseElo, found.figures.briefcaseRubricPassRate],
-    [51.8, 3.465, 56.57, 5.119, 15.9, 0.566, 1100, 0.3])
+    [found.figures.intelligence, found.figures.costPerTaskUsd, found.figures.terminalBench, found.figures.briefcaseElo, found.figures.briefcaseRubricPassRate],
+    [51.8, 3.465, 0.566, 1100, 0.3])
+  assert.equal(Object.hasOwn(found.figures, 'code'), false)
   assert.equal(reader.parsePage(html, 'claude-missing-5-5'), null)
   // A figure the page does not carry is absent from `figures`, never null.
   assert.equal(Object.hasOwn(found.figures, 'priceInput'), false)
   assert.equal(Object.values(found.figures).every((value) => Number.isFinite(value)), true)
-  // Without either benchmark source the block has no code figure, and keeps the others.
-  const noCode = reader.parsePage(page(block('claude-opus-5-5-high', OWN).replace('terminalbench-4-0', 'other-bench').replace('terminalBench40', 'otherScalar')), 'claude-opus-5-5-high')
-  assert.deepEqual([Object.hasOwn(noCode.figures, 'code'), noCode.figures.intelligence], [false, 51.8])
+  // Without either benchmark source the block has no terminalBench figure, and keeps the others.
+  const noTb = reader.parsePage(page(block('claude-opus-5-5-high', OWN).replace('terminalbench-4-0', 'other-bench').replace('terminalBench40', 'otherScalar')), 'claude-opus-5-5-high')
+  assert.deepEqual([Object.hasOwn(noTb.figures, 'terminalBench'), noTb.figures.intelligence], [false, 51.8])
 })
 
 test('parsePage reads every field of the 13 pages read on 2026-11-13, as the evidence table gives them', () => {
   const spot = {
-    'gemini-4-hydrogen-medium': { intelligence: 41.2, costPerTaskUsd: 0.798, code: 29.29, terminalBench: 0.293, priceInput: 1.5, priceOutput: 7.5, cacheReadPrice: 0.075 },
-    'gemini-4-hydrogen-high': { intelligence: 50.8, costPerTaskUsd: 1.873, code: 54.04, briefcaseElo: 1497, briefcaseRubricPassRate: 0.524 },
-    'claude-haiku-5-5-high': { intelligence: 29.9, costPerTaskUsd: 0.159, code: 21.72 },
-    'claude-opus-5-5-high': { intelligence: 51.8, costPerTaskUsd: 3.465, code: 56.57 },
+    'gemini-4-hydrogen-medium': { intelligence: 41.2, costPerTaskUsd: 0.798, terminalBench: 0.293, priceInput: 1.5, priceOutput: 7.5, cacheReadPrice: 0.075 },
+    'gemini-4-hydrogen-high': { intelligence: 50.8, costPerTaskUsd: 1.873, terminalBench: 0.54, briefcaseElo: 1497, briefcaseRubricPassRate: 0.524 },
+    'claude-haiku-5-5-high': { intelligence: 29.9, costPerTaskUsd: 0.159, terminalBench: 0.217 },
+    'claude-opus-5-5-high': { intelligence: 51.8, costPerTaskUsd: 3.465, terminalBench: 0.566 },
   }
   for (const [slug, entry] of Object.entries(EVIDENCE)) {
     const found = reader.parsePage(pageFromExtract(entry), slug)
@@ -72,19 +73,19 @@ test('parsePage reads every field of the 13 pages read on 2026-11-13, as the evi
     for (const [key, value] of Object.entries(expected)) assert.equal(figures[key], value, `${slug} ${key}`)
   }
   // Argon medium has no evaluation, but its scalar still supplies the score.
-  assert.equal(reader.parsePage(pageFromExtract(EVIDENCE['gemini-4-argon-medium']), 'gemini-4-argon-medium').figures.code, 55.05)
+  assert.equal(reader.parsePage(pageFromExtract(EVIDENCE['gemini-4-argon-medium']), 'gemini-4-argon-medium').figures.terminalBench, 0.551)
 })
 
 test('a field the page does not bring keeps its previous value with its previous date, and the others of the same address take the new date', () => {
-  const before = { pages: { a: { readOn: '2026-11-01', name: 'A', figures: { intelligence: { value: 40, on: '2026-11-01' }, code: { value: 30, on: '2026-11-01' } } } } }
+  const before = { pages: { a: { readOn: '2026-11-01', name: 'A', figures: { intelligence: { value: 40, on: '2026-11-01' }, terminalBench: { value: 0.3, on: '2026-11-01' } } } } }
   const copy = JSON.stringify(before)
   const results = new Map([['a', { ok: true, name: 'A (High)', figures: { intelligence: 41.2, priceInput: 1.5 } }]])
   const { snapshot, summary } = reader.mergeSnapshot(before, results, '2026-11-13')
   assert.deepEqual(snapshot.pages.a.figures.intelligence, { value: 41.2, on: '2026-11-13' })
   assert.deepEqual(snapshot.pages.a.figures.priceInput, { value: 1.5, on: '2026-11-13' })
-  assert.deepEqual(snapshot.pages.a.figures.code, { value: 30, on: '2026-11-01' })
+  assert.deepEqual(snapshot.pages.a.figures.terminalBench, { value: 0.3, on: '2026-11-01' })
   assert.deepEqual([snapshot.pages.a.readOn, snapshot.pages.a.name], ['2026-11-13', 'A (High)'])
-  assert.ok(summary.missing.a.includes('code') && !summary.missing.a.includes('intelligence'))
+  assert.ok(summary.missing.a.includes('terminalBench') && !summary.missing.a.includes('intelligence'))
   assert.equal(JSON.stringify(before), copy, 'the snapshot given is not changed')
   // An address whose page gave no figure at all stays as it was, readOn included, and is named as missing everything.
   const empty = reader.mergeSnapshot(before, new Map([['a', { ok: true, name: 'A', figures: {} }]]), '2026-11-13')
@@ -94,7 +95,7 @@ test('a field the page does not bring keeps its previous value with its previous
 
 test('the file has one line per address, the addresses sorted, the figures in the fixed order, and is the same text every time', () => {
   const shot = { pages: {
-    'b-model': { readOn: '2026-11-13', name: 'B', figures: { code: { value: 3, on: '2026-11-13' }, intelligence: { value: 4, on: '2026-11-13' } } },
+    'b-model': { readOn: '2026-11-13', name: 'B', figures: { terminalBench: { value: 0.3, on: '2026-11-13' }, intelligence: { value: 4, on: '2026-11-13' } } },
     'a-model': { readOn: '2026-11-13', name: 'A', figures: { intelligence: { value: 1, on: '2026-11-13' } } },
   } }
   const text = reader.serializeSnapshot(shot)
@@ -102,7 +103,7 @@ test('the file has one line per address, the addresses sorted, the figures in th
   assert.deepEqual([lines[0], lines[1], lines.at(-3), lines.at(-2), lines.at(-1)], ['{', '  "pages": {', '  }', '}', ''])
   assert.equal(lines.filter((line) => line.includes('"readOn"')).length, 2)
   assert.ok(lines.findIndex((line) => line.includes('"a-model"')) < lines.findIndex((line) => line.includes('"b-model"')))
-  assert.ok(text.indexOf('"intelligence"', text.indexOf('"b-model"')) < text.indexOf('"code"', text.indexOf('"b-model"')))
+  assert.ok(text.indexOf('"intelligence"', text.indexOf('"b-model"')) < text.indexOf('"terminalBench"', text.indexOf('"b-model"')))
   assert.equal(reader.serializeSnapshot(JSON.parse(text)), text)
 })
 
@@ -211,10 +212,10 @@ test('a bad argument prints the usage and exits 2, and a slug that is not a page
 
 test('snapshotOf dates a bare number with `on`, copies an { value, on } as given, and defaults readOn to `on` and name to `Model <slug>`', () => {
   const shot = snapshotOf({
-    a: { figures: { intelligence: 41.5, code: { value: 43.94, on: '2026-11-12' } } },
+    a: { figures: { intelligence: 41.5, terminalBench: { value: 0.439, on: '2026-11-12' } } },
     b: { readOn: '2026-11-10', name: 'B', figures: {} },
   })
-  assert.deepEqual(shot.pages.a, { readOn: '2026-11-13', name: 'Model a', figures: { intelligence: { value: 41.5, on: '2026-11-13' }, code: { value: 43.94, on: '2026-11-12' } } })
+  assert.deepEqual(shot.pages.a, { readOn: '2026-11-13', name: 'Model a', figures: { intelligence: { value: 41.5, on: '2026-11-13' }, terminalBench: { value: 0.439, on: '2026-11-12' } } })
   assert.deepEqual(shot.pages.b, { readOn: '2026-11-10', name: 'B', figures: {} })
   const other = snapshotOf({ a: { figures: { intelligence: 1 } } }, '2026-11-01').pages.a
   assert.deepEqual([other.readOn, other.figures.intelligence.on], ['2026-11-01', '2026-11-01'])
@@ -222,7 +223,7 @@ test('snapshotOf dates a bare number with `on`, copies an { value, on } as given
 
 test('parsePage finds a benchmark object wherever the page places it in the model block', () => {
   const html = page(block('a', OWN).replace('"evals":[', '"benchmarks":['))
-  assert.equal(reader.parsePage(html, 'a').figures.code, 56.57)
+  assert.equal(reader.parsePage(html, 'a').figures.terminalBench, 0.566)
 })
 
 
@@ -237,8 +238,7 @@ test('parsePage reads all figures after briefcaseBreakdown through the next mode
     medianOutputSpeed: 45.67, medianTimeToFirstAnswerToken: 1.236
   }), block('next', NEIGHBOUR))
   assert.deepEqual(reader.parsePage(html, 'a'), { name: 'Own model', figures: {
-    intelligence: 51.8, costPerTaskUsd: 3.465, code: 56.57, codeCostPerTaskUsd: 5.119,
-    codeMinutesPerTask: 15.9, terminalBench: 0.566, briefcaseElo: 1100, briefcaseRubricPassRate: 0.3,
+    intelligence: 51.8, costPerTaskUsd: 3.465, terminalBench: 0.566, briefcaseElo: 1100, briefcaseRubricPassRate: 0.3,
     hallucinationRate: 0.124, timePerTaskSeconds: 124, priceInput: 1.2346, priceOutput: 7.6544,
     cacheReadPrice: 0.0766, outputTokensPerSecond: 45.7, timeToFirstTokenS: 1.24
   } })
@@ -288,11 +288,11 @@ test('reads scalar benchmark and headline speeds from the live page shape', asyn
     headline: { outputSpeed: 87.65, timeToFirstToken: 2.5, timeToFirstAnswerToken: 3.456 }
   }))
   const figures = reader.parsePage(html, 'live-model').figures
-  assert.deepEqual(figures, { code: 43.22, terminalBench: 0.432, briefcaseElo: 1234, outputTokensPerSecond: 87.7, timeToFirstTokenS: 3.46 })
+  assert.deepEqual(figures, { terminalBench: 0.432, briefcaseElo: 1234, outputTokensPerSecond: 87.7, timeToFirstTokenS: 3.46 })
   const files = setup(t)
   const out = await run(files, ['live-model'], async () => ok(html))
   assert.equal(out.exitCode, 0)
-  assert.match(out.stdout, /Missing fields: live-model: .*codeCostPerTaskUsd, codeMinutesPerTask.*briefcaseRubricPassRate/)
+  assert.match(out.stdout, /Missing fields: live-model: intelligence, costPerTaskUsd, briefcaseRubricPassRate\b/)
 })
 
 test('the default cache is one folder per day under the system temp directory, so a page cached on another day is not the reading of today', () => {

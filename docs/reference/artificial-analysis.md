@@ -16,9 +16,6 @@ Aether reads model pages directly from the website without an API key. Each page
 |---|---|---|
 | `intelligence` | `intelligenceIndex` | 1 decimal |
 | `costPerTaskUsd` | `intelligenceIndexCostPerTask.cost.total` | 3 decimals |
-| `code` | `terminalbench-4-0` score multiplied by 100; if the eval is absent, `terminalBench40` multiplied by 100 | 2 decimals |
-| `codeCostPerTaskUsd` | `costPerTask` of the `terminalbench-4-0` eval on the page | 3 decimals |
-| `codeMinutesPerTask` | `timePerTask` of the `terminalbench-4-0` eval on the page (`seconds` divided by 60) | 1 decimal |
 | `terminalBench` | score of `terminalbench-4-0` (fraction); otherwise `terminalBench40` | 3 decimals |
 | `briefcaseElo` | `briefcaseBreakdown.overall.elo` | 0 decimals |
 | `briefcaseRubricPassRate` | `briefcaseBreakdown.rubricPassRate` | 3 decimals |
@@ -60,7 +57,7 @@ The [Terms of Use](https://artificialanalysis.ai/terms-of-use) were reviewed on 
 
 Because section 3.3 (b)(vi) prohibits automated queries and scraping, Aether performs no automated polling or background scraping. Instead, reading model pages is triggered strictly at the owner's explicit request: the owner directed «leeremos la pagina directamente», so `scripts/aa-pages.js read` runs only on demand, throttled with pauses between requests. The captured figures are preserved in a tracked snapshot file so that table updates run completely offline without contacting the network.
 
-The cost per task of `plugins/aether/config/pairs.json` was copied by hand from the model pages on 2026-10-19; whether that is allowed is open in [issue 97](https://github.com/DarkArty07/aether-plugin/issues/97).
+`plugins/aether/config/pairs.json` is rebuilt from the snapshot `plugins/aether/config/models/aa-pages.json` rather than copied by hand; whether keeping those figures in the repository is allowed is open in [issue 97](https://github.com/DarkArty07/aether-plugin/issues/97).
 
 ## Where each figure lives
 
@@ -68,6 +65,6 @@ The cost per task of `plugins/aether/config/pairs.json` was copied by hand from 
 - `scripts/aa-pages.js`: the single page reader. `node scripts/aa-pages.js read` fetches the model pages on the owner's request, one request per page with a pause of 1.5 seconds between requests, and writes the snapshot. It reads the page slugs given on the command line or, when none is given, the slugs of `config/pairs.json`; with no slug given, `--harness <name>` keeps the rows of that harness and the Claude rows; `--pairs <file>` names another table to read the slugs from; `--snapshot <file>` the snapshot it merges into and writes; `--cache <dir>` a folder of saved pages, where a page already saved is read with no request and a page read from the network is saved (by default, a folder under the system temp directory). It stops at the first 403 or 429 answer and writes nothing.
 - `scripts/refresh-lanes.js`: reads the snapshot `aa-pages.json` without network access and patches `config/pairs.json` with the intelligence and cost per task of every row with a page in one run; it displays the recalculated ladder and does not save it.
 - `scripts/build-models-index.js`: rebuilds `plugins/aether/config/models/models.json` from the snapshot and harness listings without network access.
-- `plugins/aether/config/models/models.json`: keeps, for each model in use and each effort its harness takes: intelligence, the coding index when there is one, Terminal-Bench v4, input and output prices, tokens per second, and time to first token.
-- `plugins/aether/config/pairs.json` and `plugins/aether/config/lanes.json`: keep the intelligence of each pair, and `pairs.json` the cost per task. The code figures of the snapshot are information that nothing requires and nothing chooses with (A127).
+- `plugins/aether/config/models/models.json`: keeps, for each model in use and each effort its harness takes: intelligence, Terminal-Bench v4, input and output prices, tokens per second, and time to first token.
+- `plugins/aether/config/pairs.json` and `plugins/aether/config/lanes.json`: keep the intelligence of each pair, and `pairs.json` the cost per task. Terminal-Bench in the snapshot is information that nothing requires and nothing chooses with (A127).
 - [Artificial Analysis comparison, 2026-10-26](../models/artificial-analysis-2026-10-26.md): holds historical figures captured on 2026-10-26 for the 28 models of the owner's chart, as a document and not as data the plugin reads.

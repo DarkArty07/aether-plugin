@@ -8,7 +8,7 @@ const PAGE_URL = 'https://artificialanalysis.ai/models/'
 const PAUSE_MS = 1500
 const TIMEOUT_MS = 30000
 const SNAPSHOT_FILE = path.join(__dirname, '..', 'plugins', 'aether', 'config', 'models', 'aa-pages.json')
-const FIGURES = ['intelligence', 'costPerTaskUsd', 'code', 'codeCostPerTaskUsd', 'codeMinutesPerTask', 'terminalBench', 'briefcaseElo', 'briefcaseRubricPassRate', 'hallucinationRate', 'timePerTaskSeconds', 'priceInput', 'priceOutput', 'cacheReadPrice', 'outputTokensPerSecond', 'timeToFirstTokenS']
+const FIGURES = ['intelligence', 'costPerTaskUsd', 'terminalBench', 'briefcaseElo', 'briefcaseRubricPassRate', 'hallucinationRate', 'timePerTaskSeconds', 'priceInput', 'priceOutput', 'cacheReadPrice', 'outputTokensPerSecond', 'timeToFirstTokenS']
 const USER_AGENT = 'aether-plugin models reader (one request per model page, asked by its owner)'
 
 // Extract a JSON value from embedded page data without assuming the surrounding HTML is JSON.
@@ -61,9 +61,6 @@ function parsePage(html, slug) {
   const add = (key, value, digits) => { if (Number.isFinite(value)) { const f = 10 ** digits; figures[key] = Math.round(value * f) / f } }
   add('intelligence', field(segment, 'intelligenceIndex'), 1)
   add('costPerTaskUsd', field(segment, 'intelligenceIndexCostPerTask')?.cost?.total, 3)
-  add('code', Number.isFinite(score) ? score * 100 : undefined, 2)
-  add('codeCostPerTaskUsd', tb?.costPerTask, 3)
-  add('codeMinutesPerTask', Number.isFinite(tb?.timePerTask) ? tb.timePerTask / 60 : undefined, 1)
   add('terminalBench', score, 3)
   add('briefcaseElo', briefcase?.overall?.elo, 0)
   add('briefcaseRubricPassRate', briefcase?.rubricPassRate, 3)

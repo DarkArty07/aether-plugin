@@ -18,13 +18,13 @@ The model pages are the **only source** by the owner's decision: the owner wants
 ## Traps
 
 - **Names.** The page slug of a model at `max` has no effort suffix (`claude-sonnet-5-5`); the others end in `-low`, `-medium`, `-high` or `-xhigh`. The Claude 5.5 models carry "(…, Default Fallback)" in their names. A slug of `pairs.json` is the page slug.
-- **A page carries 27 models.** Its first AA-Briefcase block is not the page's own for the `max` pages. The script picks the block whose nearest `"slug"` before it is the page's slug; if it finds none it says "own block not found" and you must not take the first one.
+- **A page carries 27 models.** Its first AA-Briefcase block is not the page's own for the `max` pages. The script picks the block whose nearest `"slug"` before it is the page's slug; if it finds none it leaves that address unread (`no-block`) and you must not take the first one.
 - **Two costs.** The cost per index task (`costPerTaskUsd` of `pairs.json`) is weighted across all the evaluations of the index. The cost of one Terminal-Bench or Briefcase task is not weighted and is several times larger. Never compare one with the other.
 - **Cache is most of the cost.** In an index task, cache reads and writes are about 52 to 67 % of the dollars; the effort changes the reasoning tokens and, through the longer loops, the cache too.
 - **Units.** The model pages give benchmark scores as fractions (Terminal-Bench 0.60); Briefcase and GDPval are Elo.
 - **Speed.** `max` efforts have first-token times of minutes (Sonnet `max` 322 s, Opus `max` 621 s, Haiku `max` 279 s). Speed is out of the policy, but a deadline can cut a call that is slow to start.
 - **The page can change.** The data is a script's JSON, not a public contract. If a field is missing, say so, and say which source the figure came from.
-- **The scores move.** AA re-scored its models between 2026-10-26 and 2026-10-29 (Haiku 5.5 `max` 43.4 to 36.2, GPT-6 Luna `max` 38.1 to 27.8, GPT-6 Astra `max` 52.7 to 56.9). Compare two models only with figures read on the same day from the same source; a row of `pairs.json` set against a later reading is not a comparison. The table of pairs was refreshed on 2026-10-30 (spec 023) and is on the scale of 2026-10-29; its costs per task were read on 2026-10-26.
+- **The scores move.** AA re-scored its models between 2026-10-26 and 2026-10-29 (Haiku 5.5 `max` 43.4 to 36.2, GPT-6 Luna `max` 38.1 to 27.8, GPT-6 Astra `max` 52.7 to 56.9). Compare two models only with figures read on the same day from the same source; a row of `pairs.json` set against a later reading is not a comparison. The table of pairs is refreshed from the snapshot (`plugins/aether/config/models/aa-pages.json`, read on 2026-11-14).
 
 ## Reading it for a role
 
