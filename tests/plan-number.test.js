@@ -25,7 +25,7 @@ test('aether-plan next-spec finds the highest number on another local branch and
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.json.next, '013')
   assert.equal(r.json.highest, '012')
-  assert.ok(r.json.where.includes('feature/other'), JSON.stringify(r.json))
+  assert.deepEqual(r.json.where, ['feature/other'])
 })
 
 test('aether-plan next-spec finds the highest number on a remote-tracking branch', (t) => {
@@ -72,7 +72,7 @@ test('aether-plan next-spec counts an uncommitted folder in another worktree on 
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.json.next, '028')
   assert.equal(r.json.highest, '027')
-  assert.ok(r.json.where.includes(wtDir), JSON.stringify(r.json))
+  assert.deepEqual(r.json.where, [wtDir])
 })
 
 test('aether-plan next-spec falls back to working tree specs/ outside a git repository and ignores non-directories', (t) => {

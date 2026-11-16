@@ -11,7 +11,7 @@ const { pidAlive, sleep } = require('./common.js')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 const { readGroups: defaultReadGroups } = require('./lane-readings.js')
 const { readingFile } = require('./router-quota.js')
-const { HARNESS_NAMES } = require('./harness-names.js')
+const { HARNESS_NAMES, formatHarnessesOr } = require('./harness-names.js')
 
 // A renewal lasts at most grok's 10 s over ACP and 20 s through its UI, agy's 60 s, or muse's 90 s over one exec
 // call: past this a lock belongs to a process that died.
@@ -63,7 +63,7 @@ async function renewReading({
   readGroups = defaultReadGroups,
   refreshers = REFRESHERS,
 }) {
-  if (!RENEWABLE.includes(harness)) throw new Error(`the router renews only ${RENEWABLE.slice(0, -1).join(', ')} or ${RENEWABLE.at(-1)}`)
+  if (!RENEWABLE.includes(harness)) throw new Error(`the router renews only ${formatHarnessesOr(RENEWABLE)}`)
   if (settings === null || typeof settings !== 'object') throw new Error(`the lane table has no ${harness} harness`)
   let saved
   if (Object.hasOwn(refreshers, harness)) {

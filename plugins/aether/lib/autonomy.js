@@ -1299,7 +1299,7 @@ function brakeOff(mainRoot, { quote, session } = {}, { configDir, now = Date.now
 }
 
 function readSwarmState(mainRoot, swarmRunId) {
-  const stateFile = path.join(mainRoot, '.aether', 'runs', swarmRunId, 'state.json')
+  const stateFile = path.join(runDir(mainRoot, swarmRunId), 'state.json')
   if (!fs.existsSync(stateFile)) return null
   try {
     const parsed = JSON.parse(fs.readFileSync(stateFile, 'utf8'))
@@ -1429,6 +1429,7 @@ module.exports = {
   runsFor,
   activePause,
   attributeSavedRuns,
+  readSwarmState,
   start,
   extend,
   launchRefusal,

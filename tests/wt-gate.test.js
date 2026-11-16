@@ -232,3 +232,26 @@ test('a red test whose location is outside the worktree carries own: null explic
   assert.equal('own' in g.findings[0], true)
   assert.equal(g.findings[0].own, null)
 })
+
+test('a red test without a location whose name appears only in an owned test file over MAX_TEST_BYTES does not carry own: true', (t) => {
+  const u = unit(t, CHECKS.namedSubtest)
+  commitIn(u.repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  commitIn(u.repo, u.wt, 'src/t1/big.test.js', `${'x'.repeat(512 * 1024 + 100)}\ntest('adds the numbers', () => {})\n`, 'add oversized owned test')
+  const g = gate(u)
+  assert.equal(g.pass, false)
+  assert.notEqual(g.findings[0].own, true)
+  assert.equal(g.findings[0].own, null)
+})
+
+test('a red test without a location whose name appears in an owned foo.test.mjs at the worktree root carries own: true', (t) => {
+  const repo = makeRepo(t)
+  commitIn(repo, repo.dir, 'check.js', CHECKS.namedSubtest, 'add the check')
+  const args = compile(repo, plan([task(1, { owns: '`src/t1/**`, `foo.test.mjs`' }), task(2)], { execution: ['- Test command: `node check.js`'] }))
+  const created = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir).json
+  const u = { repo, args, wt: created.path }
+  commitIn(repo, u.wt, 'src/t1/bad.js', 'x\n', 'break it')
+  commitIn(repo, u.wt, 'foo.test.mjs', "test('adds the numbers', () => {})\n", 'add root mjs test')
+  const g = gate(u)
+  assert.equal(g.pass, false)
+  assert.equal(g.findings[0].own, true)
+})

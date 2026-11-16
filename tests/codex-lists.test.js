@@ -11,11 +11,13 @@ const { HARNESSES } = require('../plugins/aether/lib/delegate-calls.js')
 const { ALLOWED_HARNESSES } = require('../plugins/aether/lib/lane-delegate.js')
 const { HARNESS_NAMES, formatHarnessesOr } = require('../plugins/aether/lib/harness-names.js')
 
-const WORKERS = [...HARNESS_NAMES]
+const WORKERS = ['agy', 'codex', 'grok', 'muse']
 const RENEW_USAGE = `renew --harness <${HARNESS_NAMES.join('|')}>`
 const RENEW_NEEDS = `--harness needs ${formatHarnessesOr()}`
 
 test('the five lists of the delegates and the router name Codex in the order of the registry, and cursor in none (R3, R20)', () => {
+  assert.deepEqual(HARNESS_NAMES, WORKERS)
+  assert.equal(HARNESS_NAMES.includes('cursor'), false)
   for (const list of [EXTERNAL, RENEWABLE, DELEGATE_HARNESSES, HARNESSES, ALLOWED_HARNESSES]) assert.deepEqual(list, WORKERS)
 })
 
