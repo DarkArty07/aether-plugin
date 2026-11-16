@@ -107,7 +107,7 @@ The ladder is `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`. Exclude diary writes, 
 
 | Path | When | Who | Model |
 |---|---|---|---|
-| Direct | A bounded change without an edit-test-fix loop; at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count. Brief reads, `git status`, one-line fixes and swarm commands are direct. | You, inline | Yours |
+| Direct | A bounded change without an edit-test-fix loop; at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task. Brief reads, `git status`, one-line fixes and swarm commands are direct. | You, inline | Yours |
 | Delegate task | Bounded work that is still a real task: an edit-test-fix loop, a cleanup, a reader with its tests, a research sweep, a long verification. Also each task of an approved plan of one or two tasks. | One subagent in the background | Haiku first; the system climbs it (see "The delegate ladder") |
 | Swarm | Long, costly or complex work: an approved plan of three or more tasks | `/aether:run` | The swarm starts every unit on the first rung of `config/ladder.json` and raises it by the same policy as the delegates. |
 

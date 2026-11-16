@@ -823,14 +823,14 @@ test('issue 50: small fixes quote the owner\'s words, and third-party facts carr
 })
 
 test('the two tutorials state the canonical countable rule of the direct path instead of "about five tool calls" (R6)', () => {
-  const enRule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count'
-  const esRule = 'a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada; las pruebas que la regla pide tras una fusión no cuentan'
+  const enRule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task'
+  const esRule = 'a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada'
   const en = read('docs/tutorials/first-request.md')
   const es = read('docs/es/guias/primera-peticion.md')
   assert.ok(en.includes(enRule))
   assert.ok(es.includes(esRule))
-  assert.doesNotMatch(en, /about five tool calls/)
-  assert.doesNotMatch(es, /unas cinco llamadas a herramientas/)
+  assert.doesNotMatch(en, /about five tool calls|the tests the rule asks to run after a merge do not count/)
+  assert.doesNotMatch(es, /unas cinco llamadas a herramientas|las pruebas que la regla pide tras una fusión no cuentan/)
 })
 
 test('decisions A117 to A120 are recorded with the owner quotes, the index names the range, and the historical line stays intact (R12)', () => {
@@ -850,17 +850,17 @@ test('decisions A117 to A120 are recorded with the owner quotes, the index names
 })
 
 test('the canonical countable rule is identical across the six places of R6, AGENTS.md says three parts, and the components page measures PostToolUse on reads (R6, R8, R12)', () => {
-  const enRule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task; the tests the rule asks to run after a merge do not count'
-  const esRule = 'a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada; las pruebas que la regla pide tras una fusión no cuentan'
+  const enRule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task'
+  const esRule = 'a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada'
   for (const file of ['plugins/aether/skills/using-aether/SKILL.md', 'docs/methodology.md', 'docs/tutorials/first-request.md', 'site/app.js']) {
     const text = read(file)
     assert.ok(text.includes(enRule), `${file} has the canonical English countable rule`)
-    assert.doesNotMatch(text, /about five tool calls|many reads of your own/, `${file} has no old vague rule`)
+    assert.doesNotMatch(text, /about five tool calls|many reads of your own|the tests the rule asks to run after a merge do not count/, `${file} has no old vague rule`)
   }
   for (const file of ['docs/es/guias/primera-peticion.md', 'site/index.html', 'site/app.js']) {
     const text = read(file)
     assert.ok(text.includes(esRule), `${file} has the canonical Spanish countable rule`)
-    assert.doesNotMatch(text, /unas cinco llamadas a herramientas/, `${file} has no old vague rule`)
+    assert.doesNotMatch(text, /unas cinco llamadas a herramientas|las pruebas que la regla pide tras una fusión no cuentan/, `${file} has no old vague rule`)
   }
   const delegates = read('docs/guide/delegates.md')
   assert.match(delegates, /`ended`/)
