@@ -17,6 +17,7 @@ const path = require('node:path')
 const { isObject, isText, killGroup, messageOf, pidAlive, sleep: realSleep, sleepSync } = require('./common.js')
 const { pairId, nativeModels, loadPairs } = require('./pairs.js')
 const log = require('./delegate-log.js')
+const autonomy = require('./autonomy.js')
 const checksLib = require('./delegate-checks.js')
 const delegateChain = require('./delegate-chain.js')
 const laneDelegate = require('./lane-delegate.js')
@@ -216,6 +217,13 @@ function editsText(external, done, checks, patch, checkBase) {
 }
 
 async function runEdits(external, { cwd, dataDir }, delegateCommand) {
+  // Like the read-only chain, an editing run starts no pair while the quota brake holds the run: the pause is its own
+  // outcome (status `paused`), not a failure, and the task is relaunched with the same AETHER-TASK after the reset.
+  const pause = autonomy.launchRefusal(cwd, { session: external.session ?? null, dataDir })
+  if (pause && pause.stop === 'quota') {
+    const none = { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null }
+    return { result: { ok: false, status: 'paused', text: null, checks: null, reason: reasonOf(pause.message) }, entry: none }
+  }
   const model = claudeModelOf(external.step)
   if (model === null) {
     const named = isText(external.step) ? external.step : 'none'
@@ -283,6 +291,10 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
   const pair = last ? pairOf(last) : null
   const changed = Array.isArray(chain.changed) ? chain.changed : []
   const none = { pair, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null }
+  // The quota brake paused the run: the pause is its own outcome, not a failure for the mod to rescue on Claude.
+  if (chain.status === 'paused') {
+    return { result: { ok: false, status: 'paused', text: null, checks: null, reason: reasonOf(chain.detail) }, entry: none }
+  }
   if (chain.status === 'violation') {
     const checks = checksLib.checkReadOnly({ files: changed })
     return { result: { ok: false, status: 'violation', text: null, checks, reason: reasonOf(chain.reason, last?.detail, chain.detail) }, entry: none }
@@ -305,7 +317,8 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
 
 // Runs the attempt the external file of `id` describes, and writes its result to results/<session-task-key>.json and to the log. The
 // editing path writes no `outcome`: `aether-lane delegate` records its calls in the lane log, which the spend already
-// reads. Resolves to the Result; never rejects.
+// reads. A run the quota brake paused writes only the result file, with status `paused`: the pause is logged nowhere,
+// so it is relaunched with the same AETHER-TASK after the reset instead of climbing the ladder. Resolves to the Result; never rejects.
 async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { delegateCommand = laneDelegate.delegateCommand, runChain = delegateChain.runChain } = {}) {
   let attempt = null
   const pathSession = session
@@ -332,7 +345,11 @@ async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { d
   // Under `start`, stderr is the run's log (run/<session-task-key>.log): the reason of a failed attempt stays there.
   if (result.reason !== null) process.stderr.write(`aether-delegate run ${id}: ${result.reason}\n`)
   const empty = { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null }
-  log.appendEntry(dataDir, { kind: 'result', time: now(), session, task: id, attempt, ok: result.ok, status: result.status, ...empty, ...outcome.entry, checks: result.checks, reason: result.reason })
+  // A pause is not an attempt, failed or otherwise: no `result` is logged, so no verdict judges it and the ladder does
+  // not climb. The result file below still carries it, so `wait` hands the pause to the mod.
+  if (result.status !== 'paused') {
+    log.appendEntry(dataDir, { kind: 'result', time: now(), session, task: id, attempt, ok: result.ok, status: result.status, ...empty, ...outcome.entry, checks: result.checks, reason: result.reason })
+  }
   try {
     if (typeof id === 'string' && ID.test(id)) writeAtomic(resultFile(dataDir, id, pathSession), `${JSON.stringify(result)}\n`)
   } catch {

@@ -41,13 +41,14 @@ function alternatesOf(external) {
 
 const spent = (usage) => Object.values(usage ?? {}).some((count) => count > 0)
 
-// A refusal at the start: the pair is unavailable (nothing launched), or it refused for quota and used nothing. A
-// refusal the router recognizes by its text counts whatever status the call ended with. A call killed at its limit is
-// never one: it had started, and what it says is about its time, not its quota.
+// A refusal at the start: the pair is unavailable (nothing launched), or it refused for quota and used nothing, or the
+// quota brake paused the chain before the pair ran (status `paused`: likewise nothing launched and nothing was used, so
+// the task is relaunched as is after the reset). A refusal the router recognizes by its text counts whatever status the
+// call ended with. A call killed at its limit is never one: it had started, and what it says is about its time, not its quota.
 function isStartRefusal(result) {
   if (result.timedOut === true) return false
   if (spent(result.usage)) return false
-  if (result.status === 'unavailable' || result.status === 'quota') return true
+  if (result.status === 'unavailable' || result.status === 'quota' || result.status === 'paused') return true
   return result.status === 'failed' && refusalOf(result.detail) !== null
 }
 
@@ -77,7 +78,8 @@ function outcomesSoFar(dataDir, id, session) {
 // Runs the primary pair of `external` and then its alternates, as far as the rules above allow. Resolves to
 // { ok, status, text, attribution, detail, marked, changed, attempts, journaled }: status, detail and marked are the
 // last call's, changed the files a violation of the last call touched (else []), attribution is null unless a
-// call ended ok, and journaled says whether the last outcome entry was written.
+// call ended ok, and journaled says whether the last outcome entry was written. A live quota pause stops the chain at
+// once with status `paused` and the pause message as detail, journaling nothing for the pause itself.
 async function runChain({ cwd, id, session = null, external, config, dataDir }, { runDelegate = delegateCalls.runDelegate, now = Date.now } = {}) {
   const startedAt = now()
   const priorOutcomes = outcomesSoFar(dataDir, id, session ?? null)
@@ -93,9 +95,12 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
     if (harnessCalls.length >= MAX_HARNESS_CALLS) break
     const refusal = autonomy.launchRefusal(cwd, { session, dataDir, now: now() })
     if (refusal && refusal.stop === 'quota') {
+      // The quota brake paused the run: no pair may start while it holds, and the end is not a failure to rescue on
+      // Claude but a pause to relaunch with the same AETHER-TASK after the reset. The status stays distinct from the
+      // quota of one pair (`quota`), and no outcome is journaled for the pause itself.
       return {
         ok: false,
-        status: 'quota',
+        status: 'paused',
         text: '',
         attribution: null,
         detail: refusal.message,
