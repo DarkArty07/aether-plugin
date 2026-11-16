@@ -403,7 +403,7 @@ async function brakeRecorded($, state, crossing, record) {
   if (record && crossing.kind === 'five_hour' && record.reason !== 'no-run') brake.pausedResetsAt = crossing.resetsAt
   if (!record || crossing.kind !== 'five_hour' || record.paused !== true || !record.run || !record.resumeAt) return
   await armResume($, brake, record.run, record.resumeAt)
-  if (record.duplicate !== true && !wasPaused) {
+  if (!wasPaused) {
     try {
       void Promise.resolve($.prompt.submit({ text: brakePromptFor({ ...crossing, threshold: brake.settings.threshold, run: record.run, resumeAt: record.resumeAt }) })).catch(() => {})
     } catch {
