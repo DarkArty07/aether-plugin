@@ -535,7 +535,7 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     const autonomyPath = path.join(mainRoot, '.aether', 'autonomy')
     if (!fs.existsSync(runsPath) && !fs.existsSync(autonomyPath)) {
       try {
-        const { detectUncoveredTopics, topicLine } = require('./skill-review.js')
+        const { detectUncoveredTopics, topicLine } = require('./skill-topics.js')
         const { dataDir } = require('./run.js')
         const os = require('node:os')
         const top = workRoot ?? cwd
