@@ -135,3 +135,16 @@ test('a suggestion from the AETHER-OWNS paths is stored with the canonical proje
   assert.equal((plan.args.prompt ?? '').includes('AETHER-SKILLS'), false, 'the brief gets no skills line from the suggestion')
   assert.deepEqual(reg.readNotices(w.dataDir).map((n) => [n.kind, n.name, n.session, n.repo]), [['delegate-skill', 'juego-motor', 's1', repo.dir]])
 })
+
+test('a failing recordUse is skipped and does not abort begin after the launch is logged (issue 280)', async (t) => {
+  const w = world(t)
+  skill(w.cwd, 'erebus-ui')
+  // Make skills/uses.jsonl a directory so appendJsonl inside recordUse throws EISDIR.
+  fs.mkdirSync(path.join(w.dataDir, 'skills', 'uses.jsonl'), { recursive: true })
+  const plan = await task.begin(call(BRIEF('t-use-err', 'erebus-ui')), w.deps)
+  assert.equal(plan.error, undefined)
+  assert.equal(plan.kind, 'first')
+  assert.equal(plan.args.model, 'haiku')
+  assert.ok(plan.args.prompt.includes('rule 1 of erebus-ui'))
+  assert.equal(entries(w.dataDir, 't-use-err').filter((e) => e.kind === 'launch').length, 1)
+})

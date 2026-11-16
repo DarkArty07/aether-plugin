@@ -19,18 +19,23 @@ const { markRefusal, readAllMarks, refusalOf } = require('./router-marks.js')
 const { markSlow, slowPairIds } = require('./router-slow.js')
 
 // Three tries in all: a decision lists at most six candidates, and a run of refusals at ten seconds each stays around
-// a minute.
-const MAX_ATTEMPTS = 3
+// a minute. (Exported as MAX_ATTEMPTS for callers.)
+const MAX_HARNESS_CALLS = 3
 
 const NO_USAGE = { input: 0, output: 0, thinking: 0, cacheRead: 0 }
 
 const isText = (value) => typeof value === 'string' && value !== ''
 
+// Filters a list of candidate alternates to those naming a harness and a whole rung.
+function validAlternates(alternates) {
+  if (!Array.isArray(alternates)) return []
+  return alternates.filter((entry) => isObject(entry) && isText(entry.harness) && isObject(entry.rung) && isText(entry.rung.model) && isText(entry.rung.effort) && isText(entry.rung.group))
+}
+
 // The alternates of an external file that name a harness and a whole rung; a file written before alternates existed
 // has none.
 function alternatesOf(external) {
-  if (!Array.isArray(external.alternates)) return []
-  return external.alternates.filter((entry) => isObject(entry) && isText(entry.harness) && isObject(entry.rung) && isText(entry.rung.model) && isText(entry.rung.effort) && isText(entry.rung.group))
+  return validAlternates(external.alternates)
 }
 
 const spent = (usage) => Object.values(usage ?? {}).some((count) => count > 0)
@@ -48,43 +53,43 @@ function isStartRefusal(result) {
 const REFUSED = { quota: 'refused for quota', unavailable: 'was unavailable' }
 
 // What an exception of runDelegate (it throws for a bad id, and a failing disk can make anything throw) leaves: a failed
-// attempt that used nothing, so that it still gets its outcome entry and the task goes to Claude as for any failure.
-function thrownAttempt(err, rung, elapsedMs) {
+// harness call that used nothing, so that it still gets its outcome entry and the task goes to Claude as for any failure.
+function thrownCall(err, rung, elapsedMs) {
   const message = err instanceof Error ? err.message : String(err)
   return { status: 'failed', text: '', detail: `delegate: ${message}`, modelArg: rung.model, durationMs: elapsedMs, usage: { ...NO_USAGE }, quotaSpent: [], timedOut: false }
 }
 
 // Where the answer came from, for the Lead: Claude Code lists no tool uses or tokens for an agent the mod answers, and a
 // Lead that sees 0 tool uses doubts an answer that was read from files. Earlier pairs that refused are named first.
-function attributionOf(answered, earlier) {
-  const refusals = earlier.map((attempt) => `${attempt.rung.model} on ${attempt.harness} ${REFUSED[attempt.status] ?? 'refused'}`)
+function attributionOf(answered, earlierCalls) {
+  const refusals = earlierCalls.map((call) => `${call.rung.model} on ${call.harness} ${REFUSED[call.status] ?? 'refused'}`)
   const lead = refusals.length > 0 ? `${refusals.join(', ')} first, so this answer is from` : 'this answer is from'
   return `Aether delegate: ${lead} ${answered.rung.model} at ${answered.rung.effort} on ${answered.harness}, run in a disposable copy of the checkout. Claude Code lists no tool uses or tokens for it because Aether handed you the answer without a Claude request.`
 }
 
-// How many outcome entries the task already has in this session: the first attempt of this chain is the next one.
-// Another session's outcomes of the same task id must not move this chain's attempt numbers.
+// How many outcome entries the task already has in this session: the first harness call of this chain is the next one.
+// Another session's outcomes of the same task id must not move this chain's outcome numbers.
 function outcomesSoFar(dataDir, id, session) {
   return readEntries(dataDir, { task: id, session }).filter((entry) => entry.kind === 'outcome' && entry.id === id).length
 }
 
 // Runs the primary pair of `external` and then its alternates, as far as the rules above allow. Resolves to
 // { ok, status, text, attribution, detail, marked, changed, attempts, journaled }: status, detail and marked are the
-// last attempt's, changed the files a violation of the last attempt touched (else []), attribution is null unless an
-// attempt ended ok, and journaled says whether the last outcome entry was written.
+// last call's, changed the files a violation of the last call touched (else []), attribution is null unless a
+// call ended ok, and journaled says whether the last outcome entry was written.
 async function runChain({ cwd, id, session = null, external, config, dataDir }, { runDelegate = delegateCalls.runDelegate, now = Date.now } = {}) {
   const startedAt = now()
-  const before = outcomesSoFar(dataDir, id, session ?? null)
+  const priorOutcomes = outcomesSoFar(dataDir, id, session ?? null)
   const queue = [{ harness: external.harness, rung: external.rung }, ...alternatesOf(external)]
   const known = lanes.groupKnown(config)
-  const attempts = []
+  const harnessCalls = []
   // The groups that refused for quota in this chain: a refusal before the call leaves no mark, and the group is out.
   const refusedGroups = new Set()
   let last = null
   let journaled = false
   let marked = null
   for (const candidate of queue) {
-    if (attempts.length >= MAX_ATTEMPTS) break
+    if (harnessCalls.length >= MAX_HARNESS_CALLS) break
     const { harness, rung } = candidate
     let maxCliSeconds = null
     if (last !== null) {
@@ -97,12 +102,12 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
       maxCliSeconds = retryCliSeconds(at - startedAt)
       if (maxCliSeconds === null) break
     }
-    const attemptStart = now()
+    const callStart = now()
     let result
     try {
       result = await runDelegate({ cwd, id: fileKey(session, id), harness, rung, task: external.task, config, dataDir, ...(maxCliSeconds === null ? {} : { maxCliSeconds }) })
     } catch (err) {
-      result = thrownAttempt(err, rung, now() - attemptStart)
+      result = thrownCall(err, rung, now() - callStart)
     }
     const ok = result.status === 'ok'
     marked = null
@@ -134,14 +139,15 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
       quotaSpent: result.quotaSpent,
       detail: result.detail,
       markedUntil: marked,
-      attempt: before + attempts.length + 1,
-      // What the copy held (spec 033, D7): null for an attempt that copied nothing.
+      // Stored field stays `attempt` for delegates/log.jsonl compatibility.
+      attempt: priorOutcomes + harnessCalls.length + 1,
+      // What the copy held (spec 033, D7): null for a call that copied nothing.
       tree: result.tree ?? null,
       uncommitted: result.uncommitted ?? null,
       envHeldBack: result.envHeldBack ?? null,
       ...(result.timedOut === true ? { timedOut: true, slowUntil } : {}),
     })
-    attempts.push({ harness, model: rung.model, effort: rung.effort, status: result.status, detail: result.detail, rung })
+    harnessCalls.push({ harness, model: rung.model, effort: rung.effort, status: result.status, detail: result.detail, rung })
     last = { candidate, result }
     if (ok) break
   }
@@ -150,13 +156,14 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
     ok,
     status: last.result.status,
     text: last.result.text,
-    attribution: ok ? attributionOf(last.candidate, attempts.slice(0, -1)) : null,
+    attribution: ok ? attributionOf(last.candidate, harnessCalls.slice(0, -1)) : null,
     detail: last.result.detail,
     marked,
     changed: Array.isArray(last.result.changed) ? last.result.changed : [],
-    attempts: attempts.map(({ harness, model, effort, status, detail }) => ({ harness, model, effort, status, detail })),
+    // Returned field stays `attempts` for caller compatibility.
+    attempts: harnessCalls.map(({ harness, model, effort, status, detail }) => ({ harness, model, effort, status, detail })),
     journaled,
   }
 }
 
-module.exports = { MAX_ATTEMPTS, isStartRefusal, runChain }
+module.exports = { MAX_ATTEMPTS: MAX_HARNESS_CALLS, isStartRefusal, runChain, validAlternates }
