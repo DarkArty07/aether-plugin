@@ -74,8 +74,9 @@ test('a new model of a harness that is already in: read its pages, show the ladd
   assert.ok(section.includes('node scripts/aa-pages.js read <slug> --harness <name>'), 'the read command with slug and harness')
   assert.ok(section.includes('node scripts/refresh-lanes.js'), 'the ladder preview without --write')
   for (const line of section.split('\n')) {
-    if (line.includes('aa-pages.js read')) assert.ok(!line.includes('--write'), `the reading step writes nothing: ${line}`)
+    if (line.includes('aa-pages.js read')) assert.ok(!line.includes('--write'), `the read command runs with no --write: ${line}`)
   }
+  assert.ok(section.includes('aa-pages.json'), 'the section names the snapshot aa-pages.json as the one file the read updates')
   assert.match(section, /owner's own words|owner's yes/i, 'the draft waits for the owner')
 })
 

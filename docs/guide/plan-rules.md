@@ -12,8 +12,8 @@ A project may declare, in `.specify/plan-rules.json`, that a task which adds or 
 
 `.specify/plan-rules.json` holds an array of rules. Each rule is an object with either `adds` or `changes`, an `owns` array of required registration paths, and a `why` string:
 
-- `adds` names literal paths in `Owns` that do not exist in the tree yet: a task that creates one of them must own the registration.
-- `changes` names existing files in `Owns`, including globs and folders: a task that edits one of them must own the registration.
+- `adds` holds a pattern matched against the task's owned paths: for `adds` a literal, non-existing owned path (globs and folders never trigger it). A task that creates a file the pattern matches must own the registration.
+- `changes` holds a pattern matched against the task's owned paths: for `changes` an existing file, glob or folder. A task that edits a file the pattern matches must own the registration.
 - `owns` lists the paths the task, or a task it depends on, must own alongside.
 - `why` says what the registration keeps true.
 
