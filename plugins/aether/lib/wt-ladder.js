@@ -177,4 +177,4 @@ function resetSpent(runDir, taskIds) {
   return reset
 }
 
-module.exports = { buildView, ladderCommand, resetSpent }
+module.exports = { ladderCommand, resetSpent }

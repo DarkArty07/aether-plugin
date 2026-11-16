@@ -299,7 +299,8 @@ function proposalLinesOf(reading) {
     if (item.kind === 'calibration') {
       const proposal = typeof item.proposal === 'string' && item.proposal ? item.proposal : item.title
       if (typeof proposal !== 'string' || !proposal) continue
-      lines.push(`proposal ${item.id}: ${proposal.replace(/\s*\n\s*/g, ' ')}`)
+      const text = proposal.replace(/\s*\n\s*/g, ' ').replace(/^Proposal:\s*/i, '')
+      lines.push(`proposal ${item.id}: ${text}`)
     } else if (item.kind === 'friction') {
       if (typeof item.title !== 'string' || !item.title) continue
       lines.push(`friction ${item.id}: ${item.title.replace(/\s*\n\s*/g, ' ')}`)

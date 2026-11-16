@@ -36,8 +36,8 @@ test('figure dates come from the snapshot rather than today', t => {
   assert.equal(out.exitCode, 0, out.stdout)
   const r = rowsOf(f)[0]; assert.deepEqual([r.intelligence, r.checked, r.costPerTaskUsd], [29.9, '2026-11-13', 0.159])
 })
-test('patches every page row in place only with --write, including external rows and null cost', t => {
-  const f = setup(t, [haikuHigh, { ...argonHigh, costPerTaskUsd: null }]); const before = fs.readFileSync(f.pairs, 'utf8')
+test('patches every page row in place only with --write, including external rows and owner null cost', t => {
+  const f = setup(t, [haikuHigh, { ...argonHigh, costPerTaskUsd: null, ownerDecision: 'owner keeps null' }]); const before = fs.readFileSync(f.pairs, 'utf8')
   writeSnapshot(f, snapshotOf({ [haikuHigh.slug]: { figures: { intelligence: 29.9, costPerTaskUsd: 0.159 } }, [argonHigh.slug]: { figures: { intelligence: 50.4, costPerTaskUsd: 4.973 } } }))
   assert.match(run(f).stdout, /intelligence 29.6 → 29.9/); assert.equal(fs.readFileSync(f.pairs, 'utf8'), before)
   assert.equal(run(f, ['--write']).exitCode, 0)
@@ -47,7 +47,7 @@ test('patches every page row in place only with --write, including external rows
     .replace('"intelligence": 29.6', '"intelligence": 29.9')
     .replace('"costPerTaskUsd": 0.1', '"costPerTaskUsd": 0.159')
     .replace('"checked": "2026-11-10"', '"checked": "2026-11-13"')
-    .replace('"intelligence": 50, "costPerTaskUsd": null }', '"intelligence": 50.4, "costPerTaskUsd": null, "checked": "2026-11-13" }')
+    .replace('"intelligence": 50, "costPerTaskUsd": null, "ownerDecision": "owner keeps null" }', '"intelligence": 50.4, "costPerTaskUsd": null, "ownerDecision": "owner keeps null", "checked": "2026-11-13" }')
   assert.equal(fs.readFileSync(f.pairs, 'utf8'), expected, 'patches only the intended values in each row without duplicate fields')
   const text = fs.readFileSync(f.pairs, 'utf8'); const again = run(f, ['--write']); assert.match(again.stdout, /^No figure changed\./); assert.doesNotMatch(again.stdout, /written to/); assert.equal(fs.readFileSync(f.pairs, 'utf8'), text)
 })
@@ -117,6 +117,15 @@ test('the code figures are not read: a row keeps the code fields it carries, and
   const r = rowsOf(f)[0]
   assert.deepEqual([r.intelligence, r.code, r.codeChecked], [29.9, 21.72, '2026-11-10'])
   assert.doesNotMatch(out.stdout, /code/)
+})
+test('a null cost without an owner decision is filled from the snapshot when the snapshot has it', t => {
+  const f = setup(t, [{ ...argonHigh, costPerTaskUsd: null }])
+  writeSnapshot(f, snapshotOf({ [argonHigh.slug]: { figures: { intelligence: 50.4, costPerTaskUsd: 4.973 } } }))
+  const out = run(f, ['--write'])
+  assert.equal(out.exitCode, 0, out.stdout)
+  assert.match(out.stdout, /costPerTaskUsd none → 4\.973/)
+  const r = rowsOf(f)[0]
+  assert.equal(r.costPerTaskUsd, 4.973)
 })
 test('bad arguments and usage print usage and exit 2', t => {
   const f = setup(t, [haikuHigh])

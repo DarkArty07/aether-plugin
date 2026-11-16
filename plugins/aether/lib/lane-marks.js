@@ -108,16 +108,12 @@ function readStoredMark(file) {
 // `alsoReasons` array. Returns 'moved', 'skipped' (left where it is: not a mark), or null (left for the next read).
 function migrateOneMark(dataDir, entry) {
   const oldFile = path.join(legacyRouterMarksDir(dataDir), entry)
-  let oldMark
-  try {
-    oldMark = readStoredMark(oldFile)
-  } catch {
-    return null
-  }
-  if (oldMark === null) return 'skipped'
   const storeFile = path.join(marksDir(dataDir), entry)
   try {
     return withLock(storeFile, () => {
+      if (!fs.existsSync(oldFile)) return null
+      const oldMark = readStoredMark(oldFile)
+      if (oldMark === null) return 'skipped'
       const current = readStoredMark(storeFile)
       if (current === null) {
         if (fs.existsSync(storeFile)) {
@@ -137,10 +133,17 @@ function migrateOneMark(dataDir, entry) {
         const winner = oldWins ? oldMark : current
         const loser = oldWins ? current : oldMark
         const entryOf = { source: loser.source ?? null, reason: loser.reason ?? null, until: loser.until }
-        const alsoReasons = Array.isArray(winner.alsoReasons) ? [...winner.alsoReasons] : []
-        if (!alsoReasons.some((had) => had && had.source === entryOf.source && had.reason === entryOf.reason && had.until === entryOf.until)) {
-          alsoReasons.push(entryOf)
+        const alsoReasons = []
+        const addReason = (r) => {
+          if (!r || typeof r !== 'object') return
+          const item = { source: r.source ?? null, reason: r.reason ?? null, until: r.until }
+          if (!alsoReasons.some((had) => had.source === item.source && had.reason === item.reason && had.until === item.until)) {
+            alsoReasons.push(item)
+          }
         }
+        if (Array.isArray(winner.alsoReasons)) winner.alsoReasons.forEach(addReason)
+        if (Array.isArray(loser.alsoReasons)) loser.alsoReasons.forEach(addReason)
+        addReason(entryOf)
         writeAtomic(storeFile, `${JSON.stringify({ ...winner, alsoReasons }, null, 2)}\n`)
       }
       try {
@@ -175,10 +178,7 @@ function migrateRouterMarks(dataDir) {
   return result
 }
 
-function liveMark(dataDir, harness, group, now = Date.now()) {
-  try {
-    migrateRouterMarks(dataDir)
-  } catch {}
+function readLiveMark(dataDir, harness, group, now = Date.now()) {
   let raw
   try {
     raw = fs.readFileSync(markFile(dataDir, harness, group), 'utf8')
@@ -186,6 +186,13 @@ function liveMark(dataDir, harness, group, now = Date.now()) {
     return null
   }
   return parseMark(raw, now)
+}
+
+function liveMark(dataDir, harness, group, now = Date.now()) {
+  try {
+    migrateRouterMarks(dataDir)
+  } catch {}
+  return readLiveMark(dataDir, harness, group, now)
 }
 
 // The live marks, sorted. known(harness, group), when given, keeps only the marks of a group the lane table has: a file
@@ -341,9 +348,12 @@ function markDry(dataDir, { harness, group, reading = null, reserve, now = Date.
     if (typeof refusal.resetsAt === 'string' || refusal.resetsAt === null) candidate.statedResetAt = refusal.resetsAt
   }
 
+  try {
+    migrateRouterMarks(dataDir)
+  } catch {}
   const file = markFile(dataDir, harness, group)
   return withLock(file, () => {
-    const existing = liveMark(dataDir, harness, group, now)
+    const existing = readLiveMark(dataDir, harness, group, now)
     if (existing && typeof existing.until === 'number' && existing.until >= candidate.until) {
       return existing
     }
@@ -360,9 +370,12 @@ module.exports = {
   marksDir,
   legacyRouterMarksDir,
   MAX_MARK_MS,
+  LOCK_STALE_MS,
+  LOCK_WAIT_MS,
   markFile,
   markDry,
   migrateRouterMarks,
+  readLiveMark,
   liveMark,
   liveMarks,
   healthyReading,

@@ -1,7 +1,7 @@
 'use strict'
 
 // Selects an external harness and model pair for a delegate task using superdelegation.
-// Consults quota readings and marks under <dataDir>/router/ with source 'router' without launching quota processes.
+// Consults quota readings under <dataDir>/router/readings/ and marks in the single store (<dataDir>/lanes/marks/) without launching quota processes.
 // Family: router.
 
 const { isObject } = require('./common.js')

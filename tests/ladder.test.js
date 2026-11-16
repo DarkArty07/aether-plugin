@@ -2,7 +2,16 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 const { loadLadder, newState, effortFor, judge, stateOf } = require('../plugins/aether/lib/ladder.js')
+
+const write = (data) => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aether-ladder-')), 'ladder.json')
+  fs.writeFileSync(file, JSON.stringify(data))
+  return file
+}
 
 const L = {
   law: { candidateEfforts: ['high', 'xhigh'], minJumpPoints: 2 },
@@ -87,14 +96,6 @@ test('the effort of a rung is the rung\'s, and stateOf folds the recorded verdic
 })
 
 test('a missing repeatBlocked is refused, and invalid configured counts are rejected', () => {
-  const fs = require('node:fs')
-  const os = require('node:os')
-  const path = require('node:path')
-  const write = (data) => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aether-ladder-')), 'ladder.json')
-    fs.writeFileSync(file, JSON.stringify(data))
-    return file
-  }
   const { repeatBlocked, ...withoutCount } = L
   assert.throws(() => loadLadder(write(withoutCount)), /ladder: missing repeatBlocked/)
   for (const bad of [0, -1, 1.5, 'two']) {
@@ -114,35 +115,24 @@ test('an empty sentence is no reset of the BLOCKED streak: with no red test the 
   assert.deepEqual([cleared.state.blockedKey, cleared.state.blockedCount], [null, 0])
 })
 
-test('a ladder config missing supervisorFloor, repeatBlocked or law throws ladder: missing <name>', () => {
-  const fs = require('node:fs')
-  const os = require('node:os')
-  const path = require('node:path')
-  const write = (data) => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aether-ladder-')), 'ladder.json')
-    fs.writeFileSync(file, JSON.stringify(data))
-    return file
-  }
+test('a ladder config missing supervisorFloor or law throws ladder: missing <name>', () => {
   const { supervisorFloor, ...withoutFloor } = L
   assert.throws(() => loadLadder(write(withoutFloor)), /ladder: missing supervisorFloor/)
-  const { repeatBlocked, ...withoutCount } = L
-  assert.throws(() => loadLadder(write(withoutCount)), /ladder: missing repeatBlocked/)
   const { law, ...withoutLaw } = L
   assert.throws(() => loadLadder(write(withoutLaw)), /ladder: missing law/)
+})
+
+test('loadLadder refuses a law with a wrong shape and names the file', () => {
+  for (const bad of [null, [], 'law', {}, { candidateEfforts: [], minJumpPoints: 2 }, { candidateEfforts: ['huge'], minJumpPoints: 2 }, { candidateEfforts: ['high'], minJumpPoints: -1 }, { candidateEfforts: ['high'], minJumpPoints: '2' }]) {
+    const file = write({ ...L, law: bad })
+    assert.throws(() => loadLadder(file), (err) => err instanceof Error && err.message.includes(file), JSON.stringify(bad))
+  }
 })
 
 test('loadLadder reads the stored ladder and refuses a rung with no effort, an effort that does not exist and a repeated step', () => {
   const shipped = loadLadder()
   assert.deepEqual(shipped.rungs.map((r) => r.step), ['haiku-high', 'haiku-xhigh', 'sonnet-high', 'opus-high', 'opus-xhigh'])
   assert.deepEqual([shipped.repeatBlocked, shipped.supervisorFloor, shipped.law.minJumpPoints], [2, 3, 2])
-  const fs = require('node:fs')
-  const os = require('node:os')
-  const path = require('node:path')
-  const write = (data) => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aether-ladder-')), 'ladder.json')
-    fs.writeFileSync(file, JSON.stringify(data))
-    return file
-  }
   assert.throws(() => loadLadder(write({ ...L, rungs: [{ step: 'a', model: 'a' }] })), /ladder: rungs\[0\]/)
   assert.throws(() => loadLadder(write({ ...L, rungs: [{ step: 'a', model: 'a', effort: 'huge' }] })), /effort/)
   assert.throws(() => loadLadder(write({ ...L, rungs: [L.rungs[0], L.rungs[0]] })), /same step/)
