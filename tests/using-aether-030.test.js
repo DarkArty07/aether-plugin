@@ -104,7 +104,7 @@ test('The verdict names aether-delegate approve for an edit, and the rules say o
   const verdict = text.slice(text.indexOf('**The verdict.**'), text.indexOf('**Climbing.**'))
   assert.ok(verdict.includes('aether-delegate approve --task <id>'))
   assert.match(verdict, /aether-delegate verdict --task <id> --verdict/)
-  const muse = text.match(/Reading Muse's quota costs a real call\./g) || []
+  const muse = text.match(/Only `--refresh` costs Muse a real call; without it, the command shows the stored reading\./g) || []
   assert.equal(muse.length, 1)
 })
 

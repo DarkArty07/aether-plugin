@@ -47,7 +47,7 @@ test('the guide says what makes a task rise, be blocked or be exhausted, with th
 })
 
 test('the guide says where the log is, how it is pruned after 30 days, what a delegate shows as, and what the report counts (R12)', () => {
-  for (const needed of ['delegates/log.jsonl', 'spend/<id>.outcomes.jsonl', '30 days', 'agent', 'worktree', 'unit worktree', 'aether-wt merge', 'relaunch', 'attempts']) {
+  for (const needed of ['delegates/log.jsonl', 'spend/<id>.outcomes.jsonl', '30 days', 'agent', 'worktree', 'unit worktree', 'aether-delegate approve', 'relaunch', 'attempts']) {
     assert.ok(page.includes(needed), needed)
   }
   const maintenance = read('docs', 'guide', 'maintenance.md')
