@@ -63,7 +63,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | spend | `spend-` | `spend-archive.js`, `spend-tokens.js` | `spend.js` |
 | plan | `plan-` | `plan-compile.js`, `plan-design.js`, `plan-number.js`, `plan-rules.js`, `plan-scope.js`, `plan-warnings.js` | `plan.js` |
 | session | `session-` | `session-start.js` | `session.js` |
-| harness | `lib/harness/` | `index.js`, `structured.js`, `agy.js`, `codex.js`, `cursor.js`, `grok.js`, `muse.js`, `muse-quota.js`, `harness-names.js` | `index.js` |
+| harness | `lib/harness/` | `index.js`, `structured.js`, `agy.js`, `codex.js`, `cursor.js`, `grok.js`, `muse.js`, `muse-quota.js`, `lib/harness-names.js` | `index.js` |
 | wt | `wt-` | `wt-config.js`, `wt-gate.js`, `wt-ladder.js`, `wt-stuck.js`, `wt-watch.js` | none |
 | audit | `audit-` | `audit-analyze.js`, `audit-clean.js`, `audit-common.js`, `audit-exec.js`, `audit-github.js`, `audit-report.js`, `audit-risk.js`, `audit-scan.js`, `audit-snapshot.js`, `audit-store.js`, `audit-tools.js`, `audit-triage.js`, `audit-verify.js` | `audit.js` |
 | continuity | `continuity-` | `continuity-store.js`, `continuity-hook.js`, `continuity-notice.js`, `continuity-posttool.js`, `continuity-permission.js` | `none` |

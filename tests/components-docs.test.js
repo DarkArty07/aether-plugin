@@ -106,7 +106,9 @@ test('the components page lists every verb of aether-wt (#256 9)', () => {
   const components = read('docs', 'reference', 'components.md')
   const row = components.split('\n').find((line) => line.startsWith('| `aether-wt` |'))
   assert.ok(row, 'the page has a row for aether-wt')
-  const verbs = [...new Set([...read('plugins', 'aether', 'bin', 'aether-wt').matchAll(/^\/\/ aether-wt ([\w-]+)/gm)].map((m) => m[1]))]
+  const usage = read('plugins', 'aether', 'bin', 'aether-wt').match(/^const USAGE = '([^']+)'/m)
+  assert.ok(usage, 'aether-wt bin defines USAGE')
+  const verbs = [...new Set([...usage[1].matchAll(/aether-wt ([\w-|]+)/g)].flatMap((m) => m[1].split('|')))]
   assert.ok(verbs.includes('settle'), 'aether-wt bin declares settle')
   for (const verb of verbs) {
     assert.ok(row.includes(`\`${verb}\``), `the row names ${verb}`)

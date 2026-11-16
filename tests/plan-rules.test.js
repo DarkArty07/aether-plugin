@@ -76,7 +76,15 @@ test('without .specify/plan-rules.json there is no rule warning (#263)', (t) => 
 })
 
 test('a broken .specify/plan-rules.json is an error naming the file in check and compile (#263)', (t) => {
-  for (const bad of ['{not json', '{"adds": "lib/*.js"}', '[{"adds": "lib/*.js"}]', '[{"adds": "a", "changes": "b", "owns": ["c"], "why": "d"}]']) {
+  for (const bad of [
+    '{not json',
+    '{"adds": "lib/*.js"}',
+    '[{"adds": "lib/*.js"}]',
+    '[{"owns": ["docs/components.md"], "why": "d"}]',
+    '[{"adds": "a", "changes": "b", "owns": ["c"], "why": "d"}]',
+    '[{"adds": "", "changes": "b", "owns": ["c"], "why": "d"}]',
+    '[{"adds": "a", "owns": ["c"], "why": "d", "extra": 1}]',
+  ]) {
     const repo = setupRepo(t, {}, bad)
     const planFile = writePlan(repo.dir, plan([task(1, { owns: '`lib/x.js`' })]))
     const r = runBin(PLAN_BIN, ['check', planFile], repo.dir)

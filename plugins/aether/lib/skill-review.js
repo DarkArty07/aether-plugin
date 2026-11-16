@@ -70,14 +70,15 @@ function reviewSkill(dir, { cwd, home = os.homedir() } = {}) {
     try { targetPaths = repoPaths(targetRepoDir) } catch {}
   }
   let cwdPaths = null
-  try { cwdPaths = repoPaths(workingDir) } catch {}
+  if (!targetPaths) {
+    try { cwdPaths = repoPaths(workingDir) } catch {}
+  }
 
-  if (targetPaths && (!cwdPaths || targetPaths.mainRoot === cwdPaths.mainRoot)) {
+  if (targetPaths) {
     projectRoots = [targetPaths.worktree, targetPaths.mainRoot]
     inRepo = true
   } else if (cwdPaths) {
     projectRoots = [cwdPaths.worktree, cwdPaths.mainRoot]
-    inRepo = Boolean(targetPaths)
   } else {
     projectRoots = [workingDir]
   }

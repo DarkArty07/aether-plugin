@@ -90,7 +90,7 @@ test('every fixed list of harness names in the code names codex, except the ones
   assert.ok(Object.values(WITHOUT_CODEX).every((why) => why !== ''))
 })
 
-// The one written list of the four delegate harnesses. listsIn reads the assignment, so a copy built from HARNESS_NAMES is not this literal.
+// No literal list of the four delegate harnesses remains: harness-names.js derives them from lib/harness/index.js.
 const FOUR = ['agy', 'codex', 'grok', 'muse']
 
 function filesOf(dir) {
@@ -104,10 +104,10 @@ function filesOf(dir) {
   return found
 }
 
-test('the literal list of agy, codex, grok and muse is only in harness-names.js (R23, R24)', () => {
+test('no literal list of agy, codex, grok and muse remains in lib/ or bin/ (R23, R24)', () => {
   const roots = [path.join(ROOT, 'plugins/aether/lib'), path.join(ROOT, 'plugins/aether/bin')]
   const found = roots.flatMap((dir) => filesOf(dir))
     .flatMap((full) => listsIn(fs.readFileSync(full, 'utf8'), path.relative(ROOT, full)))
     .filter((list) => list.items.length === FOUR.length && list.items.every((item, i) => item === FOUR[i]))
-  assert.deepEqual(found.map((list) => `${list.file} ${list.name}`), ['plugins/aether/lib/harness-names.js HARNESS_NAMES'])
+  assert.deepEqual(found, [])
 })
