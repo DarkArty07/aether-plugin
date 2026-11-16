@@ -158,7 +158,7 @@ A relaunch keeps the run's first compile time, and keeps the previous launch's r
 
 Finish when every unit is merged or adopted, the final review's status is `done` and it has no open critical or important finding, and the test command passes on the integration branch, or fails only on the run's baseline (`quality.tests.knownFailuresOnly` in the report). A `deferred` review has not run: relaunch, or force it, before you finish.
 
-1. First, include this session's spend in the closing report from `aether-report --spend --session <id de esta sesión>` in the format of `using-aether`; in an autonomous run, with the clause «y no es la cifra del tope»:
+1. First, include this session's spend in the closing report from `aether-report --spend --session <id de esta sesión> --line --run` (or `--line` outside a run) in the format of `using-aether`; in an autonomous run, with the clause «y no es la cifra del tope»:
    Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.
 2. Run `aether-report finalize --run <runId>` from the integration worktree. It records the run as it stands, so act on every critical and important finding first. It appends the report to `runs.jsonl` in the plugin's data directory, with the Aether and Claude Code versions and that of each lane harness that ran. Then it deletes the run's worktrees, branches and directory, so first save what you still need from the patches.
 3. Finish the branch yourself, as the owner's delegate:

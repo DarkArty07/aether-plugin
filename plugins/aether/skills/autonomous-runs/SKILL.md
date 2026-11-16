@@ -75,6 +75,6 @@ A new figure for a `seat/<id>` label already recorded replaces the old one. The 
     - US$ <gasto> de US$ <tope>. La cifra suma cada lanzamiento del swarm y cada intento de una tarea delegada en otro harness, con sus lanes, los asientos externos y los agentes nativos que corrieron dentro de su ventana, turnos del Lead incluidos; cada petición cuenta una vez aunque las ventanas se solapen.
     - Sesión <id>: US$ <total> a precio de lista (Lead US$ <lead>, agentes US$ <agentes>). El total incluye las llamadas a otros harness (<n> llamadas, US$ <harness>) y no es la cifra del tope.
 
-The session line of Tiempo y costo comes from `aether-report --spend --session <id de esta sesión>`, in the format of using-aether; its clause «y no es la cifra del tope» tells it from the ceiling line above it. It goes in every closing brief, whatever the Resultado.
+The session line of Tiempo y costo comes from `aether-report --spend --session <id de esta sesión> --line --run`, in the format of using-aether; its clause «y no es la cifra del tope» tells it from the ceiling line above it. It goes in every closing brief, whatever the Resultado.
 
 "Hice" names the branch and the commits. "Decidí" gives each decision with its grounds, above all where you departed from the Judge. "No terminé" says what was tried and why it stopped. The owner's «sí» to an item of "Espera tu sí" authorizes that action once, and you run it; if their words are general, also record a grant; under `enforce`, record their reply as "Recording the owner's authorizations" in the bootstrap says.

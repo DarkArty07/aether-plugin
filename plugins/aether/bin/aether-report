@@ -6,7 +6,7 @@
 // aether-report price <claude -p json output> [--main-model <id>]
 // aether-report --seats [--session <id>] [--since <ms>]
 // aether-report --delegates [--session <id>] [--since <ms>]
-// aether-report --spend [--session <id>]
+// aether-report --spend [--session <id>] [--line [--run]]
 //   aether-report --skills [--repo <path>] [--since <ms|iso>] [--until <ms|iso>] [--session <id>]
 
 const path = require('node:path')
@@ -16,10 +16,10 @@ const { report, finalize, seatsReport, skillsReport } = require(path.join(lib, '
 const { dataDir } = require(path.join(lib, 'run.js'))
 const { delegatesReport } = require(path.join(lib, 'delegate-report.js'))
 const { loadPrices, priceModelUsage } = require(path.join(lib, 'prices.js'))
-const { spendReport, isSessionId } = require(path.join(lib, 'spend.js'))
+const { spendReport, spendLine, isSessionId } = require(path.join(lib, 'spend.js'))
 
 const USAGE =
-  'usage: aether-report [finalize] --run <id> [--session <id>] [--no-tests] | aether-report --seats [--session <id>] [--since <ms>] | aether-report price <claude-json> [--main-model <id>] | aether-report --spend [--session <id>] | aether-report --skills [--repo <path>] [--since <ms|iso>] [--until <ms|iso>] [--session <id>]'
+  'usage: aether-report [finalize] --run <id> [--session <id>] [--no-tests] | aether-report --seats [--session <id>] [--since <ms>] | aether-report price <claude-json> [--main-model <id>] | aether-report --spend [--session <id>] [--line [--run]] | aether-report --skills [--repo <path>] [--since <ms|iso>] [--until <ms|iso>] [--session <id>]'
 
 // The value after a flag, or null when the flag is absent.
 function value(args, flag) {
@@ -44,22 +44,28 @@ function delegates(argv) {
   return delegatesReport({ session: value(rest, '--session'), since: since === null ? 0 : Number(since) })
 }
 
-const SPEND_USAGE = 'usage: aether-report --spend [--session <id>]'
+const SPEND_USAGE = 'usage: aether-report --spend [--session <id>] [--line [--run]]'
 
-// --spend takes only itself and, at most once, --session with a well-formed id (a value that starts with `--` is the
-// next flag, not an id); anything else is a misuse, and the misuse is caught before any figure is read.
+// --spend takes only itself, at most once --session with a well-formed id (a value that starts with `--` is the
+// next flag, not an id), and optionally --line (with optional --run); anything else is a misuse caught before reading.
 function spend(argv) {
   let session = null
   let seen = false
   let named = false
+  let line = false
+  let run = false
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--spend' && !seen) seen = true
+    else if (argv[i] === '--line' && !line) line = true
+    else if (argv[i] === '--run' && !run) run = true
     else if (argv[i] === '--session' && !named && isSessionId(argv[i + 1]) && !argv[i + 1].startsWith('--')) {
       named = true
       session = argv[++i]
     } else throw new Error(SPEND_USAGE)
   }
-  return spendReport({ session })
+  if (run && !line) throw new Error(SPEND_USAGE)
+  const result = spendReport({ session })
+  return line ? spendLine(result, { run }) : result
 }
 
 const SKILLS_USAGE = 'usage: aether-report --skills [--repo <path>] [--since <ms|iso>] [--until <ms|iso>] [--session <id>]'
@@ -115,7 +121,8 @@ function main(argv) {
 }
 
 try {
-  process.stdout.write(JSON.stringify(main(process.argv.slice(2))) + '\n')
+  const out = main(process.argv.slice(2))
+  process.stdout.write((typeof out === 'string' ? out : JSON.stringify(out)) + '\n')
 } catch (err) {
   process.stdout.write(JSON.stringify({ error: err.message }) + '\n')
   process.exit(1)
