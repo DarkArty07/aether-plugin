@@ -394,9 +394,10 @@ async function recordCrossing($, state, crossing, threshold, notify) {
   ])
 }
 
-// What a recorded crossing does: a new five-hour pause tells the Lead to stop the run's work (the plugin's
-// own message, never as the owner's words) and arms its wake-up. Any five-hour answer but no-run is
-// remembered for that reset hour, so neither the settings nor the crossing is asked for it again.
+// What a recorded crossing does: a five-hour pause this session has not seen yet (whether new or already
+// recorded by another session's crossing) tells the Lead to stop the run's work (the plugin's own message,
+// never as the owner's words) and arms its wake-up. Any five-hour answer but no-run is remembered for
+// that reset hour, so neither the settings nor the crossing is asked for it again.
 async function brakeRecorded($, state, crossing, record) {
   const brake = state.brake
   const wasPaused = brake.pausedResetsAt === crossing.resetsAt
@@ -467,7 +468,13 @@ async function brakeStepOnce($, state) {
         void recordFault($, state, 'register.brake-settings-recheck', 'settings-unreadable')
         settings = null
       }
-      if (settings) brake.settings = settings
+      if (settings) {
+        brake.settings = settings
+        if (settings.paused && brake.pausedResetsAt !== settings.paused.resetsAt) {
+          brake.pausedResetsAt = settings.paused.resetsAt
+          await armResume($, brake, settings.paused.run, settings.paused.resumeAt)
+        }
+      }
       brake.settingsCheckedAt = now
     }
     const decided = crossingsOf(rateLimits, brake.settings.threshold, brake.state)

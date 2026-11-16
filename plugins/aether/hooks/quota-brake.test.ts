@@ -374,3 +374,26 @@ test('steps that overlap settle one crossing: one settings call, one notice, one
   expect(s.crossingRuns()).toHaveLength(1)
   expect(s.prompts).toHaveLength(1)
 })
+
+test('a paused run continued in a restarted session arms its resume on recheck without repeating the stop prompt', async ($, on) => {
+  const settings: any = { ...SETTINGS, openRun: null, paused: null, notified: { five_hour: RESET, seven_day: null } }
+  const s = stubs(on, { settings })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await step($)
+  expect(s.notes).toEqual([])
+  expect(s.crossingRuns()).toEqual([])
+  expect(s.prompts).toEqual([])
+  settings.openRun = RUN
+  settings.paused = { run: RUN, resetsAt: RESET, resumeAt: RESUME, percentUsed: 97 }
+  await s.clock.advance(60_000)
+  await step($)
+  expect(s.crossingRuns()).toEqual([])
+  expect(s.prompts).toEqual([])
+  await s.clock.advance(60_000)
+  await step($)
+  expect(s.runs.filter((r) => r.argv[2] === 'brake-settings')).toHaveLength(2)
+  await s.clock.advance(Date.parse(RESUME) - NOW - 120_000)
+  expect(s.prompts).toHaveLength(1)
+  expect(s.prompts[0].text).toContain('the five_hour window has reset')
+  expect(s.prompts[0].text).toContain(RUN)
+})
