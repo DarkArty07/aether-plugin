@@ -28,19 +28,19 @@
 
 ## Requirements
 
-- R1: `aether-autonomy start` abre una corrida para la sesión que llama aunque otra sesión del mismo proyecto tenga una corrida abierta; cada corrida tiene su carpeta, sus topes y su diario. Serves: C1. (Sirve a: C1)
-- R2: Una sesión que ya tiene una corrida abierta no puede abrir otra: `start` se rechaza con un mensaje que nombra esa corrida. Serves: C1. (Sirve a: C1)
-- R3: Los lanzamientos de una sesión (`aether-delegate begin`, `aether-plan compile`, el diseño) se rechazan solo por los topes y la pausa de la corrida de esa sesión; el tope vencido de la corrida de otra sesión nunca los rechaza, y una sesión sin corrida no recibe el rechazo de la corrida de otra. Serves: C2. (Sirve a: C2)
-- R4: `status`, `spend`, `extend`, `end`, `brake-off` y `quota-saved`, sin nombrar corrida, actúan sobre la corrida abierta de la sesión que llama y no modifican ninguna otra. Serves: C2. (Sirve a: C2)
-- R5: Cuando un comando no puede saber qué sesión lo llama y hay más de una corrida abierta, no actúa sobre ninguna: lista las corridas abiertas (id y sesión) y pide que se nombre una; con una sola corrida abierta actúa sobre ella. Serves: C2. (Sirve a: C2)
-- R6: `status` y `end` aceptan el id de una corrida y actúan sobre ella aunque la abriera otra sesión, sin ninguna comprobación de quién la abrió ni permiso nuevo. Serves: C3. (Sirve a: C3)
-- R7: La cifra en dólares de una corrida suma solo los enjambres y tareas delegadas lanzados por la sesión de esa corrida; un trabajo que ya cuenta en una corrida no cuenta en otra. Serves: C4. (Sirve a: C4)
-- R8: El trabajo que no se puede atribuir a una sesión se cuenta como hoy, por la ventana de tiempo de la corrida. Serves: C4. (Sirve a: C4)
-- R9: Cuando salta el freno de cuota, la pausa se anota en todas las corridas abiertas del proyecto, y cada corrida se reanuda por su cuenta sin afectar la pausa de otra. Serves: C5. (Sirve a: C5)
-- R10: El aviso de inicio de sesión dice cuál es la corrida abierta de esa sesión y, en un apartado aparte y solo informativo, qué corridas tienen abiertas otras sesiones; sin otras corridas, el aviso no cambia. Serves: C6. (Sirve a: C6)
-- R11: Las reglas del Lead (`skills/using-aether`) y la guía de corridas autónomas dicen que la corrida es por sesión y cómo alcanzar la de otra, y el aviso de inicio sigue dentro de su límite de caracteres por parte. Serves: C6. (Sirve a: C6)
-- R12: Con una sola sesión en el proyecto, los mismos comandos dan las mismas salidas y los mismos archivos que antes; una corrida abierta con la versión anterior se puede seguir y cerrar. Serves: C6. (Sirve a: C6)
-- R13: Ninguna ruta nueva comprueba qué sesión puede leer o cerrar la corrida de otra, y no se añade ningún tope común al proyecto. Serves: C3. (Sirve a: C3)
+- R1: `aether-autonomy start` abre una corrida para la sesión que llama aunque otra sesión del mismo proyecto tenga una corrida abierta; cada corrida tiene su carpeta, sus topes y su diario. Sirve a: C1.
+- R2: Una sesión que ya tiene una corrida abierta no puede abrir otra: `start` se rechaza con un mensaje que nombra esa corrida. Sirve a: C1.
+- R3: Los lanzamientos de una sesión (`aether-delegate begin`, `aether-plan compile`, el diseño) se rechazan solo por los topes y la pausa de la corrida de esa sesión; el tope vencido de la corrida de otra sesión nunca los rechaza, y una sesión sin corrida no recibe el rechazo de la corrida de otra. Sirve a: C2.
+- R4: `status`, `spend`, `extend`, `end`, `brake-off` y `quota-saved`, sin nombrar corrida, actúan sobre la corrida abierta de la sesión que llama y no modifican ninguna otra. Sirve a: C2.
+- R5: Cuando un comando no puede saber qué sesión lo llama y hay más de una corrida abierta, no actúa sobre ninguna: lista las corridas abiertas (id y sesión) y pide que se nombre una; con una sola corrida abierta actúa sobre ella. Sirve a: C2.
+- R6: `status` y `end` aceptan el id de una corrida y actúan sobre ella aunque la abriera otra sesión, sin ninguna comprobación de quién la abrió ni permiso nuevo. Sirve a: C3.
+- R7: La cifra en dólares de una corrida suma solo los enjambres y tareas delegadas lanzados por la sesión de esa corrida; un trabajo que ya cuenta en una corrida no cuenta en otra. Sirve a: C4.
+- R8: El trabajo que no se puede atribuir a una sesión se cuenta como hoy, por la ventana de tiempo de la corrida. Sirve a: C4.
+- R9: Cuando salta el freno de cuota, la pausa se anota en todas las corridas abiertas del proyecto, y cada corrida se reanuda por su cuenta sin afectar la pausa de otra. Sirve a: C5.
+- R10: El aviso de inicio de sesión dice cuál es la corrida abierta de esa sesión y, en un apartado aparte y solo informativo, qué corridas tienen abiertas otras sesiones; sin otras corridas, el aviso no cambia. Sirve a: C6.
+- R11: Las reglas del Lead (`skills/using-aether`) y la guía de corridas autónomas dicen que la corrida es por sesión y cómo alcanzar la de otra, y el aviso de inicio sigue dentro de su límite de caracteres por parte. Sirve a: C6.
+- R12: Con una sola sesión en el proyecto, los mismos comandos dan las mismas salidas y los mismos archivos que antes; una corrida abierta con la versión anterior se puede seguir y cerrar. Sirve a: C6.
+- R13: Ninguna ruta nueva comprueba qué sesión puede leer o cerrar la corrida de otra, y no se añade ningún tope común al proyecto. Sirve a: C3.
 
 ## Proposals
 
