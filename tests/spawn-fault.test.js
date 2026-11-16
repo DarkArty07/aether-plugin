@@ -153,7 +153,7 @@ test('a failure of the spawn handler before its next leaves handler-threw with n
   assert.deepEqual(faultsOf(writes), [{ time: 1000, source: 'register.on-agent-spawn', class: 'handler-threw' }])
 })
 
-test('a delegate whose begin fails leaves handler-threw with the kind of the error, and the Agent call goes on as the Lead made it (R1)', async () => {
+test('a delegate whose begin fails leaves handler-threw with the kind of the error, and keeps the model the Lead named (R1)', async () => {
   const table = await hooks()
   const { $, writes } = dollar({ id: 's-begin', env: { AETHER_DATA_DIR: '/data' }, runCode: 1 })
   let seen = null

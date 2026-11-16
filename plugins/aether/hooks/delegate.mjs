@@ -12,14 +12,17 @@
 // agent.spawn and turn.step: the spawn binds the agent to the call by its prompt. The first step of an `external`
 // delegate is the whole delegate: `aether-delegate start` launches it, waitSteps waits for it, and a text event, a
 // heartbeat, goes out after every wait that did not end, because the engine kills an agent whose step emits nothing for
-// 600 s (Task 17 measured it). The delegate's text is the agent's answer, with no model request. A delegate that fails
+// 600 s (Task 17 measured it). The delegate's text is the agent's answer, with no model request. A `blocked` end
+// of an external delegate is handed straight to the Lead as the answer with no rescue. Any other external failure
 // is left to the model, at the model of the plan, which is already the one of the step; the model's step that ends the
 // turn then yields one line naming the attempt that did not deliver, as a text chunk before its stop. Every later step of an
 // `external` agent and every step of an `answerOf` agent goes through the model unchanged, and the last one records
 // its end with `aether-delegate answer`: read-only answers are checked by `verdict` (R6).
 //
-// Any failure of the mod (an exception, a non-zero exit, a line that is not JSON, a skipped plan) leaves the call as the
-// Lead made it, and leaves a trace through ctx.fault (fault-trace.mjs), which the caller may not give.
+// A skipped `begin` (`skip: true`) leaves the call as the Lead made it. A failed `begin` (an exception, a non-zero exit,
+// a line that is not JSON, a timeout) keeps the Lead's model if named or falls back to `haiku`, adds a note for the Lead,
+// and leaves a trace through ctx.fault (fault-trace.mjs), which the caller may not give. Other failures of the mod leave
+// the call as the Lead made it and trace through ctx.fault.
 //
 // The `$` the methods take is the three calls the mod makes ($.clock.now, $.fs.write, $.process.run): the engine loads a
 // hooks module only when $ goes to functions declared at the top of its files, so register.js hands a method an object

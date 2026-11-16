@@ -44,9 +44,10 @@ test('every list the skill tells to touch exists in the tree, and every fixed li
   assert.deepEqual(have.filter((entry) => !found.includes(entry)), [], 'a list of the skill the code does not have')
 })
 
-test('the one list of the delegates and the router is named in the skill, and its five copies read it (R23; spec 036 R23)', () => {
+test('the one list of the harnesses is named in the skill, harness-names.js derives from it, and its five copies read harness-names.js (R23; spec 036 R23)', () => {
   const have = listedBlock().map(({ file, name }) => `${file} ${name}`)
-  assert.ok(have.includes('plugins/aether/lib/harness-names.js HARNESS_NAMES'))
+  assert.ok(have.includes('plugins/aether/lib/harness/index.js HARNESS_NAMES'))
+  assert.ok(read('plugins/aether/lib/harness-names.js').includes("require('./harness/index.js')"))
   const copies = { 'delegate-calls.js': 'HARNESSES', 'router-pick.js': 'DELEGATE_HARNESSES', 'router-quota.js': 'EXTERNAL', 'router-renewal.js': 'RENEWABLE', 'lane-delegate.js': 'ALLOWED_HARNESSES' }
   for (const [file, name] of Object.entries(copies)) {
     const text = read(`plugins/aether/lib/${file}`)
@@ -71,9 +72,9 @@ test('the repository skills live in .agents/skills/ with relative symlinks in .c
   const isolated = fs.mkdtempSync(path.join(ROOT, '.aether', 'tmp', 'skills-layout-'))
   t.after(() => fs.rmSync(isolated, { recursive: true, force: true }))
   require('node:child_process').execFileSync('git', ['init', '--quiet', isolated])
-  fs.symlinkSync(path.join(ROOT, '.agents'), path.join(isolated, '.agents'))
+  fs.cpSync(path.join(ROOT, '.agents'), path.join(isolated, '.agents'), { recursive: true, verbatimSymlinks: true })
   fs.mkdirSync(path.join(isolated, '.claude'))
-  fs.symlinkSync(path.join(ROOT, '.claude', 'skills'), path.join(isolated, '.claude', 'skills'))
+  fs.cpSync(path.join(ROOT, '.claude', 'skills'), path.join(isolated, '.claude', 'skills'), { recursive: true, verbatimSymlinks: true })
 
   for (const name of ['artificial-analysis', 'new-harness', 'pxl']) {
     const linkPath = path.join(ROOT, '.claude', 'skills', name)

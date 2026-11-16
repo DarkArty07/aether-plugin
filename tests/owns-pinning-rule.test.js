@@ -56,14 +56,15 @@ test('swarm skill treats warning for changes without tests as blocking before co
 })
 
 test('tasks skill, speckit command, writer and judge mention .specify/plan-rules.json and registration in Owns (#263)', () => {
-  for (const file of [
-    ['skills', 'tasks', 'SKILL.md'],
-    ['speckit', 'commands', 'speckit.tasks.md'],
-    ['agents', 'writer.md'],
-    ['agents', 'judge.md'],
+  for (const [file, clause] of [
+    [['skills', 'tasks', 'SKILL.md'], /goes in that task's Owns/],
+    [['speckit', 'commands', 'speckit.tasks.md'], /goes in that task's Owns/],
+    [['agents', 'writer.md'], /goes in that task's Owns/],
+    [['agents', 'judge.md'], /or depends on a task that does/],
   ]) {
     const text = read(...file)
     assert.match(text, /\.specify\/plan-rules\.json/, `${file.join('/')} names .specify/plan-rules.json`)
     assert.match(text, /registration/i, `${file.join('/')} mentions registration`)
+    assert.match(text, clause, `${file.join('/')} states the rule clause`)
   }
 })

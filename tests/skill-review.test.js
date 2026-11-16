@@ -298,3 +298,16 @@ test('reviewSkill derives the repository from the skill path even when cwd is th
   const wtSkill = path.join(wt, '.claude', 'skills', 'artificial-analysis')
   assert.deepEqual(review.reviewSkill(wtSkill, { cwd: w.repo.dir, home: w.home }), [])
 })
+
+test('reviewSkill uses the repository of the skill being reviewed even when cwd is a different repository', (t) => {
+  const w = world(t)
+  const other = makeRepo(t)
+  // A skill with the same name in the session's repo must not be flagged when reviewing other's skill.
+  skill(w.repo.dir, 'shared-name', { extra: ' (session)' })
+  const otherSkill = skill(other.dir, 'shared-name', { extra: ' (other)' })
+  assert.deepEqual(review.reviewSkill(otherSkill, { cwd: w.repo.dir, home: w.home }), [])
+  // A duplicate inside the skill's own repository IS flagged.
+  skill(other.dir, 'shared-name', { where: '.claude/skills', extra: ' (other dup)' })
+  const problems = review.reviewSkill(otherSkill, { cwd: w.repo.dir, home: w.home })
+  assert.ok(problems.some((p) => p.startsWith('a skill with the same name exists at ') && p.includes(other.dir)))
+})

@@ -12,15 +12,24 @@ const { isGlob, matchesAny, normalizePattern } = require('./globs.js')
 const { filesOf, dependenciesOf } = require('./plan-warnings.js')
 
 const RULES_REL = '.specify/plan-rules.json'
+const RULE_KEYS = new Set(['adds', 'changes', 'owns', 'why'])
 
 function validateRule(rule, index) {
   if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
     return `${RULES_REL}: rule ${index + 1} must be an object`
   }
-  const hasAdds = isText(rule.adds)
-  const hasChanges = isText(rule.changes)
+  const unknown = Object.keys(rule).filter((key) => !RULE_KEYS.has(key))
+  if (unknown.length > 0) {
+    return `${RULES_REL}: rule ${index + 1} has unknown key "${unknown[0]}"`
+  }
+  const hasAdds = Object.hasOwn(rule, 'adds')
+  const hasChanges = Object.hasOwn(rule, 'changes')
   if (hasAdds === hasChanges) {
     return `${RULES_REL}: rule ${index + 1} must have either "adds" or "changes" (not both)`
+  }
+  const triggerKey = hasAdds ? 'adds' : 'changes'
+  if (!isText(rule[triggerKey])) {
+    return `${RULES_REL}: rule ${index + 1} must have a non-empty "${triggerKey}" string`
   }
   if (!Array.isArray(rule.owns) || rule.owns.length === 0 || !rule.owns.every(isText)) {
     return `${RULES_REL}: rule ${index + 1} must have a non-empty "owns" array of strings`
