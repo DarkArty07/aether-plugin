@@ -87,3 +87,32 @@ test('does not touch or create the retired journal', (t) => {
   assert.equal(fs.existsSync(path.join(dir, 'rout' + 'er', 'dec' + 'isions.jsonl')), false)
 })
 
+test('resultRunId and delegateAttemptWindows extract finished, failed and in-flight editing attempts', (t) => {
+  const dir = tempDir(t)
+  const run1 = '20261116-010000-1111'
+  assert.equal(log.resultRunId({ branch: `aether/${run1}/task-1` }), run1)
+  assert.equal(log.resultRunId({ worktree: `/tmp/repo/.aether/worktrees/${run1}/task-1` }), run1)
+  assert.equal(log.resultRunId({ branch: 'main', worktree: null }), null)
+
+  log.appendEntry(dir, { kind: 'launch', time: 100, session: 's1', task: 't1', attempt: 1, edits: true })
+  log.appendEntry(dir, { kind: 'result', time: 200, session: 's1', task: 't1', attempt: 1, branch: `aether/${run1}/task-1` })
+  log.appendEntry(dir, { kind: 'launch', time: 300, session: 's1', task: 't2', attempt: 1, edits: true })
+  log.appendEntry(dir, { kind: 'result', time: 450, session: 's1', task: 't2', attempt: 1, ok: false, branch: null })
+  log.appendEntry(dir, { kind: 'launch', time: 500, session: 's1', task: 't3', attempt: 1, edits: true })
+  log.appendEntry(dir, { kind: 'launch', time: 550, session: 's1', task: 't-claude', attempt: 1, edits: true })
+  log.appendEntry(dir, { kind: 'ended', time: 580, session: 's1', task: 't-claude', attempt: 1 })
+  log.appendEntry(dir, { kind: 'launch', time: 600, session: 's1', task: 'ro', attempt: 1, edits: false })
+
+  const windows = log.delegateAttemptWindows(dir)
+  assert.equal(windows.byRunId.get(run1), 200)
+  assert.equal(windows.attempts.length, 3)
+  assert.deepEqual(
+    windows.attempts.map((a) => ({ task: a.task, launchTime: a.launchTime, resultTime: a.resultTime, runId: a.runId })),
+    [
+      { task: 't1', launchTime: 100, resultTime: 200, runId: run1 },
+      { task: 't2', launchTime: 300, resultTime: 450, runId: null },
+      { task: 't3', launchTime: 500, resultTime: null, runId: null },
+    ],
+  )
+})
+
