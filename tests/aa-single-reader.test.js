@@ -6,11 +6,12 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const ROOT = path.join(__dirname, '..')
-const SKILL = path.join(ROOT, '.claude', 'skills', 'artificial-analysis')
+const SKILL = path.join(ROOT, '.agents', 'skills', 'artificial-analysis')
 const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8')
 const KEY_HEADER = ['x', 'api', 'key'].join('-')
 
 function sources(dir, out = []) {
+  if (!fs.existsSync(dir)) return out
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (['node_modules', '.git', '.worktrees', 'worktrees', 'tests'].includes(entry.name)) continue
     const full = path.join(dir, entry.name)
@@ -21,8 +22,12 @@ function sources(dir, out = []) {
 }
 
 test('scripts/aa-pages.js is the only file that asks a page of the network', () => {
-  const asking = [...sources(path.join(ROOT, 'scripts')), ...sources(path.join(ROOT, 'plugins')), ...sources(path.join(ROOT, '.claude'))]
-    .filter((file) => /\bfetch\s*\(|globalThis\.fetch|https?\.get\(/.test(read(file)))
+  const asking = [
+    ...sources(path.join(ROOT, 'scripts')),
+    ...sources(path.join(ROOT, 'plugins')),
+    ...sources(path.join(ROOT, '.agents')),
+    ...sources(path.join(ROOT, '.claude')),
+  ].filter((file) => /\bfetch\s*\(|globalThis\.fetch|https?\.get\(/.test(read(file)))
   assert.deepEqual(asking, ['scripts/aa-pages.js'])
 })
 

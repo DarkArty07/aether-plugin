@@ -10,6 +10,8 @@ This page is for working on the plugin itself: trying a branch, running the chec
 
 ## Development
 
+The repository's own skills, `artificial-analysis`, `new-harness`, and `pxl`, live in `.agents/skills/`. Each entry in `.claude/skills/` is a relative symbolic link to that real copy; edit the files in `.agents/skills/`.
+
 The plugin is `plugins/aether/`, and the repository's `.claude-plugin/marketplace.json` lists it. An installed release is a copy in Claude Code's plugin cache, so work in the repository never changes it until you update. To try a branch:
 
     claude --plugin-dir <worktree>/plugins/aether --agent aether:lead --effort xhigh

@@ -61,3 +61,39 @@ test('the skill new-harness holds the rule of the top tier and the trap of the s
   for (const phrase of ['Fable 5.1', 'GPT-6 Astra', 'GPT-6.1 Astra', '2026-10-26', '2026-10-29', 'a new row']) assert.ok(text.includes(phrase), phrase)
   assert.ok(/waits for|next generation/i.test(text))
 })
+
+test('the repository skills live in .agents/skills/ with relative symlinks in .claude/skills/ and pass plugin review', (t) => {
+  const { reviewSkill, posttool } = require('../plugins/aether/lib/skill-review.js')
+  const { classifySkillPath } = require('../plugins/aether/lib/skill-rules.js')
+
+  // Isolate from the unmerged main checkout (repoPaths().mainRoot) when running inside a worktree.
+  fs.mkdirSync(path.join(ROOT, '.aether', 'tmp'), { recursive: true })
+  const isolated = fs.mkdtempSync(path.join(ROOT, '.aether', 'tmp', 'skills-layout-'))
+  t.after(() => fs.rmSync(isolated, { recursive: true, force: true }))
+  require('node:child_process').execFileSync('git', ['init', '--quiet', isolated])
+  fs.symlinkSync(path.join(ROOT, '.agents'), path.join(isolated, '.agents'))
+  fs.mkdirSync(path.join(isolated, '.claude'))
+  fs.symlinkSync(path.join(ROOT, '.claude', 'skills'), path.join(isolated, '.claude', 'skills'))
+
+  for (const name of ['artificial-analysis', 'new-harness', 'pxl']) {
+    const linkPath = path.join(ROOT, '.claude', 'skills', name)
+    const realPath = path.join(ROOT, '.agents', 'skills', name)
+    assert.ok(fs.lstatSync(linkPath).isSymbolicLink(), `${name} in .claude/skills/ is a symlink`)
+    assert.equal(fs.readlinkSync(linkPath), path.join('..', '..', '.agents', 'skills', name))
+    assert.ok(fs.statSync(realPath).isDirectory(), `${name} in .agents/skills/ is a directory`)
+
+    const info = classifySkillPath(path.join(linkPath, 'SKILL.md'), { cwd: ROOT })
+    assert.equal(info?.type, 'project')
+    assert.equal(info?.dir, fs.realpathSync(realPath))
+
+    assert.deepEqual(reviewSkill(path.join(isolated, '.agents', 'skills', name), { cwd: isolated }), [])
+    assert.deepEqual(reviewSkill(path.join(isolated, '.claude', 'skills', name), { cwd: isolated }), [])
+    const notice = posttool({
+      tool_name: 'Edit',
+      tool_input: { file_path: path.join(isolated, '.claude', 'skills', name, 'SKILL.md') },
+      cwd: isolated,
+      session_id: `layout-${name}`,
+    })
+    assert.equal(notice, null, `unexpected notice for ${name}: ${notice}`)
+  }
+})
