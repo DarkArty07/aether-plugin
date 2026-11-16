@@ -306,14 +306,54 @@ test('a brake-crossing that fails leaves the step intact, submits no stop and is
   expect(s.notes).toHaveLength(1)
 })
 
-test('a duplicate answer arms the resume and submits no second stop', async ($, on) => {
+test('a duplicate answer to a session that had not seen the pause tells its Lead once and arms the resume', async ($, on) => {
   const s = stubs(on, { crossing: { ...PAUSED, duplicate: true } })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await step($)
+  expect(s.prompts).toHaveLength(1)
+  expect(s.prompts[0].text).toContain(`Autonomous run ${RUN} is now paused by the quota brake until ${RESUME}`)
+  await step($)
+  expect(s.prompts).toHaveLength(1)
+  await s.clock.advance(Date.parse(RESUME) - NOW)
+  expect(s.prompts).toHaveLength(2)
+  expect(s.prompts[1].text).toContain('the five_hour window has reset')
+})
+
+test('a duplicate answer to a session that already knows the pause submits no second stop', async ($, on) => {
+  const s = stubs(on, { settings: { ...SETTINGS, paused: { run: RUN, resetsAt: RESET, resumeAt: RESUME, percentUsed: 97 } }, crossing: { ...PAUSED, duplicate: true } })
   s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
   await step($)
   expect(s.prompts).toEqual([])
   await s.clock.advance(Date.parse(RESUME) - NOW)
   expect(s.prompts).toHaveLength(1)
   expect(s.prompts[0].text).toContain('the five_hour window has reset')
+})
+
+test('an answer for a session with no run of its own arms nothing and prompts nothing', async ($, on) => {
+  const s = stubs(on, { crossing: { recorded: true, paused: false, run: null, reason: 'no-run', runs: [{ run: RUN, paused: true }] } })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await step($)
+  expect(s.prompts).toEqual([])
+  await s.clock.advance(Date.parse(RESUME) - NOW)
+  expect(s.prompts).toEqual([])
+})
+
+test('an answer for a session with no run of its own does not hide the hour: a run opened later in the window is paused', async ($, on) => {
+  const settings = { ...SETTINGS, openRun: null }
+  const crossing: any = { recorded: true, paused: false, run: null, reason: 'no-run', runs: [{ run: RUN, paused: true }] }
+  const s = stubs(on, { settings, crossing })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await step($)
+  expect(s.crossingRuns()).toHaveLength(1)
+  expect(s.prompts).toEqual([])
+  settings.openRun = RUN
+  Object.assign(crossing, PAUSED)
+  delete crossing.reason
+  await s.clock.advance(60000)
+  await step($)
+  expect(s.crossingRuns()).toHaveLength(2)
+  expect(s.prompts).toHaveLength(1)
+  expect(s.prompts[0].text).toContain(`Autonomous run ${RUN} is now paused by the quota brake until ${RESUME}`)
 })
 
 test('a resume hour that has already passed submits the resume at once', async ($, on) => {
