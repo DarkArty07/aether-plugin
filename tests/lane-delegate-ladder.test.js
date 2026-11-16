@@ -107,6 +107,45 @@ test('--findings puts a "## Findings to fix" section with the file text in the p
   assert.equal(repo.git('status', '--porcelain'), '')
 })
 
+// Expected text captured by calling implementerPrompt and appending the applied-carry block
+// from base commit 1e6b1567ebe28f03696698faa84c1251684381ea, before the findings refactor.
+// Also verified by running this test against that commit's delegateCommand and dependencies.
+// All 733 bytes match, including the brief's trailing newline and the carry separator.
+test('external relaunch prompt with two findings and earlier work stays byte-for-byte identical (issue 202)', async (t) => {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t) })
+  const carry = patchAdding(t, repo, 'src/old.js', 'old\n')
+  const findings = fileOf(t, 'findings.md', 'src/new.js:1: say goodbye\nsrc/old.js:1: keep earlier work\n')
+  const result = await delegateIn(repo, env, { carry, findings, tests: 'true' })
+  assert.equal(result.status, 'done')
+  assert.equal(result.continued, true)
+  const expected = `Write src/new.js saying hello and commit it.
+FAKE-AGY: write src/new.js hello
+FAKE-AGY: commit add new
+FAKE-AGY: answer {"status":"DONE","summary":"Wrote src/new.js.","head":"","tests":"ok","concerns":"","question":""}
+
+
+## Paths you own
+
+You may change only these paths:
+- src/**
+
+If the tests cannot pass without changing a path outside that list, stop at once and report status \`BLOCKED\`, naming the path and the test in \`question\`, instead of working on.
+
+## Tests
+
+Run these tests before you finish: \`true\`
+
+## Findings to fix
+
+src/new.js:1: say goodbye
+src/old.js:1: keep earlier work
+
+## An external agent began this attempt
+An earlier agent began this task. Its uncommitted work, if any, is in the worktree. Continue from it.`
+  assert.equal(promptOf(repo, result.id, 1), expected)
+})
+
 test('--carry offers the earlier patch: the attempt starts from that work and the prompt says to continue', async (t) => {
   const repo = makeRepo(t)
   const env = agyEnv(t, { command: roleFake(t) })

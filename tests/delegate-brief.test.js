@@ -76,7 +76,7 @@ test('a Claude delegate with that prompt gets no note (R7)', async (t) => {
   assert.equal(plan.external, null, 'no pair: the delegate runs on Claude')
   assert.deepEqual(detachNotes(plan), [], 'Claude gets no detach note')
   assert.equal('note' in plan, false)
-  assert.ok(plan.args.prompt.includes('checkout --detach'), 'the Claude prompt still carries its own start section')
+  assert.ok(plan.args.prompt.includes('Where your worktree starts'), 'the Claude prompt still carries its own start section')
 })
 
 test('no skill or agent doc asks for checkout --detach (R7)', () => {

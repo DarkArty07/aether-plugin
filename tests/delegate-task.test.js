@@ -808,3 +808,30 @@ test('an approve of an attempt that edits on Claude checks its worktree with its
   const approved = await task.verdict({ task: 'e1', verdict: 'approve', worktree: repo.dir }, deps)
   assert.equal(approved.ok, true, approved.error)
 })
+
+// Also verified by running this pin against delegate-task.js from pre-refactor
+// commit 1e6b1567ebe28f03696698faa84c1251684381ea.
+test('relaunch findings, reason, and previous work sections stay byte-for-byte identical (issue 202)', async (t) => {
+  const repo = makeRepo(t)
+  const base = repo.git('rev-parse', 'HEAD')
+  const { deps, dataDir } = world(t, { cwd: repo.dir })
+  const patchFile = path.join(dataDir, 'prev.patch')
+  fs.writeFileSync(patchFile, 'diff --git a/src/a.js b/src/a.js\n')
+  await task.begin(call(BRIEF('pin-1', 'AETHER-OWNS: src/**\n')), deps)
+  log.appendEntry(dataDir, { kind: 'result', task: 'pin-1', attempt: 1, session: 's1', time: 5000, ok: true, patch: patchFile })
+  await task.verdict({
+    task: 'pin-1',
+    verdict: 'fix',
+    findings: ['src/a.js:12: missing guard', 'src/b.js: no tests'],
+    reason: 'edge cases were missed',
+  }, deps)
+  const again = await task.begin(call(BRIEF('pin-1', 'AETHER-OWNS: src/**\n')), deps)
+  const expected = [
+    'AETHER-TASK: pin-1\nAETHER-OWNS: src/**\nDo the work.',
+    '## Findings to fix\n\nsrc/a.js:12: missing guard\nsrc/b.js: no tests',
+    '## Reason\n\nedge cases were missed',
+    `## Your previous work\n\nThe patch of your previous attempt is ${patchFile}. It is not applied in your worktree: before anything else, run \`git apply ${patchFile}\` there, and go on from that work. Only when it does not apply, rebuild what it describes.`,
+    `## Where your worktree starts\n\nAether recorded commit ${base} as the start of this task, and your work is judged against it. Your isolated worktree may have been made from another commit: before anything else, run \`git rev-parse HEAD\`, and when it is not ${base}, run \`git checkout --detach ${base}\` and work from there.`,
+  ].join('\n\n')
+  assert.equal(again.args.prompt, expected)
+})

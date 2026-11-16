@@ -26,6 +26,7 @@ const wt = require('./worktrees.js')
 const { normalizePattern } = require('./globs.js')
 const { failureSignatures } = require('./baseline.js')
 const { HARNESS_NAMES } = require('./harness-names.js')
+const { findingsSection } = require('./delegate-task.js')
 
 const ALLOWED_HARNESSES = [...HARNESS_NAMES]
 const DELEGATE_USAGE = 'delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--pair <pair id>] [--carry <patch file>] [--findings <file>] [--session <id>]'
@@ -139,7 +140,7 @@ function implementerPrompt(briefText, { owns, tests, findings }) {
     ].join('\n'),
   ]
   if (tests !== null) parts.push(['## Tests', '', `Run these tests before you finish: \`${tests}\``].join('\n'))
-  if (findings !== null) parts.push(['## Findings to fix', '', findings].join('\n'))
+  if (findings !== null) parts.push(findingsSection(findings))
   return parts.join('\n\n')
 }
 
@@ -197,10 +198,10 @@ function runTests(worktree, command) {
   }
 }
 
-// The patch of a failed attempt of the writer, renamed to its attempt number so the next attempt
-// cannot overwrite it. patch is null when the attempt left nothing to save; error when the salvage
+// The patch of a failed harness call of the writer, renamed to its call index so the next call
+// cannot overwrite it. patch is null when the call left nothing to save; error when the salvage
 // itself failed, so the caller does not apply an older patch on top of a worktree that may remain.
-function salvagePatch(ctx, attempt) {
+function salvagePatch(ctx, callIndex) {
   let saved
   try {
     saved = wt.removeUnit(ctx.cwd, ctx.id, TASK_ID, { keepPatch: true })
@@ -208,7 +209,7 @@ function salvagePatch(ctx, attempt) {
     return { patch: null, error: true }
   }
   if (!saved.patch) return { patch: null, error: false }
-  const named = path.join(ctx.runDir, 'patches', `${TASK_ID}-attempt-${attempt}.patch`)
+  const named = path.join(ctx.runDir, 'patches', `${TASK_ID}-attempt-${callIndex}.patch`)
   fs.mkdirSync(path.dirname(named), { recursive: true })
   if (path.resolve(saved.patch) !== path.resolve(named)) fs.renameSync(saved.patch, named)
   return { patch: named, error: false }
@@ -242,9 +243,9 @@ function endCause({ tried, decision }) {
   return decision !== null && decision.reason.includes('is dry') ? 'dry' : 'no-pair'
 }
 
-// One launched attempt: writes the prompt, starts the call, waits with the injected wait, and
+// One launched harness call: writes the prompt, starts the call, waits with the injected wait, and
 // reads its result. Returns { result } on a lane `ok`, else { cause, detail }.
-async function attemptCall(ctx, { role, call, picked, prompt }) {
+async function harnessCall(ctx, { role, call, picked, prompt }) {
   const dir = path.join(ctx.runDir, 'lanes', call)
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'prompt.md'), prompt)
@@ -290,7 +291,7 @@ function pinnedChoice(table, id) {
 async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, callName, owns = null, offer: initialOffer = null, pinned: pinnedPair = null, findings = false }) {
   const exclude = [...initialExclude]
   const tried = []
-  let attempts = 0
+  let callCount = 0
   let decision = null
   let lastDetail = null
   let offer = initialOffer // the newest non-empty patch a writer left, which the next pair may start from
@@ -308,7 +309,7 @@ async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, 
       }
       pinned = null
       if (decision === null) decision = superdelegation.choose({ pairs: ctx.table, reference, harnesses, exclude, nativeDiffers: role !== 'implementer', role, lanes: ctx.config })
-      const call = callName(attempts + 1)
+      const call = callName(callCount + 1)
       lanes.appendLog(ctx.dataDir, null, {
         kind: 'choice',
         time: now,
@@ -326,29 +327,29 @@ async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, 
       })
       if (!decision.picked) break
       const picked = decision.picked
-      attempts += 1
+      callCount += 1
       const carry = role === 'implementer' ? settleCarry(ctx, offer, owns) : { apply: false }
       if (role === 'implementer') work.armCarry(ctx.cwd, ctx.id, TASK_ID, carry.apply ? offer : null)
-      const attemptPrompt = carry.apply
+      const callPrompt = carry.apply
         ? `${prompt}\n\n${CONTINUATION_BLOCK}`
         : carry.reason
           ? `${prompt}\n\n${refusedCarryBlock(carry.reason, offer, findings)}`
           : prompt
-      const outcome = await attemptCall(ctx, { role, call, picked, prompt: attemptPrompt })
+      const outcome = await harnessCall(ctx, { role, call, picked, prompt: callPrompt })
       const started = outcome.result !== undefined || !String(outcome.cause || '').startsWith('unavailable')
       let continued = false
       let carryNote = carry.reason || null
-      // An attempt that never reached its worktree did not start from the earlier work, even when the
+      // A harness call that never reached its worktree did not start from the earlier work, even when the
       // prompt was going to tell it to. The receipt is what the worktree actually received.
       if (role === 'implementer' && carry.apply && started) {
         const applied = work.consumeCarryResult(ctx.cwd, ctx.id, TASK_ID)
         continued = applied === true
         if (applied === false) carryNote = work.CARRY_UNAPPLICABLE
       }
-      if (outcome.result !== undefined) return { result: outcome.result, picked, reason: decision.reason, tried, attempts, continued, carry: carryNote }
+      if (outcome.result !== undefined) return { result: outcome.result, picked, reason: decision.reason, tried, callCount, continued, carry: carryNote }
       lastDetail = outcome.detail
       if (role === 'implementer') {
-        const saved = salvagePatch(ctx, attempts)
+        const saved = salvagePatch(ctx, callCount)
         const entry = { pair: picked.id, cause: outcome.cause, patch: saved.patch, continued }
         if (carryNote) entry.carry = carryNote
         tried.push(entry)
@@ -358,7 +359,7 @@ async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, 
       }
       exclude.push(picked.id)
     }
-    return { cause: endCause({ tried, decision }), reason: lastDetail ?? decision?.reason ?? '', tried, attempts }
+    return { cause: endCause({ tried, decision }), reason: lastDetail ?? decision?.reason ?? '', tried, callCount }
   } finally {
     // A start that refuses the attempt leaves the arm file. The loop then exits when the next
     // choice finds no pair, and a later caller must not find that file and apply it.
@@ -495,7 +496,7 @@ async function delegateWithEnv(cwd, flags, deps) {
       offer: offered,
       pinned: charge.pair,
       findings: charge.findings !== null,
-      callName: (attempt) => `${TASK_ID}-${attempt}-implement`,
+      callName: (callIndex) => `${TASK_ID}-${callIndex}-implement`,
     })
     if (written.result === undefined) {
       const result = { status: 'no-candidate', id, run: id, cause: written.cause, reason: written.reason, tried: written.tried }
@@ -515,12 +516,12 @@ async function delegateWithEnv(cwd, flags, deps) {
       reference: reviewerReference(charge.model),
       exclude: [written.picked.id],
       prompt: reviewerPrompt({ implementer, tests }),
-      callName: (attempt) => `${TASK_ID}-review-${attempt}`,
+      callName: (callIndex) => `${TASK_ID}-review-${callIndex}`,
     })
     const review =
       reviewed.result !== undefined
         ? { status: 'done', pair: pairOf(reviewed.picked), verdict: reviewed.result.verdict, findings: reviewed.result.findings, summary: reviewed.result.summary }
-        : reviewed.attempts === 0
+        : reviewed.callCount === 0
           ? { status: 'none', cause: reviewed.cause }
           : { status: 'no-verdict', tried: reviewed.tried }
     return {

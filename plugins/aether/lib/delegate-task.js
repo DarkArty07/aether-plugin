@@ -35,6 +35,7 @@ const { readDelegateSettings } = require('./session.js')
 const { matchesAny } = require('./globs.js')
 const { loadSkills, skillsSection, parseSkillNames, matchDelegateSkills } = require('./skill-brief.js')
 const { recordNotice, recordUse } = require('./skill-registry.js')
+const { validAlternates } = require('./delegate-chain.js')
 
 const ID_RE = /^[A-Za-z0-9_-]+$/
 const TASK_PREFIX = 'AETHER-TASK:'
@@ -225,6 +226,15 @@ function touchedSince(cwd, launch) {
 
 // ---- the brief of an attempt that follows a verdict ----
 
+function markdownSection(heading, body) {
+  return `## ${heading}\n\n${body}`
+}
+
+function findingsSection(findings) {
+  const body = Array.isArray(findings) ? findings.join('\n') : findings
+  return markdownSection('Findings to fix', body)
+}
+
 // The sections a rise adds: `sections` for a delegate on Claude and for a read-only external pair, and
 // `laneSections` for the brief of an editing external pair. `aether-lane delegate` gives that pair the findings itself
 // (--findings) and applies the patch in its worktree before it starts (--carry), saying so in the prompt, so its brief
@@ -239,18 +249,20 @@ function sectionsOf(verdict, entries) {
   let findings = null
   if (!input.fromScratch && Array.isArray(input.findings) && input.findings.length > 0) {
     findings = input.findings.map(findingText)
-    sections.push(`## Findings to fix\n\n${findings.join('\n')}`)
+    sections.push(findingsSection(findings))
   }
   if (reason) {
-    sections.push(`## Reason\n\n${reason}`)
-    laneSections.push(`## Reason\n\n${reason}`)
+    const section = markdownSection('Reason', reason)
+    sections.push(section)
+    laneSections.push(section)
   }
   // Read once: the text of the brief and the patch the external file carries come from the same read.
   const work = carry ? log.previousWork(entries) : null
   if (carry) {
     if (work) {
-      sections.push(`## Your previous work\n\n${work.text}`)
-      if (!work.patch) laneSections.push(`## Your previous work\n\n${work.text}`)
+      const section = markdownSection('Your previous work', work.text)
+      sections.push(section)
+      if (!work.patch) laneSections.push(section)
     }
   }
   return { sections, laneSections, findings, carry, work }
@@ -303,7 +315,7 @@ function alternatesOf(quota, pairs) {
     const pair = table.find((row) => row.id === entry.id)
     if (pair) alternates.push({ harness: pair.harness, rung: { model: pair.model, effort: pair.effort, group: pair.group } })
   }
-  return alternates
+  return validAlternates(alternates)
 }
 
 function writeJson(file, value) {
@@ -320,7 +332,8 @@ function refusedText(id, status) {
 
 function logRefusedLaunch(r, ctx, { effort, requested, ignored }) {
   log.appendEntry(r.dataDir, {
-    kind: 'launch', time: r.now(), session: ctx.session, task: ctx.id, step: null, attempt: ctx.attempt, launchKind: 'refused',
+    // Stored field stays `attempt` for delegates/log.jsonl compatibility.
+    kind: 'launch', time: r.now(), session: ctx.session, task: ctx.id, step: null, attempt: ctx.launchAttempt, launchKind: 'refused',
     effort, edits: ctx.edits, owns: ctx.brief.owns, tests: ctx.brief.tests, description: ctx.description,
     requested, ignored, pin: null, base: null, dirty: null,
   })
@@ -331,7 +344,8 @@ function refusedLaunchPlan(r, ctx, prompt, note) {
   const { requested, ignored } = requestedOf(ctx.event, args)
   logRefusedLaunch(r, ctx, { effort: args.effort, requested, ignored })
   const notes = [...ctx.notes, note]
-  return emptyPlan({ id: ctx.id, kind: 'refused', attempt: ctx.attempt, args, notes })
+  // Returned field stays `attempt` for caller compatibility.
+  return emptyPlan({ id: ctx.id, kind: 'refused', attempt: ctx.launchAttempt, args, notes })
 }
 
 // The launch of a task whose ladder is closed: no step opens, and the call only says so.
@@ -358,7 +372,7 @@ function autonomyRefusedPlan(r, ctx, refusal) {
   const effort = isText(ctx.event.effort) ? ctx.event.effort : null
   const requested = model || effort ? { model, effort } : null
   logRefusedLaunch(r, ctx, { effort: null, requested, ignored: false })
-  return emptyPlan({ id: ctx.id, kind: 'refused', attempt: ctx.attempt, notes: [...ctx.notes], stop: refusal.stop, run: refusal.id, deny })
+  return emptyPlan({ id: ctx.id, kind: 'refused', attempt: ctx.launchAttempt, notes: [...ctx.notes], stop: refusal.stop, run: refusal.id, deny })
 }
 
 // A new task with the owned paths and the tests of a task of the same session that did not end approved.
@@ -377,19 +391,19 @@ function relaunchOf(dataDir, session, id, brief) {
   return matching.reverse().find((task) => !approved.has(task)) ?? null
 }
 
-// What the next launch of the task is, read back from its log: { status, step, launchKind, verdict, attempt }. A first
+// What the next launch of the task is, read back from its log: { status, step, launchKind, verdict, launchAttempt }. A first
 // launch starts on `firstStep` (the rung the owner placed it on, or the first one); later ones on the step it starts on.
 function nextLaunch(entries, ladder, { firstStep, configDir }) {
   const launches = entries.filter(isLaunch)
-  const attempt = launches.length + 1
-  if (launches.length === 0) return { status: 'open', step: firstStep, launchKind: 'first', verdict: null, attempt }
+  const launchAttempt = launches.length + 1
+  if (launches.length === 0) return { status: 'open', step: firstStep, launchKind: 'first', verdict: null, launchAttempt }
   const state = ladderLib.stateOf(verdictInputs(entries), ladder, auth.startStepOf(entries, ladder, configDir))
-  if (state.status !== 'open') return { status: state.status, step: null, launchKind: 'refused', verdict: null, attempt }
+  if (state.status !== 'open') return { status: state.status, step: null, launchKind: 'refused', verdict: null, launchAttempt }
   const lastLaunch = lastOf(entries, isLaunch)
   const lastVerdict = lastOf(entries, (e) => e.kind === 'verdict')
-  if (lastVerdict.index < lastLaunch.index) return { status: 'open', step: state.step, launchKind: 'unjudged', verdict: lastVerdict.entry, attempt }
+  if (lastVerdict.index < lastLaunch.index) return { status: 'open', step: state.step, launchKind: 'unjudged', verdict: lastVerdict.entry, launchAttempt }
   const kind = lastVerdict.entry.next && lastVerdict.entry.next.kind
-  return { status: 'open', step: state.step, launchKind: kind === 'rise' ? 'rise' : 'first', verdict: lastVerdict.entry, attempt }
+  return { status: 'open', step: state.step, launchKind: kind === 'rise' ? 'rise' : 'first', verdict: lastVerdict.entry, launchAttempt }
 }
 
 // The pair of an unjudged launch: the harness and model of the pair that did the earlier attempt, one effort up when the table
@@ -410,9 +424,9 @@ function sameModelPair(pairs, previous, limit, quota) {
   return up ?? same.find((row) => row.id === previous.id) ?? null
 }
 
-function stepNote(id, step, attempt, launchKind, args, pick) {
+function stepNote(id, step, launchAttempt, launchKind, args, pick) {
   const where = pick ? `on ${pick.harness} ${pick.model} ${pick.effort} (pair ${pick.id}), with claude ${args.model} ${args.effort} as its rescue` : `on claude ${args.model} ${args.effort}`
-  return `Aether delegate task ${id}: step ${step}, attempt ${attempt} (${launchKind}), runs ${where}. Judge it with aether-delegate verdict --task ${id} --verdict approve|fix|infeasible.`
+  return `Aether delegate task ${id}: step ${step}, attempt ${launchAttempt} (${launchKind}), runs ${where}. Judge it with aether-delegate verdict --task ${id} --verdict approve|fix|infeasible.`
 }
 
 // The owner's placement of a first launch (spec 021): the rung the call asks for above the first one, and the authorization
@@ -607,7 +621,7 @@ async function begin(input, deps = {}) {
     const next = nextLaunch(entries, r.ladder, { firstStep: cover ? placed.rung.step : r.ladder.rungs[0].step, configDir: r.configDir })
     const edits = brief.owns.length > 0
     const description = typeof event.description === 'string' ? event.description : ''
-    const ctx = { id, session, event, brief, edits, description, notes, attempt: next.attempt }
+    const ctx = { id, session, event, brief, edits, description, notes, launchAttempt: next.launchAttempt }
     const refusal = autonomy.launchRefusal(r.cwd, { session, dataDir: r.dataDir, now: r.now() })
     if (refusal) return autonomyRefusedPlan(r, ctx, refusal)
     if (next.status !== 'open') return refusedPlan(r, ctx, next.status)
@@ -632,7 +646,7 @@ async function begin(input, deps = {}) {
       outside = outsideOf(prompt, { root: tree ?? rootOf(r.cwd), home: r.home })
     }
 
-    const { step, launchKind, attempt } = next
+    const { step, launchKind, launchAttempt } = next
     // The owner's placement of this task: the authorization of its first launch (spec 021), kept by every later attempt.
     const authorized = cover && launchKind === 'first' ? authorizedLine(cover) : auth.authorizedOf(entries)
     const storedEffort = isObject(authorized) && typeof authorized.effort === 'string' ? authorized.effort.trim().toLowerCase() : null
@@ -685,11 +699,12 @@ async function begin(input, deps = {}) {
         }
       }
       if (pick) {
-        const briefFile = path.join(r.dataDir, 'delegates', 'briefs', `${log.fileKey(session, id)}-${attempt}.md`)
+        const briefFile = path.join(r.dataDir, 'delegates', 'briefs', `${log.fileKey(session, id)}-${launchAttempt}.md`)
         fs.mkdirSync(path.dirname(briefFile), { recursive: true })
         fs.writeFileSync(briefFile, externalPrompt)
         writeJson(path.join(r.dataDir, 'delegates', 'external', `${log.fileKey(session, id)}.json`), {
-          id, session, cwd: r.cwd, tree, attempt, step, effort, launchKind, edits, owns: brief.owns, tests: brief.tests,
+          // Stored field stays `attempt` for external file compatibility.
+          id, session, cwd: r.cwd, tree, attempt: launchAttempt, step, effort, launchKind, edits, owns: brief.owns, tests: brief.tests,
           brief: briefFile, findings, carry: carry && work ? work.patch : null, pin, base, harness: pick.harness,
           rung: { model: pick.model, effort: pick.effort, group: pick.group },
           task: { description, prompt: externalPrompt },
@@ -708,7 +723,8 @@ async function begin(input, deps = {}) {
     let repo = null
     try { repo = repoPaths(r.cwd).mainRoot } catch { /* not a repository: the record keeps repo null */ }
     const launch = {
-      kind: 'launch', time, session, task: id, step, attempt, launchKind, effort, edits, owns: brief.owns, tests: brief.tests,
+      // Stored field stays `attempt` for delegates/log.jsonl compatibility.
+      kind: 'launch', time, session, task: id, step, attempt: launchAttempt, launchKind, effort, edits, owns: brief.owns, tests: brief.tests,
       description, requested, ignored, pin, base, dirty,
     }
     if (launchKind === 'first' && authorized !== null) launch.authorized = authorized
@@ -717,7 +733,11 @@ async function begin(input, deps = {}) {
     if (outside !== null) launch.outside = outside
     log.appendEntry(r.dataDir, launch)
     if (loadedSkills && loadedSkills.length > 0) {
-      recordUse(r.dataDir, { session, kind: 'delegate', task: id, skills: launch.skills, time, repo })
+      try {
+        recordUse(r.dataDir, { session, kind: 'delegate', task: id, skills: launch.skills, time, repo })
+      } catch {
+        // A failed skill-use record is skipped so it cannot abort a launch already written to the log.
+      }
     }
     if (brief.skills.length === 0) {
       // A suggestion is advisory: a project whose skills cannot be read gets none and the launch goes on (R15).
@@ -741,10 +761,11 @@ async function begin(input, deps = {}) {
       if (holder !== null) notice += ` Adding AETHER-TREE: ${holder} to the brief would let it run on another harness.`
       notes.push(notice)
     }
-    notes.push(stepNote(id, step, attempt, launchKind, args, pick))
+    notes.push(stepNote(id, step, launchAttempt, launchKind, args, pick))
     // Spec 036 R7: the mod relays plan.notes, so the detach warning lives there, and the brief stays as the Lead wrote it.
     if (edits && pick !== null && prompt.includes('checkout --detach')) notes.push(DETACHED_NOTE)
-    return emptyPlan({ id, step, kind: launchKind, attempt, args, notes, external, answerOf: external === null ? { task: id, attempt } : null })
+    // Returned fields stay `attempt` for caller compatibility.
+    return emptyPlan({ id, step, kind: launchKind, attempt: launchAttempt, args, notes, external, answerOf: external === null ? { task: id, attempt: launchAttempt } : null })
   } catch (err) {
     return emptyPlan({ id: isId(id) ? id : null, error: messageOf(err) })
   }
@@ -806,8 +827,8 @@ function failedOnlyOnTests(c) {
 
 // The objective checks of an approve, by how the last attempt ran. Returns null when they pass, or the error.
 function approveError(r, entries, launch, worktree, ignore = []) {
-  const attempt = launch.attempt
-  const result = lastOf(entries, (e) => e.kind === 'result' && e.attempt === attempt && e.ok === true).entry
+  const launchAttempt = launch.attempt
+  const result = lastOf(entries, (e) => e.kind === 'result' && e.attempt === launchAttempt && e.ok === true).entry
   if (result) {
     const own = isObject(result.checks) ? result.checks : null
     if (own && own.ok === true) return null
@@ -838,7 +859,7 @@ function approveError(r, entries, launch, worktree, ignore = []) {
     const check = checks.checkEdits({ files: checks.changedFiles(worktree, checks.worktreeBase(worktree, launch.base)), owns, tests })
     return check.ok ? null : `checks failed: ${editsFailure(check, tests).join('; ')}`
   }
-  const answer = lastOf(entries, (e) => e.kind === 'answer' && e.attempt === attempt).entry
+  const answer = lastOf(entries, (e) => e.kind === 'answer' && e.attempt === launchAttempt).entry
   if (!answer) return NO_ANSWER
   const files = touchedSince(r.cwd, launch).filter((file) => !matchesAny(file, ignore))
   const check = checks.checkReadOnly({ answer: typeof answer.text === 'string' ? answer.text : '', files })
@@ -908,4 +929,4 @@ async function verdict(input, deps = {}) {
   }
 }
 
-module.exports = { parseBrief, begin, verdict, ignoreOf }
+module.exports = { parseBrief, begin, verdict, ignoreOf, findingsSection }
