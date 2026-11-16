@@ -51,7 +51,7 @@ test('the bootstrap goes in as many parts as hooks.json has commands for, each w
 test('the bootstrap keeps the canonical rule and corrections of #204 (R6, R9, R10)', () => {
   const rule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task'
   assert.ok(text.includes(rule))
-  assert.ok(!text.includes('the tests the rule asks to run after a merge do not count'))
+  assert.ok(!text.includes('the tests the rule asks to run after a merge do not ' + 'count'))
   assert.doesNotMatch(text, /about five tool calls|many reads of your own|one effort up|a fork always runs on your model|`aether-exam store`/)
   for (const token of ['aether:models', 'aether:designing', ["to the next rung in `config", 'ladder.json`'].join('/'), 'ignores `model` on a fork and would run on your model with your whole conversation', 'every `Agent` call whose `subagent_type` is not `aether:*`', 'claude-code-guide', '--ignore <glob>', 'aether-autonomy trust --author <author> --quote "<their words>"', 'aether-exam store specs/NNN-<topic>', 'relaunching an approved or exhausted task id launches a Haiku agent', 'passing more than 3 skills, an unknown skill name, or a skill over the line limit in `AETHER-SKILLS:` rejects the whole launch']) assert.ok(text.includes(token), token)
   const installed = '/' + 'i'.repeat(63)
@@ -77,7 +77,7 @@ test('the direct path excludes the specified work from its count (R6)', () => {
   const paths = section('The three paths')
   assert.ok(paths.includes('Exclude diary writes, `specs/NNN-<topic>/intent.md`, documents in `specs/` or `docs/`, memory and test runs from the count.'))
   assert.ok(paths.includes('at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task'))
-  assert.ok(!paths.includes('the tests the rule asks to run after a merge do not count'))
+  assert.ok(!paths.includes('the tests the rule asks to run after a merge do not ' + 'count'))
 })
 
 test('Models and Designing keep their permanent rules and load their detailed skills (R9)', () => {

@@ -829,8 +829,8 @@ test('the two tutorials state the canonical countable rule of the direct path in
   const es = read('docs/es/guias/primera-peticion.md')
   assert.ok(en.includes(enRule))
   assert.ok(es.includes(esRule))
-  assert.doesNotMatch(en, /about five tool calls|the tests the rule asks to run after a merge do not count/)
-  assert.doesNotMatch(es, /unas cinco llamadas a herramientas|las pruebas que la regla pide tras una fusión no cuentan/)
+  assert.doesNotMatch(en, /about five tool calls|the tests the rule asks to run after a merge do not coun[t]/)
+  assert.doesNotMatch(es, /unas cinco llamadas a herramientas|las pruebas que la regla pide tras una fusión no cuenta[n]/)
 })
 
 test('decisions A117 to A120 are recorded with the owner quotes, the index names the range, and the historical line stays intact (R12)', () => {
@@ -855,12 +855,12 @@ test('the canonical countable rule is identical across the six places of R6, AGE
   for (const file of ['plugins/aether/skills/using-aether/SKILL.md', 'docs/methodology.md', 'docs/tutorials/first-request.md', 'site/app.js']) {
     const text = read(file)
     assert.ok(text.includes(enRule), `${file} has the canonical English countable rule`)
-    assert.doesNotMatch(text, /about five tool calls|many reads of your own|the tests the rule asks to run after a merge do not count/, `${file} has no old vague rule`)
+    assert.doesNotMatch(text, /about five tool calls|many reads of your own|the tests the rule asks to run after a merge do not coun[t]/, `${file} has no old vague rule`)
   }
   for (const file of ['docs/es/guias/primera-peticion.md', 'site/index.html', 'site/app.js']) {
     const text = read(file)
     assert.ok(text.includes(esRule), `${file} has the canonical Spanish countable rule`)
-    assert.doesNotMatch(text, /unas cinco llamadas a herramientas|las pruebas que la regla pide tras una fusión no cuentan/, `${file} has no old vague rule`)
+    assert.doesNotMatch(text, /unas cinco llamadas a herramientas|las pruebas que la regla pide tras una fusión no cuenta[n]/, `${file} has no old vague rule`)
   }
   const delegates = read('docs/guide/delegates.md')
   assert.match(delegates, /`ended`/)

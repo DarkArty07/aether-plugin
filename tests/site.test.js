@@ -382,9 +382,9 @@ test('p.direct.w states the canonical countable rule in Spanish and English whil
   const esRule = 'a la tercera edición propia de código o pruebas en un turno, o a la décima lectura en un turno, el trabajo pasa a una tarea delegada'
   const enRule = 'at the third own edit to code or tests in a turn, or the tenth read in a turn, the work goes to a delegate task'
   assert.ok(!html.includes('unas cinco llamadas a herramientas'))
-  assert.ok(!html.includes('las pruebas que la regla pide tras una fusión no cuentan'))
-  assert.ok(!appSrc.includes('las pruebas que la regla pide tras una fusión no cuentan'))
-  assert.ok(!appSrc.includes('the tests the rule asks to run after a merge do not count'))
+  assert.ok(!html.includes('las pruebas que la regla pide tras una fusión no ' + 'cuentan'))
+  assert.ok(!appSrc.includes('las pruebas que la regla pide tras una fusión no ' + 'cuentan'))
+  assert.ok(!appSrc.includes('the tests the rule asks to run after a merge do not ' + 'count'))
   assert.ok(html.includes(esRule))
   assert.ok(appSrc.includes(esRule))
   assert.ok(appSrc.includes(enRule))
