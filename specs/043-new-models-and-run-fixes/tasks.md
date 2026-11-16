@@ -30,7 +30,7 @@
 - [ ] T007 [US12] Limpieza del arranque respeta la corrida abierta y nombra lo borrado en P/lib/tree-clean.js y P/lib/session-start.js → Task 4
 - [ ] T008 [US13] La cadena de delegado obedece la pausa y `stop` y `quota-brake` la terminan en P/lib/delegate-chain.js, P/lib/lane-delegate.js, P/lib/lane-calls.js, P/lib/delegate-run.js y P/lib/autonomy-command.js → Task 5
 - [ ] T009 [P] [US15] Compile con `--run` conserva la selección de la corrida y avisa del crecimiento en P/lib/plan-compile.js → Task 6
-- [ ] T010 [P] [US17] Inventario y reconstrucción del índice del examen; el diseño devuelve las pruebas en P/lib/exam.js y P/workflows/design.workflow.js → Task 7
+- [ ] T010 [P] [US17] Inventario y reconstrucción del índice del examen; el diseño devuelve las pruebas en P/lib/exam.js, P/bin/aether-exam, P/hooks/ops-command.mjs y P/workflows/design.workflow.js → Task 7
 - [ ] T011 [US7] Textos de las skills y del Examiner para topes, limpieza, freno, reanudar y examen en P/skills/ y P/agents/examiner.md → Task 8
 - [ ] T012 [P] [US18] Mensaje de `merge-main`, aviso en AGENTS.md y fuera la frase de la fila Direct → Task 9
 - [ ] T013 [US6] Procedimiento del modelo nuevo, guía de reglas del plan y decisiones en .agents/skills/new-harness/SKILL.md y docs/ → Task 10
@@ -95,7 +95,7 @@
 
 **Interfaces:**
 
-- `P/lib/session-start.js`: `contextOf` (`:569-577`) suma la línea `modelWatch.noticeLine(modelWatch.readResult(dataDir))` junto a `calibrationNote` y llama a `markNoticed(dataDir)` cuando la línea entra. La línea cuenta entre las que los bucles de recorte (`:592`, `:602`) quitan primero. Una lectura rota o ausente no añade nada ni lanza. No toca `PART_LIMIT` ni `using-aether`.
+- `P/lib/session-start.js`: `contextOf` (`:569-577`) suma la línea `modelWatch.noticeLine(modelWatch.readResult(dataDir))` junto a `calibrationNote` y llama a `markNoticed(dataDir)` solo en la ejecución de las notas (la que escribe el payload al final de `main`), después de escribirlo y solo si la línea quedó dentro del payload: si el recorte la quitó, `noticed` sigue en `false`. Las ejecuciones `--part k` salen antes (`:308-311`), no construyen `contextOf` y nunca llaman a `markNoticed`. La línea cuenta entre las que los bucles de recorte (`:592`, `:602`) quitan primero. Una lectura rota o ausente no añade nada ni lanza. No toca `PART_LIMIT` ni `using-aether`.
 - `P/lib/doctor.js`: `modelsCheck({dataDir, harnesses, ...}) -> check` agregado al arreglo `checks` (`:340-352`) con `check(id:'models', status, detail, fix)`: `info` cuando hay diferencias o no hay lectura; `warn` cuando algún harness activo no se pudo leer; nunca `error`. El detalle muestra por harness activo: nuevos, retirados, cuándo se leyó (`readAt`) y, si falló, el motivo; para Codex agrega el límite «cache is as fresh as the last codex run»; para Muse muestra «no capture means». Solo lee el resultado; no escribe nada (ni `noticed`).
 
 **Tests (write first):**
@@ -104,7 +104,8 @@
 - Con un `result.json` con un nuevo en `grok`, el contexto de arranque contiene `new models in grok:` y el id; un segundo arranque no la repite (`noticed` quedó en `true`).
 - Sin `result.json`, o con JSON roto, el arranque no añade línea y no falla.
 - Una diferencia nueva distinta después del primer aviso da línea otra vez.
-- Con el contexto cerca de `PART_LIMIT` el recorte quita la línea del aviso antes que el contexto base y cada parte sigue en 9.800 caracteres como máximo.
+- Con el contexto cerca de `PART_LIMIT` el recorte quita la línea del aviso antes que el contexto base y cada parte sigue en 9.800 caracteres como máximo; cuando el recorte la quita, `result.json` conserva `noticed:false` y el arranque siguiente (con espacio) la muestra.
+- Una ejecución `aether-session-start --part 1` (y 2, 3) con un `result.json` con diferencias sin avisar no cambia `result.json` (`noticed` sigue en `false`) y su salida no contiene la línea.
 
 `tests/doctor.test.js`: con un resultado con diferencias el check `models` es `info` y su detalle nombra el harness, el id nuevo, el retirado y `readAt`; con un harness `failed` es `warn` y el detalle dice el motivo; sin lectura es `info`; `run()` sigue con `ok:true` en todos esos casos; el doctor deja `result.json` byte por byte igual. `tests/session-start-parts.test.js`: las tres partes siguen dentro del límite y la parte 2 conserva sus caracteres libres (no crece).
 
@@ -130,7 +131,7 @@
   - `ceiling()` (`:486-490`) pasa a dar `source: 'flag' | 'plan' | 'default'` (la bandera se registra como `flag`; los estados guardados antes con `owner` siguen leyéndose). `start(mainRoot, {quote, session, hours, usd})` (`:520`): para cada tope sin bandera usa el del plan si lo hay, si no el de `config/autonomy.json`. Devuelve además `notices: string[]`: (a) bandera distinta de la cifra del plan: `--hours 12 overrides the approved plan's 10 h` (y el equivalente `--usd`); (b) abrió con los de defecto y el plan nombraba otros: `the approved plan named <cifras>, but start opened with the default ceilings` y, si `unreadable`, `the approved plan named more than one <hours|usd> figure, so start could not read it`. `ceilings.source` guarda por tope `flag|plan|default`.
 - `P/lib/autonomy-command.js` verbo `start` (`:185-194`): imprime con qué topes abrió y de dónde salió cada uno (`hours 10 (plan), usd 300 (plan)`) y cada aviso. No lee mensajes del dueño.
 
-**Tests (write first):** en `tests/autonomy.test.js`, con los ayudantes de transcripciones falsas (`human`, `assistant`, `toolResult`, `planUse`, `planResult`):
+**Tests (write first):** en `tests/autonomy.test.js`, con los ayudantes de transcripciones falsas (`human`, `assistant`, `toolResult`, `planUse`, `planResult`). Hoy `planResult(toolUseId, approved, timestamp)` (`tests/autonomy.test.js:576`) pone un contenido fijo, `User has approved your plan. You can now start coding.`; esta tarea le añade un cuarto parámetro `planText`: con él el contenido es ese mismo texto seguido de `\n\n## Approved Plan:\n` y `planText`; sin él, igual que hoy (las pruebas existentes no cambian). Casos:
 - Plan aprobado cuyo texto dice «10 h» y «US$ 300», sin banderas → `start` abre con `hours:10`, `usd:300`, `source:{hours:'plan', usd:'plan'}` y la salida del verbo lo dice.
 - La misma aprobación con `hours:12` por bandera → `hours:12` (`flag`), `usd:300` (`plan`) y un aviso con las dos cifras (10 y 12); con la bandera igual a la del plan no hay aviso.
 - Plan sin cifras → abre como hoy: 8 h y US$ 50 (`default`), sin aviso; con `usd` por bandera, esa cifra y `flag`.
@@ -155,11 +156,11 @@
 
 **Interfaces:**
 
-- `P/lib/tree-clean.js` `cleanProject(cwd, {now, dataDir, force, openRun})`: con `openRun === true` salta el paso 1 (`.aether/tmp` y `.aether-tmp`); el paso 2 (seats y delegates, `WORK_DAYS = 7`) no cambia; `.aether/autonomy/` sigue prohibido por `isSafeToDelete`. Devuelve además `deleted: string[]` (rutas relativas a `cwd`, de todos los pasos). No importa `autonomy`.
-- `P/lib/session-start.js` paso 5 (`:445-455`): `openRun = autonomy.openRuns(mainRoot).length > 0` (cualquier corrida del proyecto, de la sesión que sea) y se lo pasa a `cleanProject`. `cleanNote`: `Aether cleaned N old item(s) of .aether/: <p1>, <p2>, <p3> and M more.` (hasta 3 rutas; sin « and M more» si N ≤ 3).
+- `P/lib/tree-clean.js` `cleanProject(cwd, {now, dataDir, force, openRun})`: con `openRun === true` salta el paso 1 (`.aether/tmp` y `.aether-tmp`); el paso 2 (seats y delegates, `WORK_DAYS = 7`) no cambia; `.aether/autonomy/` sigue prohibido por `isSafeToDelete`. No añade campos al resultado: `cleanProject` ya devuelve `{ ran, removed, kept }` (`:285`) con `removed: [{path, why}]` de todos los pasos. No importa `autonomy`.
+- `P/lib/session-start.js` paso 5 (`:445-455`): `openRun = autonomy.openRuns(mainRoot).length > 0` (cualquier corrida del proyecto, de la sesión que sea) y se lo pasa a `cleanProject`. `cleanNote` se arma desde `removed` (N = `removed.length`, rutas = `removed[i].path` relativas a `cwd`): `Aether cleaned N old item(s) of .aether/: <p1>, <p2>, <p3> and M more.` (hasta 3 rutas; sin « and M more» si N ≤ 3).
 
 **Tests (write first):**
-- `tests/tree-clean.test.js`: con `openRun:true` y un archivo de 48 h en `.aether/tmp` y otro en `.aether-tmp`, `cleanProject` no borra ninguno (`deleted` vacío por el paso 1); con `openRun:false` los borra y `deleted` los nombra; el paso 2 borra un seat de más de 7 días aun con `openRun:true`; `.aether/autonomy/<id>/guion.sh` de 48 h nunca se borra en ningún caso; sin `openRun` el umbral de 24 h sigue igual (un archivo de 23 h no se borra).
+- `tests/tree-clean.test.js`: con `openRun:true` y un archivo de 48 h en `.aether/tmp` y otro en `.aether-tmp`, `cleanProject` no borra ninguno (`removed` sin entradas del paso 1); con `openRun:false` los borra y `removed` los nombra; el paso 2 borra un seat de más de 7 días aun con `openRun:true`; `.aether/autonomy/<id>/guion.sh` de 48 h nunca se borra en ningún caso; sin `openRun` el umbral de 24 h sigue igual (un archivo de 23 h no se borra).
 - `tests/session-start-tree.test.js`: con una corrida autónoma abierta en el proyecto (de otra sesión) y archivos viejos en `.aether/tmp`, el arranque no los borra; tras cerrar la corrida (`ended` no nulo) y arrancar de nuevo, los borra y el aviso nombra las rutas, 3 como máximo y `and N more` con cinco borrados.
 - `tests/session-start-tidy.test.js`: ajustar el texto del aviso de limpieza que fijaba el recuento sin rutas.
 
@@ -179,20 +180,27 @@
 
 **Interfaces:**
 
-- `P/lib/delegate-chain.js` `runChain` (`:80`): antes de cada candidato del bucle `for (const candidate of queue)` (`:91`) llama a `autonomy.launchRefusal(cwd, {session, dataDir, now})` (`P/lib/autonomy.js:1068`, el mismo que usan `delegate-task.js:625` y `plan-compile.js:322`: cubre la pausa de cuota y los topes de tiempo y costo). Con rechazo no lanza el par y devuelve el mismo resultado relanzable que hoy devuelve un rechazo de arranque (`isStartRefusal`, `:46-50`), con el motivo; nunca `failed`, y sin anotar un resultado de la tarea (queda relanzable al reanudar).
-- Vínculo: `P/lib/lane-delegate.js` (`:416`, `run.newRunId()`), al arrancar una llamada editora, escribe `<dataDir>/lanes/links/<laneRunId>.json` `{taskKey: fileKey(session, id), session, writtenAt}` con `run.writeJson` (atómico). `P/lib/delegate-run.js` exporta `stopTask(dataDir, taskKey) -> {stopped: boolean, pid?}` (lee `run/<fileKey>.json` `{pid}`, mata el grupo con `killGroup`; un pid muerto o sin archivo no lanza) y `stopAll(dataDir) -> {stopped: number}`. `P/lib/lane-calls.js` `stop(cwd, runId, call)` (`:685`), tras matar las llamadas del run, busca el vínculo del `runId` y llama a `stopTask`; un run sin vínculo se comporta como hoy.
-- `P/lib/autonomy-command.js` verbo `quota-brake` (`:317`): llama a `stopAll` para los delegados en vuelo del run y añade `chains stopped N` a su salida; el texto de uso (`:23`, `:37`) deja de pedir al Lead que los detenga primero.
+- `P/lib/delegate-chain.js` `runChain` (`:80`): antes de cada candidato del bucle `for (const candidate of queue)` (`:91`) llama a `autonomy.launchRefusal(cwd, {session, dataDir, now})` (`P/lib/autonomy.js:1068`, el mismo que usan `delegate-task.js:625` y `plan-compile.js:322`) y actúa solo cuando el rechazo trae `stop === 'quota'`, que es lo que pide R17; un rechazo por tope de tiempo o de costo no cambia la cadena. Con la pausa de cuota no lanza el par y devuelve el mismo resultado relanzable que hoy devuelve un rechazo de arranque (`isStartRefusal`, `:46-50`), con el motivo; nunca `failed`, y sin anotar un resultado de la tarea (queda relanzable al reanudar).
+- Vínculo: `P/lib/lane-delegate.js` (`:416`, `run.newRunId()`), al arrancar una llamada editora, escribe `<dataDir>/lanes/links/<laneRunId>.json` `{id, session, writtenAt}` (`id` y `session` de la tarea delegada) con `run.writeJson` (atómico). `P/lib/delegate-run.js` exporta:
+  - `stopTask(dataDir, {id, session}, {graceMs = 5000}) -> {stopped: boolean, pid?, reason?}`: lee `run/<fileKey(session, id)>.json` `{pid, startedAt}` (`:40`). Comprueba que el proceso vivo es el de ese archivo: si el proceso arrancó después de `startedAt` más 5 s de holgura (pid reutilizado), o si su arranque no se puede leer, no lo toca (`stopped:false`, `reason:'unverified'`). Si es el suyo manda `SIGTERM` al pid (`runDelegate` mata entonces el grupo propio del par, `P/lib/delegate-calls.js:28`, `:285-292`), espera hasta `graceMs` a que muera y, si sigue vivo, `SIGKILL` a su grupo. Un pid muerto o sin archivo da `stopped:false` sin lanzar.
+  - `stopAll(dataDir, {sessions}, {graceMs}) -> {stopped: number, skipped: [{key, reason}]}`: solo los archivos de `run/` cuya clave empieza con `<largo>-<sesión>--` de alguna de las `sessions` dadas (el directorio de datos instalado se comparte entre proyectos y sesiones); cada uno con las mismas comprobaciones de `stopTask`. Sin `sessions` o con la lista vacía no toca nada.
+  - `P/lib/lane-calls.js` `stop(cwd, runId, call)` (`:685`), tras matar las llamadas del run, busca el vínculo del `runId` y llama a `stopTask(dataDir, {id, session})`; un run sin vínculo se comporta como hoy.
+- `P/lib/autonomy-command.js` verbo `quota-brake` (`:317`): llama a `stopAll(dataDir, {sessions})` con las sesiones de las corridas frenadas (las que tienen una pausa activa) y añade `chains stopped N` a su salida; el texto de uso (`:23`, `:37`) deja de pedir al Lead que los detenga primero.
 
 **Tests (write first):**
-- `tests/delegate-chain.test.js`: con una pausa de cuota anotada en `run.json` (`quotaPauses` activa), `runChain` con dos pares en cola no llama a `runDelegate` ni una vez y devuelve un resultado relanzable (no `failed`); sin pausa lanza el primero como hoy; con pausa anotada entre el primer y el segundo par, lanza el primero y no el segundo; con tope de costo superado tampoco lanza. Tras el rechazo `aether-delegate` deja la tarea en un estado desde el que se relanza (afirmación explícita: no hay resultado `failed` ni verdicto en el registro).
-- `tests/delegate-run.test.js` y `tests/delegate-run-steps.test.js`: `stopTask` mata el grupo de un proceso hijo de mentira que escribió `run/<fileKey>.json` y devuelve `stopped:true` (el pid deja de vivir); con pid muerto devuelve `stopped:false` sin lanzar; `stopAll` mata dos.
+- `tests/delegate-chain.test.js`: con una pausa de cuota anotada en `run.json` (`quotaPauses` activa), `runChain` con dos pares en cola no llama a `runDelegate` ni una vez y devuelve un resultado relanzable (no `failed`); sin pausa lanza el primero como hoy; con pausa anotada entre el primer y el segundo par, lanza el primero y no el segundo; con un tope de costo superado y sin pausa de cuota, `runChain` lanza como hoy (R17 habla solo de la pausa). Tras el rechazo `aether-delegate` deja la tarea en un estado desde el que se relanza (afirmación explícita: no hay resultado `failed` ni verdicto en el registro).
+- `tests/delegate-run.test.js` y `tests/delegate-run-steps.test.js`:
+  - `stopTask` con un proceso de mentira que escribió `run/<fileKey>.json` `{pid, startedAt}` y que, al recibir `SIGTERM`, mata a un nieto que lanzó con `detached:true` (grupo propio) y sale: devuelve `stopped:true`, el pid y el nieto dejan de vivir y no hizo falta `SIGKILL`; tras eso `wait` devuelve `{done:true, ok:false, status:'died'}`.
+  - Un proceso de mentira que ignora `SIGTERM` muere por `SIGKILL` tras `graceMs` (se pasa uno corto en la prueba).
+  - Con pid muerto devuelve `stopped:false` sin lanzar; con un archivo cuyo `startedAt` es de hace un día y un pid vivo que arrancó ahora (pid reutilizado) devuelve `stopped:false`, `reason:'unverified'` y el proceso sigue vivo.
+  - `stopAll(dataDir, {sessions:['A']})` con dos cadenas de la sesión A y una de la sesión B: mata las dos de A y la de B sigue viva; con `sessions` vacía no mata ninguna.
 - `tests/aether-lane.test.js` y `tests/seat-calls.test.js`: una llamada editora arrancada deja `lanes/links/<laneRunId>.json` con `taskKey` y `session`; `aether-lane stop <runId>` con vínculo termina también el proceso de la cadena (el pid de mentira del delegado muere) y sin vínculo se comporta como hoy; las llamadas de solo lectura no escriben vínculo o no rompen lo que ya fijan.
-- `tests/quota-brake-command.test.js`, `tests/quota-brake-scenarios.test.js`, `tests/quota-brake.test.js`: `quota-brake` con un delegado en vuelo termina su proceso y la salida contiene `chains stopped 1`; el texto de uso ya no pide al Lead detener delegados a mano.
+- `tests/quota-brake-command.test.js`, `tests/quota-brake-scenarios.test.js`, `tests/quota-brake.test.js`: `quota-brake` con un delegado en vuelo de la sesión de la corrida frenada termina su proceso y la salida contiene `chains stopped 1`; un delegado en vuelo de otra sesión del mismo directorio de datos sigue vivo; el texto de uso ya no pide al Lead detener delegados a mano.
 - `tests/quota-brake-docs.test.js`: ajustar lo que fijaba el texto de uso viejo.
 
 **Acceptance:**
 
-- Con la pausa anotada ninguna cadena lanza un par nuevo y la tarea queda relanzable; `aether-lane stop` y `quota-brake` terminan la cadena sin que el Lead busque procesos.
+- Con la pausa de cuota anotada ninguna cadena lanza un par nuevo y la tarea queda relanzable; `aether-lane stop` y `quota-brake` terminan la cadena (y el par que esté en vuelo) sin que el Lead busque procesos, y no tocan cadenas de otras sesiones ni un pid reutilizado.
 - `node --test tests/delegate-chain.test.js tests/delegate-run.test.js tests/delegate-run-steps.test.js tests/aether-lane.test.js tests/seat-calls.test.js tests/quota-brake-command.test.js tests/quota-brake-scenarios.test.js tests/quota-brake.test.js tests/quota-brake-docs.test.js` pasa.
 
 ### Task 6: Recompilar con --run conserva la selección de la corrida
@@ -205,13 +213,13 @@
 
 **Interfaces:**
 
-- `P/lib/plan-compile.js` `compile` (`:315`): cada lanzamiento guarda su selección en `state.json` `launches[k].only` (`string[]` de ids de tareas; `null` = todo el plan), además de `args` (`:452-476`). Con `--run` y sin `--only`, la selección de la corrida es la unión de las `only` de sus lanzamientos (un `null` en cualquiera = todo el plan); para corridas sin el campo, se deriva de `units.json` (`run.extendUnits`, `P/lib/run.js:163-165`). Se ofrece `selección − fusionadas` (`alreadyMerged`, `:336-349`) en lugar de «todo el plan − fusionadas». Un `--only` explícito sigue mandando.
-- Si el conjunto ofrecido es mayor que el que ofreció el lanzamiento anterior de esa corrida, escribe por stderr exactamente `recompile offers N tasks, the previous launch offered M` (N y M son las cifras).
+- `P/lib/plan-compile.js` `compile` (`:315`): `state.json` `launches` sigue siendo un número (`previous.launches + 1`, `:513`; `tests/aether-plan.test.js:229` y `:237` lo fijan con `state.launches, 3` y no cambian ni se poseen aquí). La selección va en un campo nuevo, `selections`: un arreglo con un elemento por lanzamiento, en orden, cada uno `string[]` de ids de tareas o `null` (= todo el plan). Un lanzamiento con `--only` guarda esos ids; uno con `--run` y sin `--only` guarda la selección heredada de la corrida; uno sin ninguno guarda `null`. Con `--run` y sin `--only`, la selección de la corrida es la unión de `selections` (un `null` en cualquiera = todo el plan); para corridas sin el campo, se deriva de `units.json` (`run.extendUnits`, `P/lib/run.js:163-165`). Se ofrece `selección − fusionadas` (`alreadyMerged`, `:336-349`) en lugar de «todo el plan − fusionadas». Un `--only` explícito sigue mandando.
+- Si el conjunto ofrecido es mayor que el que ofreció el lanzamiento anterior de esa corrida, escribe por stderr exactamente `recompile offers N tasks, the previous launch offered M` (N y M son las cifras; M es el número de tareas del `graph.json` anterior de la corrida, leído antes de escribir el nuevo).
 
 **Tests (write first):** en `tests/compile-run-launches.test.js`:
-- Plan de 54 tareas (generado), `compile --only` de 10 → corrida `r`; se fusionan nueve en el estado de la corrida (`wt.mergedUnits`); `compile --run r` sin `--only` ofrece exactamente la décima tarea (el `tasks` del resultado tiene longitud 1) y `state.json` `launches[1].only` es esa selección, no `null`.
+- Plan de 54 tareas (generado), `compile --only` de 10 → corrida `r`; se fusionan nueve en el estado de la corrida (`wt.mergedUnits`); `compile --run r` sin `--only` ofrece exactamente la décima tarea (el `tasks` del resultado tiene longitud 1) y `state.json` `selections[1]` es la selección heredada (las diez tareas), no `null`; `state.json` `launches` sigue siendo el número `2`.
 - Una corrida cuyo primer lanzamiento no tenía `--only` (`only: null`) ofrece todo el plan menos lo fusionado, como hoy.
-- Una corrida sin `launches[k].only` (estado antiguo) deriva la selección de `units.json`.
+- Una corrida sin `selections` (estado antiguo) deriva la selección de `units.json`.
 - Dos lanzamientos con `--only` distintos: la selección es la unión.
 - `--only` explícito en el recompile manda sobre la selección guardada.
 - Aviso: una recompilación cuyo conjunto ofrecido (6) es mayor que el del lanzamiento anterior (3) escribe por stderr `recompile offers 6 tasks, the previous launch offered 3`; un conjunto igual o menor no escribe ese aviso.
@@ -226,24 +234,28 @@
 
 **Aether:**
 - Area: design
-- Owns: `plugins/aether/lib/exam.js`, `plugins/aether/workflows/design.workflow.js`, `plugins/aether/lib/seats.js`, `tests/exam.test.js`, `tests/layout-exam.test.js`, `tests/workflow-design.test.js`, `tests/seats-design.test.js`, `tests/seats.test.js`, `tests/seat-partial.test.js`
+- Owns: `plugins/aether/lib/exam.js`, `plugins/aether/bin/aether-exam`, `plugins/aether/hooks/ops-command.mjs`, `plugins/aether/hooks/ops.test.ts`, `plugins/aether/workflows/design.workflow.js`, `plugins/aether/lib/seats.js`, `tests/exam.test.js`, `tests/layout-exam.test.js`, `tests/workflow-design.test.js`, `tests/seats-design.test.js`, `tests/seats.test.js`, `tests/seat-partial.test.js`, `tests/ops-command-design.test.js`
 - Depends on: none
 - Serves: R22, R23
 
 **Interfaces:**
 
-- `P/lib/exam.js`: `inventory(examDir) -> [{path, inIndex: boolean}]`, la lista de las pruebas de `.aether/exam/` (cada archivo de prueba, sin `exam.json`), marcada por si `readExam` (`:55`) las tiene; `rebuildIndex(examDir) -> object`, un `exam.json` con una entrada por prueba terminada (la que tiene su archivo de resultado según el criterio de `examProblem`, `:37-50`), conservando las entradas que ya estaban en el índice. Las dos leen; solo el flujo guarda.
-- `P/workflows/design.workflow.js` `examine(author)` (`:989-1000`): cuando el Examiner (nativo tras su reintento, `:467-482`, o externo) termina sin una respuesta que cumpla su esquema, antes de devolver el fallo llama a `inventory` y `rebuildIndex`, guarda el índice reconstruido y devuelve `{status:'failed', step:'examiner', reason, tests:[{path, inIndex}]}`. El camino de un examen que sí contestó no cambia. `P/lib/seats.js` solo se toca si el índice reconstruido lo pide.
+- `P/lib/exam.js`: `inventory(examDir) -> [{path, inIndex: boolean}]`, la lista de las pruebas de `.aether/exam/` (cada archivo de prueba, sin `exam.json`), marcada por si `readExam` (`:55`) las tiene; `rebuildIndex(examDir) -> object`, un `exam.json` con una entrada por prueba terminada (la que tiene su archivo de resultado según el criterio de `examProblem`, `:37-50`), conservando las entradas que ya estaban en el índice. Las dos solo leen.
+- `P/bin/aether-exam`: verbo nuevo `recover <specs/NNN-topic>` (el texto de uso lo nombra: `store | run | recover`). En el checkout de `cwd` llama a `inventory` y `rebuildIndex`, escribe el `exam.json` reconstruido en su `.aether/exam/` (no lo guarda en el almacén, eso es `store`) e imprime una línea `{feature, rebuilt: N, tests:[{path, inIndex}]}`; con la carpeta ausente imprime `tests: []`. La lógica va en `P/lib/exam.js` (`recoverCheckout(cwd, feature)`), el bin solo la llama.
+- `P/hooks/ops-command.mjs` (`:142`): la entrada `'aether-exam'` admite además `{ checks: [word('recover'), is(FEATURE)] }`; `store` no cambia y ninguna otra forma entra. `P/hooks/ops.test.ts` y `tests/ops-command-design.test.js` (`:46`, `:51`, `:85`) se ajustan para fijar la lista.
+- `P/workflows/design.workflow.js` `examine(author)` (`:989-1000`): el flujo no tiene `require` ni disco, así que todo va por `ops`. Cuando el Examiner (nativo tras su reintento, `:467-482`, o externo) termina sin una respuesta que cumpla su esquema, antes de devolver el fallo llama `opsTwice('aether-exam recover <feature>', {phase:'Exam', label:'exam: recover'})` y devuelve `{status:'failed', step:'examiner', reason, tests:[{path, inIndex}]}` con lo que `recover` imprimió. Si `recover` falla, devuelve el fallo del Examiner sin `tests` y con el error de `recover` en `reason`. El camino de un examen que sí contestó no cambia. `P/lib/seats.js` solo se toca si el índice reconstruido lo pide.
 
 **Tests (write first):**
 - `tests/exam.test.js`: con `.aether/exam/` de tres pruebas (`a.test.js`, `b.test.js`, `c.test.js`), `exam.json` con `a` y `b`, y archivos de resultado de las tres: `inventory` devuelve tres entradas con `inIndex` true, true, false; `rebuildIndex` devuelve las tres entradas terminadas; una prueba sin archivo de resultado no entra; las entradas ya presentes se conservan; con la carpeta ausente → `[]` sin lanzar.
-- `tests/workflow-design.test.js` (arnés `tests/workflow-harness.js`): un Examiner de mentira que escribe tres pruebas, deja dos en el índice y termina sin respuesta válida (dos veces en el camino nativo) → el diseño devuelve `status:'failed'`, `step:'examiner'` y `tests` con las tres marcas (dos `inIndex:true`, una `false`); el `exam.json` guardado tiene las dos terminadas del índice; un Examiner que responde bien da el mismo resultado que hoy (`approved` con `exam`); el camino externo con salida parcial se prueba igual.
+- `tests/exam.test.js` (también): `aether-exam recover specs/NNN-x` en un repositorio temporal con tres pruebas y un índice de dos imprime las tres marcas y deja en `.aether/exam/exam.json` las entradas terminadas; sin carpeta imprime `tests: []`; una forma con argumento de más da el error de uso y sale con 1.
+- `plugins/aether/hooks/ops.test.ts` y `tests/ops-command-design.test.js`: `aether-exam recover specs/007-demo` se admite y se analiza como `aether-exam` con `['recover', feature]`; `aether-exam recover docs/x`, `aether-exam recover specs/007-demo --from /tmp` y `aether-exam list` se rechazan; `store` sigue admitido.
+- `tests/workflow-design.test.js` (arnés `tests/workflow-harness.js`; su manejador de `ops` añade `recover`, y la prueba de `:393` suma `recover` a los verbos de `ops` del camino con fallo): un Examiner de mentira que escribe tres pruebas, deja dos en el índice y termina sin respuesta válida (dos veces en el camino nativo) → el diseño llama una vez a `aether-exam recover` por `ops` y devuelve `status:'failed'`, `step:'examiner'` y `tests` con las tres marcas (dos `inIndex:true`, una `false`); con un `recover` de mentira que falla, devuelve el fallo del Examiner sin `tests`; un Examiner que responde bien da el mismo resultado que hoy (`approved` con `exam`); el camino externo con salida parcial se prueba igual.
 - `tests/layout-exam.test.js` y `tests/seats-design.test.js`: ajustar solo lo que cambia (nuevo campo `tests`).
 
 **Acceptance:**
 
 - Un Examiner sin respuesta entrega al Lead las pruebas existentes marcadas en el índice o fuera de él, sin perder las del índice.
-- `node --test tests/exam.test.js tests/layout-exam.test.js tests/workflow-design.test.js tests/seats-design.test.js` pasa.
+- `node --test tests/exam.test.js tests/layout-exam.test.js tests/workflow-design.test.js tests/seats-design.test.js tests/ops-command-design.test.js` pasa, y `npm run test:mod` (los `ops.test.ts` del mod) pasa.
 
 ### Task 8: Textos de las reglas del Lead y del Examiner
 
@@ -287,12 +299,12 @@ Textos (en inglés, como las skills existentes), una frase o párrafo corto por 
 
 **Interfaces:**
 
-- `P/lib/delegate-approve.js` (`MERGE_MAIN`, `:20`; rechazo `:245`): el rechazo en `main` o `master` sin permiso `merge-main` dice el siguiente paso, texto exacto: `merge-main needs a grant: ask the owner for the merge, record it with aether-autonomy grant merge-main (their words), then run approve again`.
+- `P/lib/delegate-approve.js` (`MERGE_MAIN`, `:20`; rechazo `:245`): el rechazo en `main` o `master` sin permiso `merge-main` dice el siguiente paso, texto exacto (la sintaxis real es `aether-autonomy grant --class <class> --quote <text>`, `P/lib/autonomy-command.js:9`): `merge-main needs a grant: ask the owner for the merge, record it with aether-autonomy grant --class merge-main --quote "<their words>", then run approve again`.
 - `AGENTS.md` ya contiene en «Commands» el aviso de que en un árbol de desarrollo los nombres `aether-*` en `PATH` son los bins de la versión instalada; no se reescribe, solo lo fija una prueba. No se añade nada a la skill `using-aether` para R25.
 - R26: quitar la frase de la fila «Direct» (EN: «the tests the rule asks to run after a merge do not count»; ES: «las pruebas que la regla pide tras una fusión no cuentan») de `P/skills/using-aether/SKILL.md:110`, `docs/methodology.md:42`, `docs/tutorials/first-request.md:34`, `docs/es/guias/primera-peticion.md:34`, `site/index.html:221` (`p.direct.w`), `site/app.js:70` (ES) y `:237` (EN), conservando el resto de cada fila y de cada oración.
 
 **Tests (write first):**
-- `tests/delegate-approve.test.js` (`:158`): el rechazo contiene exactamente el texto anterior, incluidos `aether-autonomy grant merge-main` y `run approve again`.
+- `tests/delegate-approve.test.js` (`:158`): el rechazo contiene exactamente el texto anterior, incluidos `aether-autonomy grant --class merge-main --quote "<their words>"` y `run approve again`.
 - `tests/issue-300-items.test.js` (nuevo): (a) `AGENTS.md` contiene `names on \`PATH\`` o el aviso equivalente con las palabras `development tree` y `installed release`; (b) ningún archivo fuera de `specs/` y `node_modules` (recorrido de `P/`, `docs/`, `site/`, `AGENTS.md`, `README.md`) contiene `do not count` junto a `after a merge`, ni `no cuentan` junto a `tras una fusión`.
 - `tests/using-aether-030.test.js` (`:52`, `:78`), `tests/docs-facts.test.js` (`:826-827`, `:853-854`) y `tests/site.test.js` (`:382-383`): quitar o invertir las afirmaciones que fijaban la frase vieja.
 
@@ -305,8 +317,13 @@ Textos (en inglés, como las skills existentes), una frase o párrafo corto por 
 
 **Aether:**
 - Area: docs
-- Owns: `.agents/skills/new-harness/SKILL.md`, `docs/guide/plan-rules.md`, `docs/index.md`, `docs/decisions.md`, `docs/guide/observe.md`, `docs/guide/doctor.md`, `docs/guide/autonomous-runs.md`, `docs/guide/swarm.md`, `tests/new-harness-skill.test.js`, `tests/docs-032.test.js`, `tests/docs-facts.test.js`
+- Owns: `.agents/skills/new-harness/SKILL.md`, `docs/guide/plan-rules.md`, `docs/index.md`, `docs/decisions.md`, `docs/guide/observe.md`, `docs/guide/troubleshooting.md`, `docs/guide/autonomy.md`, `docs/guide/delegates.md`, `docs/guide/design-seats.md`, `docs/guide/maintenance.md`, `docs/reference/components.md`, `tests/new-harness-skill.test.js`, `tests/docs-032.test.js`, `tests/docs-facts.test.js`
 - Depends on: Task 9 — comparte `tests/docs-facts.test.js` y esa tarea edita sus afirmaciones primero
+- Depends on: Task 1 — describe el aviso de modelos nuevos y comparte `docs/reference/components.md`
+- Depends on: Task 3 — describe los topes del plan aprobado
+- Depends on: Task 5 — describe que el freno termina la cadena
+- Depends on: Task 6 — describe que `--run` conserva la selección
+- Depends on: Task 7 — describe el examen devuelto sin respuesta y el verbo `recover`
 - Serves: R7, R27, R30, R31
 
 **Interfaces:**
@@ -314,13 +331,14 @@ Textos (en inglés, como las skills existentes), una frase o párrafo corto por 
 - `.agents/skills/new-harness/SKILL.md`: sección nueva `## A new model of a harness that is already in`, que dice, en orden: 1) leer las páginas de AA del modelo con `node scripts/aa-pages.js read <slug> --harness <name>` (sin `--write`); 2) mostrar dónde caería en la escalera con `node scripts/refresh-lanes.js` sin `--write`; 3) dejar las filas de pares y el precio como borrador en `.aether/model-drafts/<harness>-<model>.json` (carpeta no versionada); 4) esperar el sí del dueño, en sus palabras, antes de tocar `config/`. Es una skill de proyecto: no va en el arranque.
 - `docs/guide/plan-rules.md` (nuevo): cabecera `title`, `description`, `order: 9`; explica `.specify/plan-rules.json` (campos `adds`, `changes`, `owns`, `why`) y los avisos de `aether-plan check`; enlazada desde `docs/index.md`.
 - `docs/decisions.md`: cuatro decisiones nuevas con los números siguientes al último en el momento de construir (hoy A128 a A131): los worktrees de las unidades atendidas quedan fuera de la señal de vida del watch (`P/lib/wt-watch.js:47`); el aviso de modelos nuevos (lectura diaria sin modelo, Muse sin medio de captura); los topes del plan aprobado; la cadena obedece al freno. Los rangos que fijan `docs/index.md`, `tests/docs-032.test.js` y `tests/docs-facts.test.js` se ajustan en esta tarea.
-- Páginas que describen el arranque, el doctor, las corridas y el examen (`docs/guide/observe.md`, `doctor.md`, `autonomous-runs.md`, `swarm.md`; si una no existe o no lo nombra, la que sí lo hace) dicen lo nuevo: aviso de modelos nuevos y su límite en Codex y Muse, topes del plan, limpieza respetuosa, freno que termina la cadena, `--run` conserva la selección, examen devuelto sin respuesta. `docs/reference/components.md` NO se toca aquí (lo poseen las tareas 1 y 12).
+- Páginas que existen hoy y que dicen lo nuevo (ninguna página nueva salvo `plan-rules.md`): `docs/guide/observe.md` (aviso de modelos nuevos y su límite en Codex y Muse), `docs/guide/troubleshooting.md` (lo que muestra `aether-doctor` y que `--run` conserva la selección), `docs/guide/autonomy.md` (topes del plan aprobado y freno de cuota), `docs/guide/delegates.md` (el freno y `aether-lane stop` terminan la cadena), `docs/guide/design-seats.md` (examen devuelto sin respuesta, con sus pruebas marcadas) y `docs/guide/maintenance.md` (la limpieza de `.aether/tmp` respeta la corrida abierta y nombra lo borrado; `aether-exam recover`).
+- `docs/reference/components.md`: solo la fila de `aether-exam`, que suma `recover` (conserva `store` y `run` y no dice `list`, que fija `tests/docs-facts.test.js` R16). Los módulos nuevos los registran las tareas 1 y 12.
 
 **Tests (write first):**
 - `tests/new-harness-skill.test.js`: la sección existe y contiene `aa-pages.js read`, `refresh-lanes.js`, `.aether/model-drafts/` y la espera del sí del dueño antes de tocar `config/`; no contiene `--write` en el paso de lectura.
 - `tests/docs-facts.test.js`: `docs/guide/plan-rules.md` tiene `title`, `description` y `order` entero 9, `docs/index.md` lo enlaza, y los enlaces relativos resuelven; los rangos de decisiones cubren hasta la última nueva.
 - `tests/docs-032.test.js`: ajustar el rango de decisiones.
-- Una afirmación por página tocada de que nombra lo nuevo (por ejemplo `docs/guide/observe.md` contiene `new models`).
+- Una afirmación por página tocada de que nombra lo nuevo (por ejemplo `docs/guide/observe.md` contiene `new models`, `docs/guide/maintenance.md` contiene `aether-exam recover`, `docs/guide/autonomy.md` contiene `approved plan`); la afirmación de R16 sobre la fila de `aether-exam` sigue verde con `recover` añadido.
 
 **Acceptance:**
 
@@ -334,7 +352,7 @@ Textos (en inglés, como las skills existentes), una frase o párrafo corto por 
 - Owns: `plugins/aether/lib/harness/index.js`, `plugins/aether/lib/harness-names.js`, `plugins/aether/lib/lanes.js`, `plugins/aether/lib/doctor.js`, `plugins/aether/lib/router-pick.js`, `plugins/aether/lib/router-quota.js`, `plugins/aether/lib/router-renewal.js`, `plugins/aether/lib/delegate-calls.js`, `plugins/aether/lib/lane-delegate.js`, `tests/copies-harness.test.js`, `tests/copies-harness-config.test.js`, `tests/harness-index.test.js`, `tests/codex-lists.test.js`, `tests/router-pick.test.js`, `tests/router-renewal.test.js`, `tests/lanes-docs.test.js`, `tests/harness-lists.test.js`, `tests/new-harness-skill.test.js`
 - Depends on: Task 2 — comparte `doctor.js`
 - Depends on: Task 5 — comparte `lane-delegate.js`
-- Depends on: Task 10 — comparte `tests/new-harness-skill.test.js`
+- Depends on: Task 10 — comparte `tests/new-harness-skill.test.js` y `docs/reference/components.md` (esa tarea cambia la fila de `aether-exam`)
 - Serves: R28
 
 **Interfaces:**
@@ -362,7 +380,7 @@ Textos (en inglés, como las skills existentes), una frase o párrafo corto por 
 - Owns: `plugins/aether/lib/skill-review.js`, `plugins/aether/lib/skill-loads.js`, `plugins/aether/lib/skill-topics.js`, `plugins/aether/lib/continuity-posttool.js`, `plugins/aether/lib/session-start.js`, `docs/reference/components.md`, `tests/skill-review.test.js`, `tests/skill-loads.test.js`, `tests/skill-topics.test.js`, `tests/new-harness-skill.test.js`, `tests/continuity-posttool-skills.test.js`, `tests/continuity-posttool.test.js`, `tests/components-docs.test.js`
 - Depends on: Task 1 — comparte `docs/reference/components.md`
 - Depends on: Task 4 — comparte `session-start.js`
-- Depends on: Task 10 — comparte `tests/new-harness-skill.test.js`
+- Depends on: Task 10 — comparte `tests/new-harness-skill.test.js` y `docs/reference/components.md` (esa tarea cambia la fila de `aether-exam`)
 - Depends on: Task 11 — comparte `tests/new-harness-skill.test.js` (esa tarea cambia sus nombres antes)
 - Serves: R29
 
