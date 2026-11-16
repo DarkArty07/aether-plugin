@@ -800,12 +800,17 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
   const from = Date.parse(run.started)
   const until = run.ended ? Date.parse(run.ended) : Infinity
   const inWindow = (start) => Number.isFinite(start) && start >= from && start < until
+  const prevSessions = Array.isArray(run.previousSessions)
+    ? run.previousSessions.map((entry) => (typeof entry === 'string' ? entry : entry && entry.session))
+    : []
+  const runSessions = new Set([run.session, ...prevSessions].filter(Boolean))
+  const matchesSession = (launchSession) => !run.session || !launchSession || runSessions.has(launchSession)
   const abandoned = abandonedRuns(mainRoot, dataDir)
   const delegateWindows = delegateAttemptWindows(dataDir)
   const briefCache = new Map()
   const runsInfo = new Map()
   const failed = new Set()
-  const keep = (id, rep) => {
+  const keep = (id, rep, launchSession = null) => {
     const totalUsd = rep && rep.lanes && rep.lanes.totals && rep.lanes.totals.run && rep.lanes.totals.run.totalUsd
     if (typeof totalUsd !== 'number' || !Number.isFinite(totalUsd)) return
     const prev = runsInfo.get(id)
@@ -813,7 +818,7 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
       const lanesUsd = (rep.lanes && rep.lanes.totals && rep.lanes.totals.run && rep.lanes.totals.run.lanesUsd) || 0
       const start = Date.parse(rep.speed && rep.speed.run && rep.speed.run.start)
       const end = Date.parse(rep.speed && rep.speed.run && rep.speed.run.end)
-      const session = (rep.usage && rep.usage.session) || null
+      const session = launchSession || (rep.usage && rep.usage.session) || null
       runsInfo.set(id, { id, totalUsd, lanesUsd, start, end, session })
     }
   }
@@ -826,6 +831,14 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
   for (const id of ids) {
     const dir = runDir(mainRoot, id)
     if (!fs.existsSync(path.join(dir, 'graph.json'))) continue
+    let launchSession = null
+    try {
+      const state = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8'))
+      if (state && typeof state.session === 'string' && state.session) launchSession = state.session
+    } catch {
+      // Missing or unreadable state.json: treated as no launching session recorded (R8).
+    }
+    if (!matchesSession(launchSession)) continue
     let start
     try {
       start = runStartOf(dir)
@@ -844,13 +857,29 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
       }
     }
     try {
-      keep(id, reportRun(mainRoot, id, { tests: false, dataDir, now: reportNow }))
+      let rep
+      if (launchSession) {
+        try {
+          rep = reportRun(mainRoot, id, { tests: false, dataDir, now: reportNow, session: launchSession })
+        } catch (err) {
+          if (err && typeof err.message === 'string' && err.message.startsWith('usage session ')) {
+            rep = reportRun(mainRoot, id, { tests: false, dataDir, now: reportNow })
+          } else {
+            throw err
+          }
+        }
+      } else {
+        rep = reportRun(mainRoot, id, { tests: false, dataDir, now: reportNow })
+      }
+      keep(id, rep, launchSession)
     } catch {
       failed.add(id)
     }
   }
   for (const record of finalizedRecords(dataDir)) {
     if (record.repo !== mainRoot || !isRunId(record.runId)) continue
+    const launchSession = typeof record.session === 'string' && record.session ? record.session : null
+    if (!matchesSession(launchSession)) continue
     const report = record.report || {}
     const recordStart = Date.parse(report.speed && report.speed.run && report.speed.run.start)
     if (!inWindow(recordStart)) {
@@ -862,7 +891,7 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
       const finalizedAt = Date.parse(record.finalizedAt)
       if (!inWindow(finalizedAt)) continue
     }
-    keep(record.runId, report)
+    keep(record.runId, report, launchSession)
   }
 
   // `estimated` holds the runs named in `unreadable` when reading usage or prices
