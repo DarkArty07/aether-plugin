@@ -72,12 +72,25 @@ test('the Judge lists everything in round one, and from round two on answers for
 })
 
 test('the Writer, the tasks skill and the Judge document and check the Skills field on tasks (R9, C4)', () => {
-  has('writer', ['- **Skills** is optional', '`- Skills:', 'at most 3'])
+  const writer = agent('writer')
+  const planRulesStart = writer.indexOf('## Aether plan rules')
+  const planRulesEnd = writer.indexOf('## Your answer', planRulesStart)
+  assert.ok(planRulesStart >= 0 && planRulesEnd > planRulesStart, 'writer.md has ## Aether plan rules')
+  const planRules = writer.slice(planRulesStart, planRulesEnd)
+  for (const text of ['- **Skills** is optional', '`- Skills:', 'at most 3']) {
+    assert.ok(planRules.includes(text), `writer.md Aether plan rules has: ${text}`)
+  }
   const step6 = agent('judge').split('\n').find((line) => line.startsWith('6. On a plan with its tasks'))
   assert.ok(step6, 'judge.md has step 6 for reviewing a plan with its tasks')
   assert.ok(step6.includes('`- Skills:`') && step6.includes('at most 3 skills per task'), 'judge.md checks Skills in step 6')
-  const tasksSkill = fs.readFileSync(path.join(PLUGIN, 'skills', 'tasks', 'SKILL.md'), 'utf8')
-  const speckitTasks = fs.readFileSync(path.join(PLUGIN, 'speckit', 'commands', 'speckit.tasks.md'), 'utf8')
-  assert.ok(tasksSkill.includes('**Skills:**') && tasksSkill.includes('- Skills:'))
-  assert.ok(speckitTasks.includes('**Skills:**') && speckitTasks.includes('- Skills:'))
+  const section3 = (text, label) => {
+    const start = text.indexOf('3. Write each task section in this order.')
+    const end = text.indexOf('\n4. ', start)
+    assert.ok(start >= 0 && end > start, `${label} has step 3`)
+    return text.slice(start, end)
+  }
+  const tasksStep3 = section3(fs.readFileSync(path.join(PLUGIN, 'skills', 'tasks', 'SKILL.md'), 'utf8'), 'tasks/SKILL.md')
+  const speckitStep3 = section3(fs.readFileSync(path.join(PLUGIN, 'speckit', 'commands', 'speckit.tasks.md'), 'utf8'), 'speckit.tasks.md')
+  assert.ok(tasksStep3.includes('**Skills:**') && tasksStep3.includes('- Skills:'))
+  assert.ok(speckitStep3.includes('**Skills:**') && speckitStep3.includes('- Skills:'))
 })
