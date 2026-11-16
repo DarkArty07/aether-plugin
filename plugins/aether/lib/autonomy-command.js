@@ -11,9 +11,10 @@
 // aether-autonomy list
 // aether-autonomy start  --quote <text> [--session <id>] [--hours N] [--usd N]
 // aether-autonomy extend --hours N --usd N|unlimited --quote <text> [--session <id>]
-// aether-autonomy spend  <usd> --source <label>
-// aether-autonomy status
-// aether-autonomy end    --outcome done|ceiling|incomplete
+// aether-autonomy spend  <usd> --source <label> [--session <id>]
+// aether-autonomy status [<id>] [--session <id>]
+// aether-autonomy end    [<id>] --outcome done|ceiling|incomplete [--session <id>]
+// aether-autonomy continue <id> [--session <id>]
 // aether-autonomy brake-settings [--session <id>]
 // aether-autonomy brake-off --quote <text> [--session <id>]
 // aether-autonomy brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>]
@@ -32,7 +33,26 @@ const autonomy = require('./autonomy.js')
 const WT_BIN = path.join(__dirname, '..', 'bin', 'aether-wt')
 
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | extend --hours N --usd N|unlimited --quote <text> [--session <id>] | spend <usd> --source <label> | status | end --outcome done|ceiling|incomplete | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quota-brake [--session <id>] [--run <swarmRunId>]… | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | extend --hours N --usd N|unlimited --quote <text> [--session <id>] | spend <usd> --source <label> [--session <id>] | status [<id>] [--session <id>] | end [<id>] --outcome done|ceiling|incomplete [--session <id>] | continue <id> [--session <id>] | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quota-brake [--session <id>] [--run <swarmRunId>]… | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
+
+const AUTO_RUN_ID_RE = /^auto-[0-9]{8}-[0-9]{6}-[0-9a-f]+$/
+
+// Optional positional run id: first argument when it does not start with --.
+function optionalRunId(rest) {
+  if (rest[0] === undefined || rest[0].startsWith('--')) return null
+  if (!AUTO_RUN_ID_RE.test(rest[0])) throw new Error(USAGE)
+  return rest[0]
+}
+
+// Formats a selection refusal (exit 1) or quote verification failure (exit 2).
+function quoteFailure(res) {
+  if (res.reason === 'no open run' || res.code === 'ambiguous' || res.code === 'foreign') {
+    const out = { error: res.reason }
+    if (res.runs) out.runs = res.runs
+    return { code: 1, out }
+  }
+  return { code: 2, out: { verified: false, reason: res.reason } }
+}
 
 // The value after a flag, or null when the flag is absent.
 function value(args, flag) {
@@ -83,7 +103,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
   const remove = sub === 'trust' && argv.includes('--remove')
   const rest = argv.slice(1).filter((a) => !((sub === 'revoke' && a === '--all') || (sub === 'trust' && a === '--remove')))
 
-  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'extend', 'spend', 'status', 'end', 'brake-settings', 'brake-off', 'brake-crossing', 'quota-saved', 'quota-brake', 'quarantine', 'trust'].includes(sub)) {
+  if (!sub || !['grant', 'revoke', 'check', 'list', 'start', 'extend', 'spend', 'status', 'end', 'continue', 'brake-settings', 'brake-off', 'brake-crossing', 'quota-saved', 'quota-brake', 'quarantine', 'trust'].includes(sub)) {
     throw new Error(USAGE)
   }
 
@@ -184,10 +204,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     const session = getSession(rest, true, env)
     ensureExcluded(gitCommonDir)
     const res = autonomy.extend(mainRoot, { hours, usd, quote, session })
-    if (!res.ok) {
-      if (res.reason === 'no open run') return { code: 1, out: { error: res.reason } }
-      return { code: 2, out: { verified: false, reason: res.reason } }
-    }
+    if (!res.ok) return quoteFailure(res)
     return {
       code: 0,
       out: {
@@ -206,17 +223,39 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     const amount = parseNumber(rawAmount, 'spend')
     const source = value(rest, '--source')
     if (!source) throw new Error(USAGE)
-    return { code: 0, out: autonomy.spend(mainRoot, amount, source) }
+    const session = getSession(rest, false, env)
+    return { code: 0, out: autonomy.spend(mainRoot, amount, source, { session, dataDir: env.AETHER_DATA_DIR || dataDir(env) }) }
   }
 
   if (sub === 'status') {
-    return { code: 0, out: autonomy.status(mainRoot) }
+    const id = optionalRunId(rest)
+    const session = getSession(rest, false, env)
+    return { code: 0, out: autonomy.status(mainRoot, { session, id, dataDir: env.AETHER_DATA_DIR || dataDir(env) }) }
   }
 
   if (sub === 'end') {
+    const id = optionalRunId(rest)
     const outcome = value(rest, '--outcome')
     if (!outcome) throw new Error(USAGE)
-    return { code: 0, out: { ended: autonomy.end(mainRoot, outcome) } }
+    const session = getSession(rest, false, env)
+    return { code: 0, out: { ended: autonomy.end(mainRoot, outcome, { session, id }) } }
+  }
+
+  if (sub === 'continue') {
+    const id = rest[0]
+    if (id === undefined || id.startsWith('--') || !AUTO_RUN_ID_RE.test(id)) throw new Error(USAGE)
+    const session = getSession(rest, false, env)
+    ensureExcluded(gitCommonDir)
+    const res = autonomy.continueRun(mainRoot, id, { session })
+    if (!res.ok) return { code: 1, out: { error: res.reason } }
+    const continued = {
+      id: res.run.id,
+      session: res.run.session,
+      from: res.from,
+      previousSessions: res.run.previousSessions || [],
+    }
+    if (res.unchanged) continued.unchanged = true
+    return { code: 0, out: { continued } }
   }
 
   if (sub === 'brake-settings') {
@@ -230,8 +269,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     const session = getSession(rest, true, env)
     ensureExcluded(gitCommonDir)
     const res = autonomy.brakeOff(mainRoot, { quote, session })
-    if (!res.ok && res.reason === 'no open run') return { code: 1, out: { error: 'no open run' } }
-    if (!res.ok) return { code: 2, out: { verified: false, reason: res.reason } }
+    if (!res.ok) return quoteFailure(res)
     return { code: 0, out: { brakeOff: res.brakeOff } }
   }
 
@@ -249,7 +287,8 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     else if (rawNotify === 'failed') notify = { sent: false, reason: value(rest, '--notify-reason') ?? 'no-channel' }
     else throw new Error(USAGE)
     ensureExcluded(gitCommonDir)
-    return { code: 0, out: autonomy.recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, notify }, { dataDir: env.AETHER_DATA_DIR || dataDir(env) }) }
+    const session = getSession(rest, false, env)
+    return { code: 0, out: autonomy.recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, notify }, { dataDir: env.AETHER_DATA_DIR || dataDir(env), session }) }
   }
 
   if (sub === 'quota-saved') {
@@ -262,10 +301,11 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
 
   if (sub === 'quota-brake') {
     const session = getSession(rest, false, env)
-    const open = autonomy.openRun(mainRoot)
-    if (!open) return { code: 0, out: { saved: [], recorded: false, pushed: [] } }
+    const open = autonomy.openRuns(mainRoot)
+    if (!open.length) return { code: 0, out: { saved: [], recorded: false, pushed: [] } }
+    const earliest = open.reduce((min, { run }) => (Date.parse(run.started) < Date.parse(min) ? run.started : min), open[0].run.started)
     const named = flagValues(rest, '--run')
-    const ids = named.length ? namedRuns(named) : inFlightRuns(mainRoot, open.started)
+    const ids = named.length ? namedRuns(named) : inFlightRuns(mainRoot, earliest)
     ensureExcluded(gitCommonDir)
     const data = env.AETHER_DATA_DIR || dataDir(env)
     const settings = autonomy.brakeSettings(mainRoot, { session, dataDir: data })
