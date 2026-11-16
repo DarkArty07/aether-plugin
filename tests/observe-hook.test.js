@@ -165,3 +165,25 @@ test('observe-dev.js is required only inside the development branch (A4)', () =>
   assert.doesNotMatch(source, /^(const|let|var)\s[^\n]*require\([^)]*observe-dev/m)
   assert.doesNotMatch(source, /transcript/)
 })
+
+test('SessionEnd launches modelWatch without waiting when Lead and harnesses active; non-Lead does not', (t) => {
+  const dir = tempDir(t)
+  const plainDir = tempDir(t)
+  const calls = []
+  const fakeWatch = { launch: (opts) => calls.push(opts) }
+
+  handleHook(
+    { session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear' },
+    { dataDir: plainDir, now: 100, env: { CLAUDE_PLUGIN_OPTION_HARNESSES: 'agy,grok' }, modelWatch: fakeWatch },
+  )
+  assert.equal(calls.length, 0)
+
+  lead(dir)
+  handleHook(
+    { session_id: 's-1', hook_event_name: 'SessionEnd', reason: 'clear' },
+    { dataDir: dir, now: 100, env: { CLAUDE_PLUGIN_OPTION_HARNESSES: 'agy,grok' }, modelWatch: fakeWatch },
+  )
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].isLead, true)
+  assert.deepEqual(calls[0].harnesses, ['agy', 'grok'])
+})

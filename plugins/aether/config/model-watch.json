@@ -1,0 +1,10 @@
+{
+  "perHarnessSeconds": 10,
+  "totalSeconds": 30,
+  "captureVia": {
+    "agy": { "args": ["models"] },
+    "grok": { "args": ["models"] },
+    "codex": { "file": "~/.codex/models_cache.json" },
+    "muse": null
+  }
+}

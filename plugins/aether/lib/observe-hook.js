@@ -33,14 +33,28 @@ function mainRootOf(cwd) {
   }
 }
 
-function endSession(dataDir, session, input, now, env) {
+function activeHarnesses(dataDir, session, env) {
+  const { enabledHarnesses } = require('./lanes.js')
+  if (env && env.CLAUDE_PLUGIN_OPTION_HARNESSES) {
+    return enabledHarnesses({ AETHER_LANE_HARNESSES: env.CLAUDE_PLUGIN_OPTION_HARNESSES })
+  }
+  const { readDelegateSettings } = require('./session.js')
+  const settings = readDelegateSettings(dataDir, session)
+  if (settings && Array.isArray(settings.harnesses)) return settings.harnesses
+  return enabledHarnesses({ AETHER_LANE_HARNESSES: env && env.CLAUDE_PLUGIN_OPTION_HARNESSES })
+}
+
+function endSession(dataDir, session, input, now, env, modelWatch) {
   const { digestSession } = require('./observe-digest.js')
   const { readObservations } = require('./observe-read.js')
   try {
     digestSession(dataDir, session)
     // The development installation keeps the owner's corrections before the reading, so that this same reading has them.
     if (observeMode(env) === 'dev') require('./observe-dev.js').captureCorrections({ dataDir, session, input, now })
-    readObservations({ dataDir, repoRoot: mainRootOf(input.cwd), now })
+    const root = mainRootOf(input.cwd)
+    readObservations({ dataDir, repoRoot: root, now })
+    const watch = modelWatch || require('./model-watch.js')
+    watch.launch({ dataDir, mainRoot: root, env, isLead: true, harnesses: activeHarnesses(dataDir, session, env), now })
     // The development installation with autoissue on files the failures in a worker of its own, detached: no network in here (D7).
     if (autoIssueOn(env)) require('./observe-issue.js').launch({ dataDir, env })
   } catch {
@@ -48,7 +62,7 @@ function endSession(dataDir, session, input, now, env) {
   }
 }
 
-function handleHook(input, { dataDir = run.dataDir(), env = process.env, now = Date.now() } = {}) {
+function handleHook(input, { dataDir = run.dataDir(), env = process.env, now = Date.now(), modelWatch } = {}) {
   try {
     if (input === null || typeof input !== 'object' || Array.isArray(input)) return { ...NOTHING }
     const event = input.hook_event_name
@@ -67,7 +81,7 @@ function handleHook(input, { dataDir = run.dataDir(), env = process.env, now = D
     if (event === 'SessionEnd') raw.reason = input.reason
     const recorded = appendEvent(dataDir, raw)
 
-    if (event === 'SessionEnd') endSession(dataDir, session, input, now, env)
+    if (event === 'SessionEnd') endSession(dataDir, session, input, now, env, modelWatch)
 
     let fragment = null
     if (observeMode(env) === 'dev' && FRAGMENT_EVENTS.has(event)) {

@@ -70,10 +70,11 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | tree | `tree-` | `tree-paths.js`, `tree-check.js`, `tree-map.js`, `tree-clean.js`, `tree-migrate.js` | `none` |
 | skill | `skill-` | `skill-rules.js`, `skill-registry.js`, `skill-brief.js`, `skill-review.js`, `skill-repeat.js`, `skill-idle.js` | `none` |
 | tidy | `tidy-` | `tidy-detect.js`, `tidy-report.js`, `tidy-guard.js` | `none` |
+| model | `model-` | `model-listing.js`, `model-watch.js` | `none` |
 
 Loose modules (no family): `autonomy.js`, `autonomy-command.js`, `baseline.js`, `bash-parse.js`, `common.js`, `doctor.js`, `exam.js`, `first-setup.js`, `git.js`, `globs.js`, `guard.js`, `pairs.js`, `pareto.js`, `pending.js`, `pick-data.js`, `prices.js`, `quota-refusal.js`, `report.js`, `run.js`, `run-timings.js`, `superdelegation.js`, `voice.js` and `worktrees.js`; lane-command.js is a member of the lane family. (`autonomy-command.js` is declared loose: its prefix is not a family with more members.)
 
-Configuration data (read by the libraries, not options): `config/ladder.json`, `config/lanes.json`, `config/pairs.json`, `config/models/models.json`, `config/prices.json`, `config/autonomy.json`, `config/observe.json`, `config/skills.json` and `config/swarm.json`.
+Configuration data (read by the libraries, not options): `config/ladder.json`, `config/lanes.json`, `config/pairs.json`, `config/models/models.json`, `config/model-watch.json`, `config/prices.json`, `config/autonomy.json`, `config/observe.json`, `config/skills.json` and `config/swarm.json`.
 
 The `<dataDir>/router/` directory and `source: 'router'` keep that name, the same as the family.
 
