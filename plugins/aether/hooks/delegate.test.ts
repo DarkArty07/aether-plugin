@@ -54,6 +54,7 @@ function stubs(on, { marked = true, verbs = {} as Record<string, unknown[]>, rep
     const queue = (verbs[e.argv[2]] ??= [])
     const next = queue.shift()
     if (next === undefined) throw new Error(`no answer for ${e.argv[2]}`)
+    if (typeof next === 'function') return next({ clock, e })
     if (next instanceof Error) throw next
     if (e.argv[2] === 'wait' && (next as any).done === false) await clock.advance(540000)
     return { value: { exitCode: 0, stdout: `log line\n${JSON.stringify(next)}\n`, stderr: '' } }
@@ -348,4 +349,57 @@ test('a delivered external answer and a pure Claude answer carry no rescue line'
   const answer = await step($, { index: 0, agentId: claude.agentId })
   expect(answer.chunks).toEqual([{ kind: 'text', index: 0, text: 'found it' }, { kind: 'stop', stopReason: 'end_turn', usage: null }])
   expect(answer.result.answer).toBe('found it')
+})
+
+test('a begin that throws on a call with no model runs it on haiku, tells the Lead, and records handler-threw', async ($, on) => {
+  const { toolCalls, writes } = stubs(on, { verbs: { begin: [new Error('boom')] } })
+  const out = await ($.tool as any).call({ tool: 'Agent', subagent_type: 'general-purpose', description: 'task', prompt: 'AETHER-TASK: t1\nFix it.' })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(toolCalls[0].model).toBe('haiku')
+  expect(out.context).toEqual([
+    'Aether could not register this delegate task because begin failed; the call ran as a plain agent on haiku, outside the ladder; there is no task to judge with aether-delegate, and its result carries no checks.',
+  ])
+  const fault = writes.find((w) => w.path.includes('/observe/faults/'))
+  expect(fault).toBeTruthy()
+  expect(JSON.parse(fault!.text).faults).toEqual([{ time: 1000, source: 'delegate.begin', class: 'handler-threw', kind: 'Error' }])
+  expect(fault!.text.includes('boom')).toBe(false)
+})
+
+test('a begin that times out runs the call on haiku, tells the Lead, and records handler-timeout', async ($, on) => {
+  const { toolCalls, writes } = stubs(on, {
+    verbs: {
+      begin: [
+        async ({ clock }: any) => {
+          await clock.advance(25160)
+          throw new Error('aborted')
+        },
+      ],
+    },
+  })
+  const out = await ($.tool as any).call({ tool: 'Agent', subagent_type: 'general-purpose', description: 'task', prompt: 'AETHER-TASK: t1\nFix it.' })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(toolCalls[0].model).toBe('haiku')
+  expect(out.context).toEqual([
+    'Aether could not register this delegate task because begin timed out; the call ran as a plain agent on haiku, outside the ladder; there is no task to judge with aether-delegate, and its result carries no checks.',
+  ])
+  const fault = writes.find((w) => w.path.includes('/observe/faults/'))
+  expect(fault).toBeTruthy()
+  expect(JSON.parse(fault!.text).faults).toEqual([{ time: 26160, source: 'delegate.begin', class: 'handler-timeout', kind: 'Error' }])
+})
+
+test('a begin that fails on a call naming model sonnet keeps sonnet and names it in the note', async ($, on) => {
+  const { toolCalls, writes } = stubs(on, {
+    verbs: {
+      begin: [() => ({ deny: '$.process.run(node) aborted: still running after 25000ms' })],
+    },
+  })
+  const out = await ($.tool as any).call({ tool: 'Agent', subagent_type: 'general-purpose', description: 'task', prompt: 'AETHER-TASK: t1\nFix it.', model: 'sonnet' })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(toolCalls[0].model).toBe('sonnet')
+  expect(out.context).toEqual([
+    'Aether could not register this delegate task because begin timed out; the call ran as a plain agent on sonnet, outside the ladder; there is no task to judge with aether-delegate, and its result carries no checks.',
+  ])
+  const fault = writes.find((w) => w.path.includes('/observe/faults/'))
+  expect(fault).toBeTruthy()
+  expect(JSON.parse(fault!.text).faults).toEqual([{ time: 1000, source: 'delegate.begin', class: 'handler-timeout', kind: 'Error' }])
 })

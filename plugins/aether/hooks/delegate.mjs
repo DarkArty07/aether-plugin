@@ -70,6 +70,13 @@ function rewriteOf(plan) {
 
 const notesOf = (plan) => (Array.isArray(plan.notes) ? plan.notes.filter(isText) : [])
 
+const nowOf = ($) => Promise.resolve().then(() => $.clock.now()).then((t) => (Number.isFinite(t) ? t : null), () => null)
+
+function beginFailureNote(failClass, model) {
+  const why = failClass === 'handler-timeout' ? 'timed out' : 'failed'
+  return `Aether could not register this delegate task because begin ${why}; the call ran as a plain agent on ${model}, outside the ladder; there is no task to judge with aether-delegate, and its result carries no checks.`
+}
+
 // The external pair of an external plan, from plan.external.pair ({ harness, model, effort }, as lib/delegate-task.js
 // writes it). Null when the plan holds none.
 function pairOf(external) {
@@ -230,23 +237,30 @@ export function createDelegates() {
     async toolCall($, e, next, ctx) {
       if (!isObject(e) || (typeof e.subagent_type === 'string' && e.subagent_type.startsWith('aether:'))) return next(e)
       let plan = null
+      let failClass = null
+      let began = null
       try {
         const input = {}
         for (const key of EVENT_FIELDS) if (e[key] !== undefined) input[key] = e[key]
         written += 1
         const inputFile = `${ctx.dataDir}/delegates/in/${await $.clock.now()}-${written}.json`
         await $.fs.write(inputFile, JSON.stringify(input))
+        began = await nowOf($)
         const begun = await delegate($, ctx, ['begin', '--session', ctx.session, '--input', inputFile], BEGIN_TIMEOUT_MS)
         plan = begun.skip === true ? null : begun
       } catch (err) {
-        ctx.fault?.('delegate.begin', 'handler-threw', err)
+        const ended = await nowOf($)
+        const timedOut = /still running after/.test(String(err && err.message)) || (began !== null && ended !== null && ended - began >= BEGIN_TIMEOUT_MS)
+        failClass = timedOut ? 'handler-timeout' : 'handler-threw'
+        ctx.fault?.('delegate.begin', failClass, err)
         plan = null
       }
-      if (plan === null) return next(e)
-      if (typeof plan.deny === 'string' && plan.deny !== '') return { deny: plan.deny }
-      const rewrite = rewriteOf(plan)
-      const call = rewrite ? { ...e, ...rewrite } : e
-      const routed = remember(call.prompt, plan)
+      if (plan === null && failClass === null) return next(e)
+      if (plan !== null && typeof plan.deny === 'string' && plan.deny !== '') return { deny: plan.deny }
+      const rewrite = plan !== null ? rewriteOf(plan) : null
+      const call = plan !== null ? (rewrite ? { ...e, ...rewrite } : e) : (isText(e.model) ? e : { ...e, model: 'haiku' })
+      const routed = plan !== null ? remember(call.prompt, plan) : null
+      const notes = plan !== null ? notesOf(plan) : [beginFailureNote(failClass, call.model)]
       let result
       try {
         result = await next(call)
@@ -259,7 +273,6 @@ export function createDelegates() {
         forget(call.prompt, routed)
         return result
       }
-      const notes = notesOf(plan)
       if (notes.length === 0) return result
       return { ...result, context: [...(Array.isArray(result.context) ? result.context : []), ...notes] }
     },
