@@ -63,6 +63,22 @@ test('the skill new-harness holds the rule of the top tier and the trap of the s
   assert.ok(/waits for|next generation/i.test(text))
 })
 
+test('a new model of a harness that is already in: read its pages, show the ladder, draft the rows, wait for the owner (spec 043 C2)', () => {
+  const at = SKILL.indexOf('## A new model of a harness that is already in')
+  assert.ok(at >= 0, 'the skill has the new-model section')
+  const section = SKILL.slice(at)
+  const order = ['aa-pages.js read', 'refresh-lanes.js', '.aether/model-drafts/', 'before touching `config/`']
+  const positions = order.map((phrase) => section.indexOf(phrase))
+  assert.ok(positions.every((position) => position > -1), `a step is missing: ${order.filter((_, i) => positions[i] === -1)}`)
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'the steps are in order')
+  assert.ok(section.includes('node scripts/aa-pages.js read <slug> --harness <name>'), 'the read command with slug and harness')
+  assert.ok(section.includes('node scripts/refresh-lanes.js'), 'the ladder preview without --write')
+  for (const line of section.split('\n')) {
+    if (line.includes('aa-pages.js read')) assert.ok(!line.includes('--write'), `the reading step writes nothing: ${line}`)
+  }
+  assert.match(section, /owner's own words|owner's yes/i, 'the draft waits for the owner')
+})
+
 test('the repository skills live in .agents/skills/ with relative symlinks in .claude/skills/ and pass plugin review', (t) => {
   const { reviewSkill, posttool } = require('../plugins/aether/lib/skill-review.js')
   const { classifySkillPath } = require('../plugins/aether/lib/skill-rules.js')
