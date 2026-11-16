@@ -43,6 +43,20 @@ test('a project with leftovers of the old CLI and a CLAUDE.md that does not impo
   assert.equal(w.start('compact').out.hookSpecificOutput.additionalContext.includes('Run aether:tidy'), false)
 })
 
+test('the cleanup notice names what it removed, with no "and N more" when three or fewer go (R13)', (t) => {
+  const w = world(t)
+  const stale = path.join(w.repo.dir, '.aether', 'tmp', 'only.md')
+  put(stale)
+  const old = new Date(Date.now() - 48 * 3600 * 1000)
+  fs.utimesSync(stale, old, old)
+  const { status, out } = w.start('startup')
+  assert.equal(status, 0)
+  assert.equal(fs.existsSync(stale), false)
+  const context = out.hookSpecificOutput.additionalContext
+  assert.ok(context.includes('Aether cleaned 1 old item(s) of .aether/: .aether/tmp/only.md.'), context.slice(0, 500))
+  assert.ok(!context.includes('and 1 more') && !context.includes('more.'), 'no "and N more" suffix with a single removal')
+})
+
 test('a tidy project gets no notice (R36)', (t) => {
   const w = world(t)
   put(path.join(w.repo.dir, 'AGENTS.md'), 'map\n')

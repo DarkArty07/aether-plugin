@@ -185,7 +185,7 @@ function readRegisteredWorktrees(mainRoot) {
   }
 }
 
-function cleanProject(cwd, { now = Date.now(), dataDir = run.dataDir(), force = false } = {}) {
+function cleanProject(cwd, { now = Date.now(), dataDir = run.dataDir(), force = false, openRun = false } = {}) {
   const { mainRoot } = repoPaths(cwd)
   if (!force && !stampDue(dataDir, mainRoot, 'clean', now)) {
     return { ran: false, removed: [], kept: [] }
@@ -194,22 +194,24 @@ function cleanProject(cwd, { now = Date.now(), dataDir = run.dataDir(), force = 
   const removed = []
   const kept = []
 
-  // 1. Clean tmp folders
-  const tmpLimitMs = TMP_HOURS * 3600 * 1000
-  const tmpFolders = [
-    path.join(mainRoot, '.aether', 'tmp'),
-    path.join(mainRoot, '.aether-tmp'),
-  ]
-  for (const root of tmpFolders) {
-    if (!fs.existsSync(root)) continue
-    let entries = []
-    try {
-      entries = fs.readdirSync(root)
-    } catch {
-      continue
-    }
-    for (const name of entries) {
-      cleanTmpEntry(path.join(root, name), tmpLimitMs, now, removed, mainRoot)
+  // 1. Clean tmp folders, unless a run is open: its work may still need them.
+  if (openRun !== true) {
+    const tmpLimitMs = TMP_HOURS * 3600 * 1000
+    const tmpFolders = [
+      path.join(mainRoot, '.aether', 'tmp'),
+      path.join(mainRoot, '.aether-tmp'),
+    ]
+    for (const root of tmpFolders) {
+      if (!fs.existsSync(root)) continue
+      let entries = []
+      try {
+        entries = fs.readdirSync(root)
+      } catch {
+        continue
+      }
+      for (const name of entries) {
+        cleanTmpEntry(path.join(root, name), tmpLimitMs, now, removed, mainRoot)
+      }
     }
   }
 
