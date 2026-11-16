@@ -136,7 +136,8 @@ function start(cwd, flags, { env = process.env, now = Date.now() } = {}) {
   })
   runner.unref()
   fs.writeFileSync(paths.pid, `${runner.pid}\n`)
-  return { started: true, id, at: Date.now(), projectSkills: listProjectSkills(top) }
+  const projectSkills = listProjectSkills(top)
+  return { started: true, id, at: Date.now(), projectSkills, projectSkillsBlock: seats.boundedProjectSkillsBlock(projectSkills) }
 }
 
 // ---- The runner ----

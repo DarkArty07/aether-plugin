@@ -1559,9 +1559,8 @@ test('the seatRound comment names the refused stop and run path (#232 12)', () =
     if (!line.startsWith('//')) break
     comment.unshift(line)
   }
-  const text = comment.join('\n')
-  assert.match(text, /\bstop\b/)
-  assert.match(text, /\brun\b/)
+  const text = comment.map((line) => line.replace(/^\/\/\s?/, '')).join(' ')
+  assert.match(text, /A seat-start the autonomous run refuses returns \{ failed, refused, stop, run \} and does not hand the round to the native agent\./)
 })
 
 const PROJECT_SKILLS = [{ name: 'direccion-de-arte', description: 'Paleta y tipografia' }]
@@ -1585,7 +1584,7 @@ test('design.workflow.js passes the project skills of the exit-3 reply (no exter
     ops: (call, fallback) => {
       if (call.command.verb === 'seat-wait') {
         const seat = call.command.rest[0].split('-')[0]
-        return { done: true, exitCode: 3, value: { ...nativeSeat(seat), projectSkills: PROJECT_SKILLS } }
+        return { done: true, exitCode: 3, value: { ...nativeSeat(seat), projectSkills: PROJECT_SKILLS, projectSkillsBlock: seats.boundedProjectSkillsBlock(PROJECT_SKILLS) } }
       }
       return fallback(call)
     },
@@ -1595,7 +1594,7 @@ test('design.workflow.js passes the project skills of the exit-3 reply (no exter
 
 test('design.workflow.js also takes the project skills from the seat-start reply (R8, C4)', async () => {
   const run = await go(ARGS, {
-    ops: (call, fallback) => (call.command.verb === 'seat-start' ? { ...fallback(call), projectSkills: PROJECT_SKILLS } : fallback(call)),
+    ops: (call, fallback) => (call.command.verb === 'seat-start' ? { ...fallback(call), projectSkills: PROJECT_SKILLS, projectSkillsBlock: seats.boundedProjectSkillsBlock(PROJECT_SKILLS) } : fallback(call)),
   })
   assertPlanRoundsGetSkills(run)
 })
@@ -1608,8 +1607,8 @@ for (const source of ['seat-start', 'seat-wait']) {
         const out = fallback(call)
         if (call.command.verb !== source) return out
         return source === 'seat-start'
-          ? { ...out, projectSkills: PROJECT_SKILLS }
-          : { ...out, value: { ...out.value, projectSkills: PROJECT_SKILLS } }
+          ? { ...out, projectSkills: PROJECT_SKILLS, projectSkillsBlock: seats.boundedProjectSkillsBlock(PROJECT_SKILLS) }
+          : { ...out, value: { ...out.value, projectSkills: PROJECT_SKILLS, projectSkillsBlock: seats.boundedProjectSkillsBlock(PROJECT_SKILLS) } }
       },
       judge: (call, fallback) => (call.label === 'plan: judge review 1'
         ? { verdict: 'revise', findings: [finding('gap')], openQuestions: [] }
@@ -1631,3 +1630,52 @@ for (const source of ['seat-start', 'seat-wait']) {
     assert.equal(prompt('exam: examiner').includes('direccion-de-arte'), false)
   })
 }
+
+test('design.workflow.js gives the native Judge of a short design the project skills, matching an external Judge', async () => {
+  const run = await go(SHORT, {
+    ops: (call, fallback) => (call.command.verb === 'seat-start' ? { ...fallback(call), projectSkills: PROJECT_SKILLS, projectSkillsBlock: seats.boundedProjectSkillsBlock(PROJECT_SKILLS) } : fallback(call)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  const call = nativeCalls(run).find((c) => c.label === 'design: judge review 1')
+  assert.ok(call, 'design: judge review 1 invokes native judge')
+  assert.ok(call.prompt.includes(PROJECT_BLOCK))
+})
+
+
+test('native and external Judges receive the same bounded skills block', async (t) => {
+  const { makeRepo } = require('./helpers.js')
+  const { listProjectSkills } = require('../plugins/aether/lib/skill-brief.js')
+  const repo = makeRepo(t)
+  for (let i = 0; i < seats.MAX_PROJECT_SKILLS + 2; i++) {
+    const name = `skill-${String(i).padStart(3, '0')}`
+    const dir = path.join(repo.dir, '.agents', 'skills', name)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: Description ${i}\n---\n`)
+  }
+  const skills = listProjectSkills(repo.dir)
+  const handed = await seats.seatCommand(['judge', '--session', 'cap'], {
+    cwd: repo.dir, env: { ...process.env, AETHER_SUPERDELEGATION: 'off', AETHER_DATA_DIR: path.join(repo.dir, '.aether', 'data') },
+  })
+  const run = await go(SHORT, {
+    ops: (call, fallback) => call.command.verb === 'seat-wait'
+      ? { done: true, exitCode: 3, value: handed.value } : fallback(call),
+  })
+  assert.equal(run.error, null)
+  const native = nativeCalls(run).find((c) => c.role === 'judge').prompt
+  const external = seats.seatPrompt({ seat: 'judge', harness: 'agy', adapter: {}, message: 'Review the short design.', workdir: repo.dir })
+  const block = external.slice(external.indexOf('## Project skills'))
+  assert.ok(native.includes(block), native)
+  assert.match(block, /Showing 30 of 32 project skills; 2 more omitted/)
+  assert.equal(native.includes('`skill-031`'), false)
+  assert.equal(skills.length, 32)
+})
+
+test('real workflow spec and plan review messages agree with the seat skills detector', async () => {
+  const run = await go(ARGS)
+  assert.equal(run.error, null)
+  for (const [doc, expected] of [['spec', false], ['plan', true]]) {
+    const message = nativeCalls(run).find((c) => c.label === `${doc}: judge review 1`).prompt
+    assert.equal(seats.wantsProjectSkills('judge', null, message), expected, message)
+  }
+})

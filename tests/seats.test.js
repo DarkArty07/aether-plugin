@@ -890,3 +890,48 @@ test('a round handed back or failed names the project skills of the checkout (R8
   assert.equal(failed.status, 4, failed.stdout + failed.stderr)
   assert.deepEqual(failed.json.projectSkills, expected)
 })
+
+test('an external seat lists project skills from the checkout rather than its disposable worktree', (t) => {
+  const repo = seatRepo(t)
+  writeProjectSkill(repo.dir)
+  const env = judgeEnv(t)
+  const r = seat(repo.dir, ['judge', '--session', 's1', '--feature', FEATURE, '--author', 'sonnet'], env, 'Review the plan.\nFAKE-AGY: exit-error\n')
+  assert.equal(r.status, 4, r.stdout + r.stderr)
+  const [turn] = agyTurns(env)
+  const prompt = argAfter(turn.argv, '-p')
+  assert.ok(prompt.includes(PROJECT_BLOCK), prompt)
+})
+
+test('seatPrompt caps the Project skills block and states how many skills were omitted', () => {
+  const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'aether-seat-skills-cap-'))
+  try {
+    const limit = seats.MAX_PROJECT_SKILLS
+    assert.equal(typeof limit, 'number')
+    assert.ok(limit > 0)
+    const total = limit + 2
+    for (let i = 1; i <= total; i++) {
+      const name = `skill-${String(i).padStart(3, '0')}`
+      const skillDir = path.join(workdir, '.agents', 'skills', name)
+      fs.mkdirSync(skillDir, { recursive: true })
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `---\nname: ${name}\ndescription: Desc ${name}\n---\n`)
+    }
+    const prompt = seats.seatPrompt({ seat: 'writer', harness: 'agy', adapter: {}, message: 'Write the plan.', workdir, feature: FEATURE, doc: 'plan' })
+    assert.ok(prompt.includes(`\`skill-${String(limit).padStart(3, '0')}\``))
+    assert.equal(prompt.includes(`\`skill-${String(total).padStart(3, '0')}\``), false)
+    assert.match(prompt, new RegExp(`Showing ${limit} of ${total} project skills; 2 more omitted`))
+  } finally {
+    fs.rmSync(workdir, { recursive: true, force: true })
+  }
+})
+
+
+test('seat selection reuses its quota reading before starting the harness', (t) => {
+  const repo = seatRepo(t)
+  const env = judgeEnv(t)
+  const r = seat(repo.dir, ['judge', '--session', 'single-read', '--feature', FEATURE, '--author', 'sonnet'], env, 'Review the plan.\nFAKE-AGY: exit-error\n')
+  assert.equal(r.status, 4, r.stdout + r.stderr)
+  const calls = require('./lane-fixtures.js').agyCalls(env)
+  const turn = calls.findIndex((c) => c.argv[0] === '-p' && c.argv[1] !== '/usage')
+  assert.ok(turn >= 0)
+  assert.equal(calls.slice(0, turn).filter((c) => c.argv[1] === '/usage').length, 1)
+})
