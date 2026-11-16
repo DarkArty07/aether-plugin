@@ -31,7 +31,7 @@ test('a dispute the Lead may fix itself is named by its mechanical flag, and the
 
 test('the Lead asks at most five questions, writes the card, and acts on each of the four results (R4, R5, R14)', () => {
   const section = DETAIL
-  for (const text of ['"session": "<CLAUDE_CODE_SESSION_ID>"', '"mode": "short"', 'At most two revisions per document', 'at most five questions, one at a time', 'hard to reverse, surprising, or a real trade-off', '`specs/NNN-<topic>/intent.md`', 'Only you write the card: aether-guard refuses every other writer', "the owner's words, quoted as they said them", 'what is out', 'the answers to the clarifying questions', '- `approved`:', '- `clarify`:', '- `dispute`:', '- `failed`:', 'take the reversible side of each as an assumption, put the question in "Espera tu sí"', 'Never override the Judge silently', '**Later changes.**', 'a fix after a stop at the plan stage', 'A changed plan gets a new exam', 'an approved spec is never rewritten']) {
+  for (const text of ['aether-plan design-args', '"mode": "short"', 'At most two revisions per document', 'at most five questions, one at a time', 'hard to reverse, surprising, or a real trade-off', '`specs/NNN-<topic>/intent.md`', 'Only you write the card: aether-guard refuses every other writer', "the owner's words, quoted as they said them", 'what is out', 'the answers to the clarifying questions', '- `approved`:', '- `clarify`:', '- `dispute`:', '- `failed`:', 'take the reversible side of each as an assumption, put the question in "Espera tu sí"', 'Never override the Judge silently', '**Later changes.**', 'a fix after a stop at the plan stage', 'A changed plan gets a new exam', 'an approved spec is never rewritten']) {
     assert.ok(section.includes(text), text)
   }
 })
@@ -62,7 +62,7 @@ test('understanding the intent: research before a policy change, plain numbered 
 })
 
 test('the bootstrap launches /aether:design with superdelegation and the harness list, and never with seats or lanes', () => {
-  assert.ok(DETAIL.includes('$AETHER_SUPERDELEGATION $AETHER_LANE_HARNESSES'))
-  assert.ok(DETAIL.includes('"superdelegation": "<AETHER_SUPERDELEGATION>"'))
+  assert.ok(DETAIL.includes('aether-plan design-args'))
+  assert.ok(DETAIL.includes('--short <document> --intent <text> --author <model>'))
   for (const gone of ['AETHER_' + 'SEATS', 'AETHER_' + 'LAN' + 'ES', '"seats"', '"lanes"', 'balanced', 'robust']) assert.ok(!BOOTSTRAP.includes(gone), `gone: ${gone}`)
 })

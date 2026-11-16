@@ -74,3 +74,65 @@ test('every other use is a misuse: usage line, non-zero exit, and no figure of a
 test('the bin names the new form in its usage text', () => {
   assert.ok(fs.readFileSync(BIN, 'utf8').includes(FORM))
 })
+
+function runRaw(dataDir, args) {
+  return spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8', env: { ...process.env, AETHER_DATA_DIR: dataDir } })
+}
+
+test('--spend --line prints the closing sentence in one line, and --run adds the ceiling clause', (t) => {
+  const dataDir = useDataDir(t)
+  session(dataDir, 's1', 1)
+  const expected = PRICES.models.opus.input.toFixed(2)
+  const plain = runRaw(dataDir, ['--spend', '--session', 's1', '--line'])
+  assert.equal(plain.status, 0, plain.stderr)
+  assert.equal(
+    plain.stdout,
+    `Sesión s1: US$ ${expected} a precio de lista (Lead US$ ${expected}, agentes US$ 0.00). El total incluye las llamadas a otros harness (0 llamadas, US$ 0.00).\n`,
+  )
+  const withRun = runRaw(dataDir, ['--spend', '--session', 's1', '--line', '--run'])
+  assert.equal(withRun.status, 0, withRun.stderr)
+  assert.equal(
+    withRun.stdout,
+    `Sesión s1: US$ ${expected} a precio de lista (Lead US$ ${expected}, agentes US$ 0.00). El total incluye las llamadas a otros harness (0 llamadas, US$ 0.00) y no es la cifra del tope.\n`,
+  )
+})
+
+test('--spend --line handles recorded false, unpriced, tokenless and incomplete in order', (t) => {
+  const dataDir = useDataDir(t)
+  const none = runRaw(dataDir, ['--spend', '--session', 'empty', '--line'])
+  assert.equal(none.status, 0, none.stderr)
+  assert.equal(none.stdout, 'Sesión empty: todavía no hay gasto registrado.\n')
+
+  // Recorded session with unpriced model, tokenless lane call, and an unreadable part (incomplete: false).
+  session(dataDir, 's2', 1)
+  writeJson(path.join(dataDir, 'usage', 's2', '1.json'), {
+    session: 's2',
+    part: 1,
+    claudeCode: '2.1.296',
+    agents: {},
+    entries: [{ t: Date.parse('2026-09-01T10:01:00Z'), ms: 1, agent: 'aether:implementer', model: 'unpriced-x', effort: 'low', input: 100, output: 10, cacheRead: 0, cacheWrite: 0 }],
+  })
+  fs.writeFileSync(path.join(dataDir, 'usage', 's2', '2.json'), '{bad json')
+  fs.mkdirSync(path.join(dataDir, 'lanes'), { recursive: true })
+  fs.writeFileSync(
+    path.join(dataDir, 'lanes', 's2.jsonl'),
+    JSON.stringify({ kind: 'call', time: Date.parse('2026-09-01T10:02:00Z'), harness: 'agy', model: OPUS, status: 'ok', usage: {} }) + '\n',
+  )
+
+  const expected = PRICES.models.opus.input.toFixed(2)
+  const r = runRaw(dataDir, ['--spend', '--session', 's2', '--line'])
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(
+    r.stdout,
+    `Sesión s2: US$ ${expected} a precio de lista (Lead US$ ${expected}, agentes US$ 0.00). El total incluye las llamadas a otros harness (1 llamadas, US$ 0.00). Sin precio: unpriced-x; el total no los cuenta. Sin tokens registrados: ${OPUS}; el total puede quedar corto. El total está incompleto.\n`,
+  )
+})
+
+test('--spend --run without --line, or repeated --line/--run, is a misuse', (t) => {
+  const dataDir = useDataDir(t)
+  for (const args of [['--spend', '--run'], ['--spend', '--line', '--line'], ['--spend', '--line', '--run', '--run']]) {
+    const r = run(dataDir, args)
+    assert.notEqual(r.status, 0, args.join(' '))
+    assert.ok(r.json.error.includes(`usage: ${FORM}`), args.join(' '))
+  }
+})

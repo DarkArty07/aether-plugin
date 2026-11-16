@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-plan: checks and compiles plans and briefs, and finds the next spec number.
-// Calls lib/plan-compile.js or lib/plan-number.js.
+// aether-plan: checks and compiles plans and briefs, builds /aether:design args, and finds the next spec number.
+// Calls lib/plan-compile.js, lib/plan-design.js or lib/plan-number.js.
 
 const path = require('node:path')
 const argv = process.argv.slice(2)
 const verb = argv[0]
 
 const USAGE =
-  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline] | aether-plan next-spec'
+  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline] | aether-plan next-spec | aether-plan design-args <feature> [--short <document> --intent <text> --author <model>]'
 
 if (verb === 'next-spec') {
   const { nextSpec } = require(path.join(__dirname, '..', 'lib', 'plan-number.js'))
   nextSpec({ cwd: process.cwd(), stdout: process.stdout })
+} else if (verb === 'design-args') {
+  const { designArgs } = require(path.join(__dirname, '..', 'lib', 'plan-design.js'))
+  designArgs(argv, { cwd: process.cwd(), env: process.env, binDir: __dirname, stdout: process.stdout })
 } else if (verb === 'check' || verb === 'compile') {
   const { main } = require(path.join(__dirname, '..', 'lib', 'plan-compile.js'))
   main(argv, { cwd: process.cwd(), stdout: process.stdout })

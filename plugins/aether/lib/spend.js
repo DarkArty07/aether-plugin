@@ -552,6 +552,32 @@ function spendReport({ dataDir = run.dataDir(), session = null, prices = loadPri
   return shaped(id, true, complete, tally, prices)
 }
 
+// Formats the closing-report spend sentence from a spendReport() result.
+function spendLine(report, { run: isRun = false } = {}) {
+  const label = report.session ? `Sesión ${report.session}` : 'Sin sesión'
+  if (!report.recorded) return `${label}: todavía no hay gasto registrado.`
+  const fmt = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0).toFixed(2)
+  const total = fmt(report.usd)
+  const lead = fmt(report.leadUsd)
+  const agents = fmt(report.agentsUsd)
+  const calls = report.harness.calls
+  const harnessUsd = fmt(report.harness.usd)
+  const tail = isRun ? ' y no es la cifra del tope.' : '.'
+  const parts = [
+    `${label}: US$ ${total} a precio de lista (Lead US$ ${lead}, agentes US$ ${agents}). El total incluye las llamadas a otros harness (${calls} llamadas, US$ ${harnessUsd})${tail}`,
+  ]
+  if (report.unpriced && report.unpriced.length > 0) {
+    parts.push(`Sin precio: ${report.unpriced.join(', ')}; el total no los cuenta.`)
+  }
+  if (report.tokenless && report.tokenless.length > 0) {
+    parts.push(`Sin tokens registrados: ${report.tokenless.join(', ')}; el total puede quedar corto.`)
+  }
+  if (!report.complete) {
+    parts.push('El total está incompleto.')
+  }
+  return parts.join(' ')
+}
+
 module.exports = {
   SESSION_ID,
   GAP_MS,
@@ -571,4 +597,5 @@ module.exports = {
   newestIn,
   latestSession,
   spendReport,
+  spendLine,
 }

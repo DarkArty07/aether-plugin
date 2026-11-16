@@ -30,7 +30,7 @@ const { loadSwarmConfig } = require('./wt-config.js')
 const { recordTiming } = require('./run-timings.js')
 
 const USAGE =
-  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline] | aether-plan next-spec'
+  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline] | aether-plan next-spec | aether-plan design-args <feature> [--short <document> --intent <text> --author <model>]'
 
 function fail(errors, warnings = [], stdout = process.stdout) {
   stdout.write(JSON.stringify({ ok: false, errors, warnings }) + '\n')
