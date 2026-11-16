@@ -115,3 +115,111 @@ test('save after a relaunch lists the units of the earlier launches and keeps th
   assert.equal(byTask['task-2'].branch, `aether/${runId}/task-2`)
   assert.notEqual(repo.git('branch', '--list', `aether/${runId}/task-2`), '')
 })
+
+test('recompiling with --only of 10 in a 54-task plan offers only the 10th after 9 merge and preserves selections[1]', (t) => {
+  const repo = makeRepo(t)
+  const text = plan(Array.from({ length: 54 }, (_, i) => task(i + 1)))
+  const selected = Array.from({ length: 10 }, (_, i) => `task-${i + 1}`)
+  const first = compileRun(repo, text, '--only', selected.join(','))
+  assert.equal(first.status, 0, first.stdout + first.stderr)
+  const { runId, runDir } = first.json
+  for (let n = 1; n <= 9; n++) mergeUnit(repo, runId, n)
+
+  const second = compileRun(repo, text, '--run', runId)
+  assert.equal(second.status, 0, second.stdout + second.stderr)
+  assert.deepEqual(Object.keys(second.json.tasks), ['task-10'])
+  assert.deepEqual(second.json.alreadyMerged, selected.slice(0, 9))
+
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'))
+  assert.equal(state.launches, 2)
+  assert.deepEqual(state.selections, [selected, selected])
+})
+
+test('a run whose first launch had no --only (null) still offers the whole plan minus merged', (t) => {
+  const repo = makeRepo(t)
+  const text = plan([task(1), task(2), task(3), task(4)])
+  const first = compileRun(repo, text)
+  assert.equal(first.status, 0, first.stdout + first.stderr)
+  const { runId, runDir } = first.json
+  mergeUnit(repo, runId, 1)
+
+  const second = compileRun(repo, text, '--run', runId)
+  assert.equal(second.status, 0, second.stdout + second.stderr)
+  assert.deepEqual(Object.keys(second.json.tasks).sort(), ['task-2', 'task-3', 'task-4'])
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'))
+  assert.deepEqual(state.selections, [null, null])
+})
+
+test('a run without selections (legacy state) derives its selection from units.json', (t) => {
+  const repo = makeRepo(t)
+  const text = plan([task(1), task(2), task(3), task(4), task(5)])
+  const first = compileRun(repo, text, '--only', 'task-1,task-2,task-3')
+  assert.equal(first.status, 0, first.stdout + first.stderr)
+  const { runId, runDir } = first.json
+  const statePath = path.join(runDir, 'state.json')
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'))
+  delete state.selections
+  fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + '\n')
+
+  mergeUnit(repo, runId, 1)
+  const second = compileRun(repo, text, '--run', runId)
+  assert.equal(second.status, 0, second.stdout + second.stderr)
+  assert.deepEqual(Object.keys(second.json.tasks).sort(), ['task-2', 'task-3'])
+})
+
+test('two launches with distinct --only combine as their union on --run without --only', (t) => {
+  const repo = makeRepo(t)
+  const text = plan([task(1), task(2), task(3), task(4), task(5)])
+  const first = compileRun(repo, text, '--only', 'task-1,task-2')
+  assert.equal(first.status, 0, first.stdout + first.stderr)
+  const { runId, runDir } = first.json
+  mergeUnit(repo, runId, 1)
+  const second = compileRun(repo, text, '--run', runId, '--only', 'task-3,task-4')
+  assert.equal(second.status, 0, second.stdout + second.stderr)
+  mergeUnit(repo, runId, 3)
+
+  const third = compileRun(repo, text, '--run', runId)
+  assert.equal(third.status, 0, third.stdout + third.stderr)
+  assert.deepEqual(Object.keys(third.json.tasks).sort(), ['task-2', 'task-4'])
+  const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'))
+  assert.equal(state.launches, 3)
+  assert.deepEqual(state.selections[2], ['task-1', 'task-2', 'task-3', 'task-4'])
+})
+
+test('an explicit --only on recompile overrides the saved selection', (t) => {
+  const repo = makeRepo(t)
+  const text = plan([task(1), task(2), task(3), task(4), task(5)])
+  const first = compileRun(repo, text, '--only', 'task-1,task-2')
+  assert.equal(first.status, 0, first.stdout + first.stderr)
+  const { runId } = first.json
+
+  const second = compileRun(repo, text, '--run', runId, '--only', 'task-5')
+  assert.equal(second.status, 0, second.stdout + second.stderr)
+  assert.deepEqual(Object.keys(second.json.tasks), ['task-5'])
+  assert.equal(second.json.alreadyMerged, undefined)
+})
+
+test('recompile warns on stderr when offered tasks grow beyond previous launch, and stays silent otherwise', (t) => {
+  const repo = makeRepo(t)
+  const text = plan([task(1), task(2), task(3), task(4), task(5), task(6)])
+  const first = compileRun(repo, text, '--only', 'task-1,task-2,task-3')
+  assert.equal(first.status, 0, first.stdout + first.stderr)
+  const { runId } = first.json
+
+  // Equal count (3 -> 3): no warning
+  const equal = compileRun(repo, text, '--run', runId)
+  assert.equal(equal.status, 0, equal.stdout + equal.stderr)
+  assert.doesNotMatch(equal.stderr, /recompile offers \d+ tasks, the previous launch offered \d+/)
+
+  // Smaller count (3 -> 2): no warning
+  const smaller = compileRun(repo, text, '--run', runId, '--only', 'task-1,task-2')
+  assert.equal(smaller.status, 0, smaller.stdout + smaller.stderr)
+  assert.doesNotMatch(smaller.stderr, /recompile offers \d+ tasks, the previous launch offered \d+/)
+
+  // Larger count (2 -> 6, or 3 -> 6): warning
+  const first3 = compileRun(repo, text, '--only', 'task-1,task-2,task-3')
+  assert.equal(first3.status, 0, first3.stdout + first3.stderr)
+  const grown = compileRun(repo, text, '--run', first3.json.runId, '--only', 'task-1,task-2,task-3,task-4,task-5,task-6')
+  assert.equal(grown.status, 0, grown.stdout + grown.stderr)
+  assert.match(grown.stderr, /recompile offers 6 tasks, the previous launch offered 3/)
+})

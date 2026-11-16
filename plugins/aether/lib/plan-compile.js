@@ -312,6 +312,17 @@ function baselineMessage({ exitCode, signatures }) {
   return 'the test command failed and names no test, so any failure blocks a merge'
 }
 
+// Union of prior launch selections (null means the whole plan); legacy runs without
+// `selections` fall back to the units already recorded in units.json.
+function deriveRunSelection(dir, previous) {
+  if (previous && Array.isArray(previous.selections)) {
+    if (previous.selections.some((sel) => sel === null)) return null
+    return [...new Set(previous.selections.flat())]
+  }
+  const unitsFile = path.join(dir, 'units.json')
+  return fs.existsSync(unitsFile) ? Object.keys(run.readUnits(dir)) : null
+}
+
 function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, env = process.env } = {}) {
   const { planPath, parsed } = load(planArg, stdout)
   const onlyValue = flagValue(rest, '--only', '--only needs a comma-separated list of tasks, such as task-2,task-3.', stdout)
@@ -331,21 +342,37 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
   run.assertRunId(runId)
   const dir = run.runDir(repo.mainRoot, runId)
   const graphFile = path.join(dir, 'graph.json')
-  const priorIntegration = fs.existsSync(graphFile) ? run.readJson(graphFile).integration : null
+  const statePath = path.join(dir, 'state.json')
+  const priorGraph = fs.existsSync(graphFile) ? run.readJson(graphFile) : null
+  const previous = fs.existsSync(statePath) ? run.readJson(statePath) : null
+  const priorIntegration = priorGraph ? priorGraph.integration : null
+  const priorOfferedCount = priorGraph && priorGraph.tasks ? Object.keys(priorGraph.tasks).length : null
+  const priorSelections = previous
+    ? Array.isArray(previous.selections)
+      ? previous.selections
+      : Array.from({ length: previous.launches || 1 }, () => deriveRunSelection(dir, null))
+    : []
 
+  const explicitOnly = only
+  let inheritedSelection = null
   let alreadyMerged = null
-  if (runValue !== null && fs.existsSync(graphFile) && only === null) {
+  if (runValue !== null && (priorGraph || previous) && explicitOnly === null) {
     // Read before the graph is written: a relaunch's graph keeps the first launch's base
     // and drops the units already merged so the run continues from where it stopped.
+    inheritedSelection = deriveRunSelection(dir, previous)
     const merged = new Set(wt.mergedUnits(cwd, runId))
     const planTaskIds = parsed.tasks.map((t) => `task-${t.number}`)
-    const intersect = planTaskIds.filter((id) => merged.has(id))
+    const selectedSet = inheritedSelection === null ? null : new Set(inheritedSelection)
+    const selectedIds = selectedSet === null ? planTaskIds : planTaskIds.filter((id) => selectedSet.has(id))
+    const intersect = selectedIds.filter((id) => merged.has(id))
     if (intersect.length > 0) {
       alreadyMerged = intersect
       for (const id of alreadyMerged) {
         process.stderr.write(`aether-plan: ${id} is already merged in run ${runId}; it is not relaunched\n`)
       }
-      only = planTaskIds.filter((id) => !merged.has(id))
+    }
+    if (inheritedSelection !== null || intersect.length > 0) {
+      only = selectedIds.filter((id) => !merged.has(id))
     }
   }
 
@@ -497,22 +524,31 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
 
   // A relaunch of a run keeps its first compile time, so the report covers every launch, and keeps
   // the previous launch's result as result-<k>.json.
-  const statePath = path.join(dir, 'state.json')
-  const previous = fs.existsSync(statePath) ? run.readJson(statePath) : null
   const resultPath = path.join(dir, 'result.json')
   if (fs.existsSync(resultPath)) {
     let k = 1
     while (fs.existsSync(path.join(dir, `result-${k}.json`))) k++
     fs.renameSync(resultPath, path.join(dir, `result-${k}.json`))
   }
+  const thisSelection =
+    explicitOnly !== null
+      ? Object.keys(graph.tasks)
+      : runValue !== null && (priorGraph || previous)
+        ? inheritedSelection
+        : null
   run.writeJson(statePath, {
     runId,
     status: 'compiled',
     plan: planPath,
     compiledAt: previous && previous.compiledAt ? previous.compiledAt : new Date().toISOString(),
     launches: previous ? (previous.launches || 1) + 1 : 1,
+    selections: [...priorSelections, thisSelection],
     session: previous && previous.session ? previous.session : (env.CLAUDE_CODE_SESSION_ID || null),
   })
+  const offeredCount = Object.keys(tasks).length
+  if (runValue !== null && priorOfferedCount !== null && offeredCount > priorOfferedCount) {
+    process.stderr.write(`recompile offers ${offeredCount} tasks, the previous launch offered ${priorOfferedCount}\n`)
+  }
   const warnings = [...parsed.warnings, ...graph.warnings, ...planWarnings(parsed, compileRoot), ...docWarnings(parsed, compileRoot), ...rules.warnings]
   if (repo.worktree === repo.mainRoot) {
     warnings.push(
