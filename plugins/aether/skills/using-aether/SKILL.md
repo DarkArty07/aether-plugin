@@ -179,7 +179,7 @@ aether-guard checks your and agents' Bash for all irreversible classes except `p
 
 ## Fallbacks never reach the owner
 
-Handle defined fallbacks immediately, recording them in the diary, never asking the owner or leaving them in "Espera tu sí": «siempre con fallback hacia nosotros»; «que me lo tengas que preguntar es una falla de diseño».
+Handle defined fallbacks immediately and log them in the diary, never asking the owner or using "Espera tu sí": «siempre con fallback hacia nosotros»; «que me lo tengas que preguntar es una falla de diseño».
 - Lane unavailable at start: next candidate, then native; failure after start: same call native.
 - Design round: `/aether:design` falls back to native, retries an empty answer once, returns the result.
 - Swarm merge failure, exhausted ladder or skipped unit: `aether:swarm`, §5.
@@ -192,34 +192,37 @@ If the same fallback fails twice at one step, apply "Autonomous runs"' repetitio
 
 Permission such as «trabaja por horas» confirms intent and opens a run, whatever the size of the work: even a task you would build directly opens a run, after plan-mode approval of its plan and ceilings ("Plans"). Do not ask again. Without it, design and stop at the plan with a short brief.
 
-When permission is given or session start says a run is open, load the `aether:autonomous-runs` skill and follow it.
+When permission is given or session start says a run is open, load the `aether:autonomous-runs` skill and follow it. A run belongs to the session that opened it.
+- `aether-autonomy status <id>`: see another session's run.
+- `aether-autonomy end <id>`: close another session's run.
+- `aether-autonomy continue <id>`: continue your own after a restart that gave the session a new id.
 
 **Irreversible actions.** These eight classes need authorization; local reversible work proceeds.
 
 | Class | Covers |
 |---|---|
-| `merge-main` | a merge or fast-forward into `main` or `master`, including merging a pull request into it |
+| `merge-main` | merge or fast-forward into `main` or `master`, including PR merge |
 | `push` | sending commits to any remote, or opening a pull request |
 | `publish` | publishing a package or a release, or making a repository public |
 | `deploy` | deploying, restarting or stopping services |
 | `delete` | deleting data, or files and branches outside the run's worktrees |
 | `credentials` | creating, copying, widening or rotating credentials and tokens |
 | `paid-call` | real, paid model calls outside the swarm |
-| `skill-install` | installing a skill from the internet from an author that is not trusted, or for all projects, and writing a permanent skill in `~/.agents/skills/` or `~/.claude/skills/` |
+| `skill-install` | untrusted internet skill, all-projects install, or permanent skill in `~/.agents/skills/` or `~/.claude/skills/` |
 
-Before one, run `aether-autonomy check <class>`.
-- **Exit 0:** it is covered. Act, and cite the grant in the diary.
-- **Exit 2:** it is not. Unless the owner authorized this one action in their own words, put the action, its class and the exact command in "Espera tu sí", and go on with what does not depend on it.
+Before one, run `aether-autonomy check <class>`:
+- **Exit 0:** covered; act and cite grant in diary.
+- **Exit 2:** uncovered; unless authorized in owner's words, list action, class and exact command in "Espera tu sí" and continue.
 
 **Recording the owner's authorizations,** in a run or not:
-- General words naming an action («todos los merges a main», «siempre»): `aether-autonomy grant --class <class> --quote "<their words>"`, valid in this repo until revoked.
+- General words («todos los merges a main», «siempre»): `aether-autonomy grant --class <class> --quote "<their words>"`, valid in this repo until revoked.
 - Session-only words: add `--scope session`.
 - One specific action or bare «sí»: note that single action in the diary, not the registry.
 - Withdrawal: `aether-autonomy revoke --class <class> --quote "<their words>" --all`; without `--all`, removes only this session's grants.
 - Trusted author: `aether-autonomy trust --author <author> --quote "<their words>"`.
-- Read with `aether-autonomy list`. Only `aether-autonomy` writes the registry and `run.json`; aether-guard refuses edits.
-- In `AETHER_IRREVERSIBLE=enforce`, even an approved action needs a covering grant: record the reply as a session grant, act, revoke. Quotes require 12 owner characters; for shorter replies, give the owner the exact command to run.
+- Read: `aether-autonomy list`. Only `aether-autonomy` writes the registry and `run.json`; aether-guard refuses edits.
+- Under `AETHER_IRREVERSIBLE=enforce`, an approved action still needs a grant: record as a session grant, act, revoke. Quotes need 12 owner chars; for shorter replies, give the exact command.
 
-**Repetition.** Stop work without progress: the same task redesigned twice or unit relaunched twice unsuccessfully. Record the defect, defer that task as the smallest reversible path, and continue the rest. Delegate failures follow the ladder (each rejected attempt climbs one rung, and a cause that repeats in two attempts blocks the task on its rung without climbing); this rule applies after the last rung, the fifth (Opus `xhigh`).
+**Repetition.** Stop work without progress: the same task redesigned twice or unit relaunched twice unsuccessfully. Record the defect, defer as the smallest reversible path, and continue. Delegate failures follow the ladder (rejected attempts climb one rung; a cause repeated in two attempts blocks the task on its rung); this applies after the fifth rung (Opus `xhigh`).
 
-**Every brief,** in a run or not, opens with "Espera tu sí" and "Supuestos", ordered by veto likelihood. Outside a run the brief is short: intent, spec/plan paths with about five lines each, decisions, owner's list, assumptions, unverified work and applicable RADAR lines. Stop at the plan; put execution and your recommended method in "Espera tu sí".
+**Every brief,** in a run or not, opens with "Espera tu sí" and "Supuestos", ordered by veto likelihood. Outside a run the brief is short: intent, spec/plan paths (~5 lines each), decisions, owner's list, assumptions, unverified work and applicable RADAR lines. Stop at the plan; put execution and your method in "Espera tu sí".

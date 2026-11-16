@@ -38,6 +38,8 @@ Otras palabras sirven también, como «trabaja por horas». Sin este permiso el 
 
 Lo que ves: el Lead carga el skill `autonomous-runs` y abre una corrida con `aether-autonomy start`. El comando compara tus palabras con tus propios mensajes de la sesión y exige al menos 12 caracteres tuyos, así que da una frase completa, no un «sí» suelto.
 
+Una corrida pertenece a la sesión que la abrió. Cada sesión abre su propia corrida con sus propios topes y su diario, el freno de cuota pausa todas las corridas abiertas y cada una se reanuda por su cuenta. Para ver o cerrar la corrida de otra sesión se pasa su id (`aether-autonomy status <id>`, `aether-autonomy end <id>`), y `aether-autonomy continue <id>` continúa una tras un reinicio, sin permiso nuevo.
+
 ### 3. Pon los topes o deja los de siempre
 
 Una corrida tiene dos topes: 8 horas y US$ 50. Di un número y el Lead lo usa en su lugar:
