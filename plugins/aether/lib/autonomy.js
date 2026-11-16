@@ -1134,20 +1134,33 @@ function noticeLine(notify) {
   return notify.sent ? '- Aviso al dueño: enviado.' : `- Aviso al dueño: no enviado (${notify.reason}).`
 }
 
+function activePause(run, now) {
+  if (!run || run.brakeOff) return null
+  for (let i = run.quotaPauses.length - 1; i >= 0; i--) {
+    const pause = run.quotaPauses[i]
+    if (now < Date.parse(pause.resumeAt)) {
+      return { run: run.id, resetsAt: pause.resetsAt, resumeAt: pause.resumeAt, percentUsed: pause.percentUsed }
+    }
+  }
+  return null
+}
+
 function brakeSettings(mainRoot, { session = null, now = Date.now(), dataDir } = {}) {
   const dir = resolveDataDir(dataDir)
   const fromFile = session ? readBrakeSettings(dir, session) : null
   const { threshold, push } = fromFile || { threshold: 95, push: false }
-  const open = findOpenRun(mainRoot)
-  const run = open ? open.run : null
+  const open = openRuns(mainRoot)
+  let run = null
   let paused = null
-  if (run && !run.brakeOff) {
-    for (let i = run.quotaPauses.length - 1; i >= 0; i--) {
-      const pause = run.quotaPauses[i]
-      if (now < Date.parse(pause.resumeAt)) {
-        paused = { run: run.id, resetsAt: pause.resetsAt, resumeAt: pause.resumeAt, percentUsed: pause.percentUsed }
-        break
-      }
+  if (session) {
+    const sel = selectRun(mainRoot, { session })
+    run = sel.ok ? sel.item.run : null
+    paused = activePause(run, now)
+  } else {
+    run = open[0] ? open[0].run : null
+    for (const item of open) {
+      paused = activePause(item.run, now)
+      if (paused) break
     }
   }
   return {
@@ -1160,18 +1173,7 @@ function brakeSettings(mainRoot, { session = null, now = Date.now(), dataDir } =
   }
 }
 
-function recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, notify = { sent: false, reason: 'no-channel' } } = {}, { now = Date.now(), dataDir } = {}) {
-  if (!WINDOW_KINDS.includes(kind)) throw new Error(`unknown window kind: ${kind}`)
-  if (typeof percentUsed !== 'number' || !Number.isFinite(percentUsed) || percentUsed < 0) throw new Error(`invalid percent: ${percentUsed}`)
-  if (typeof resetsAt !== 'string' || !Number.isFinite(Date.parse(resetsAt))) throw new Error(`invalid resetsAt: ${resetsAt}`)
-  if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold <= 0) throw new Error(`invalid threshold: ${threshold}`)
-  const dir = resolveDataDir(dataDir)
-  writeNotified(dir, kind, resetsAt, now)
-  if (kind === 'seven_day') return { recorded: false, paused: false, reason: 'weekly' }
-  const open = findOpenRun(mainRoot)
-  if (!open) return { recorded: false, paused: false, reason: 'no-run' }
-  const { run, paths } = open
-  const notice = normalizeNotify(notify)
+function recordCrossingForRun({ run, paths }, { percentUsed, resetsAt, threshold, notice, now }) {
   if (run.brakeOff) {
     const at = new Date(now).toISOString()
     run.quotaCrossings.push({ at, percentUsed, threshold, resetsAt, notify: notice })
@@ -1197,6 +1199,35 @@ function recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, noti
   return { recorded: true, paused: true, run: run.id, resetsAt, resumeAt }
 }
 
+function summarizeCrossing(res) {
+  const entry = { run: res.run, paused: res.paused }
+  if (res.duplicate) entry.duplicate = true
+  if (res.brakeOff) entry.brakeOff = true
+  return entry
+}
+
+function recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, notify = { sent: false, reason: 'no-channel' } } = {}, { now = Date.now(), dataDir, session = null } = {}) {
+  if (!WINDOW_KINDS.includes(kind)) throw new Error(`unknown window kind: ${kind}`)
+  if (typeof percentUsed !== 'number' || !Number.isFinite(percentUsed) || percentUsed < 0) throw new Error(`invalid percent: ${percentUsed}`)
+  if (typeof resetsAt !== 'string' || !Number.isFinite(Date.parse(resetsAt))) throw new Error(`invalid resetsAt: ${resetsAt}`)
+  if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold <= 0) throw new Error(`invalid threshold: ${threshold}`)
+  const dir = resolveDataDir(dataDir)
+  writeNotified(dir, kind, resetsAt, now)
+  if (kind === 'seven_day') return { recorded: false, paused: false, reason: 'weekly' }
+  const open = openRuns(mainRoot)
+  if (!open.length) return { recorded: false, paused: false, reason: 'no-run' }
+  const notice = normalizeNotify(notify)
+  const results = open.map((item) => recordCrossingForRun(item, { percentUsed, resetsAt, threshold, notice, now }))
+  const runsList = results.map(summarizeCrossing)
+  if (session) {
+    const sel = selectRun(mainRoot, { session })
+    if (!sel.ok) return { recorded: true, paused: false, run: null, reason: 'no-run', runs: runsList }
+    const own = results.find((r) => r.run === sel.item.run.id) || results[0]
+    return { ...own, runs: runsList }
+  }
+  return { ...results[0], runs: runsList }
+}
+
 function brakeOff(mainRoot, { quote, session } = {}, { configDir, now = Date.now() } = {}) {
   const sel = selectRun(mainRoot, { session })
   if (!sel.ok) return sel.code === 'no-run' ? { ok: false, reason: sel.message } : { ok: false, reason: sel.message, code: sel.code }
@@ -1209,27 +1240,66 @@ function brakeOff(mainRoot, { quote, session } = {}, { configDir, now = Date.now
   return { ok: true, brakeOff: record }
 }
 
+function readSwarmState(mainRoot, swarmRunId) {
+  const stateFile = path.join(mainRoot, '.aether', 'runs', swarmRunId, 'state.json')
+  if (!fs.existsSync(stateFile)) return null
+  try {
+    const parsed = JSON.parse(fs.readFileSync(stateFile, 'utf8'))
+    return isObject(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function runMatchesSession(run, session) {
+  if (run.session === session) return true
+  if (!Array.isArray(run.previousSessions)) return false
+  return run.previousSessions.some((entry) => (typeof entry === 'string' ? entry === session : entry && entry.session === session))
+}
+
+function attributeSavedRuns(mainRoot, open, swarmRunId, now) {
+  const state = readSwarmState(mainRoot, swarmRunId)
+  if (!state) return []
+  if (typeof state.session === 'string' && state.session) {
+    return open.filter(({ run }) => runMatchesSession(run, state.session))
+  }
+  const compiledMs = typeof state.compiledAt === 'string' ? Date.parse(state.compiledAt) : NaN
+  if (!Number.isFinite(compiledMs)) return []
+  return open.filter(({ run }) => {
+    const startMs = Date.parse(run.started)
+    const endMs = run.ended ? Date.parse(run.ended) : now
+    return Number.isFinite(startMs) && Number.isFinite(endMs) && compiledMs >= startMs && compiledMs <= endMs
+  })
+}
+
 function recordSaved(mainRoot, saved, { now = Date.now() } = {}) {
   if (!isObject(saved) || !isRunId(saved.run) || !Array.isArray(saved.units)) throw new Error('a saved record needs a run and its units')
-  const open = findOpenRun(mainRoot)
-  if (!open) return { recorded: false, reason: 'no-run' }
-  const { run, paths } = open
-  if (!run.quotaPauses.length) return { recorded: false, reason: 'no-pause' }
+  const open = openRuns(mainRoot)
+  if (!open.length) return { recorded: false, reason: 'no-run' }
+  const targets = attributeSavedRuns(mainRoot, open, saved.run, now)
+  if (!targets.length) return { recorded: false, reason: 'no-attribution' }
+  const pausedTargets = targets.filter(({ run }) => run.quotaPauses.length > 0)
+  if (!pausedTargets.length) return { recorded: false, reason: 'no-pause' }
   const entries = saved.units
     .filter((unit) => unit && unit.branch && unit.head && !unit.merged)
     .map((unit) => ({ swarmRun: saved.run, task: unit.task, branch: unit.branch, head: unit.head }))
-  if (!entries.length) return { recorded: true, run: run.id, savedUnits: [] }
-  const lastPause = run.quotaPauses[run.quotaPauses.length - 1]
-  if (!Array.isArray(lastPause.savedUnits)) lastPause.savedUnits = []
-  for (const entry of entries) {
-    const index = lastPause.savedUnits.findIndex((unit) => unit && unit.swarmRun === entry.swarmRun && unit.task === entry.task)
-    if (index === -1) lastPause.savedUnits.push(entry)
-    else lastPause.savedUnits[index] = entry
+  if (entries.length) {
+    const list = entries.map((entry) => `\`${entry.task}\` en \`${entry.branch}\` (${entry.head})`).join(', ')
+    for (const { run, paths } of pausedTargets) {
+      const lastPause = run.quotaPauses[run.quotaPauses.length - 1]
+      if (!Array.isArray(lastPause.savedUnits)) lastPause.savedUnits = []
+      for (const entry of entries) {
+        const index = lastPause.savedUnits.findIndex((unit) => unit && unit.swarmRun === entry.swarmRun && unit.task === entry.task)
+        if (index === -1) lastPause.savedUnits.push(entry)
+        else lastPause.savedUnits[index] = entry
+      }
+      writeJsonFile(paths.runFile, run)
+      fs.appendFileSync(paths.diary, `- Guardadas (${saved.at}): ${list}.\n`)
+    }
   }
-  writeJsonFile(paths.runFile, run)
-  const list = entries.map((entry) => `\`${entry.task}\` en \`${entry.branch}\` (${entry.head})`).join(', ')
-  fs.appendFileSync(paths.diary, `- Guardadas (${saved.at}): ${list}.\n`)
-  return { recorded: true, run: run.id, savedUnits: entries }
+  const out = { recorded: true, run: pausedTargets[0].run.id, savedUnits: entries }
+  if (pausedTargets.length > 1) out.runs = pausedTargets.map(({ run }) => run.id)
+  return out
 }
 
 const AUTHOR_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]*$/
