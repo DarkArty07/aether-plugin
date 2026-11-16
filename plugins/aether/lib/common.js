@@ -236,6 +236,31 @@ function withLock(target, fn, { waitMs = 2000, staleMs = 10000 } = {}) {
   }
 }
 
+// One lstat walk that does not follow links. visit(path, stat) returns true to stop.
+// A path that disappears or cannot be read is skipped.
+function walkNoFollow(dir, visit) {
+  const pending = [dir]
+  while (pending.length > 0) {
+    const current = pending.pop()
+    let stat
+    try {
+      stat = fs.lstatSync(current)
+    } catch {
+      continue // gone since it was listed
+    }
+    if (visit(current, stat)) return true
+    if (!stat.isDirectory()) continue
+    let names
+    try {
+      names = fs.readdirSync(current)
+    } catch {
+      continue // unreadable or gone: nothing more to learn from it
+    }
+    for (const name of names) pending.push(path.join(current, name))
+  }
+  return false
+}
+
 function removeWorktree(mainRoot, worktree) {
   git(['worktree', 'remove', '--force', worktree], mainRoot, { allowFail: true })
   fs.rmSync(worktree, { recursive: true, force: true })
@@ -261,6 +286,7 @@ module.exports = {
   runShell,
   sleep,
   sleepSync,
+  walkNoFollow,
   withLock,
   writeAtomic,
   writeFileAtomic,

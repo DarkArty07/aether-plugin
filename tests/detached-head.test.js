@@ -23,8 +23,6 @@ const LANE_BIN = fx.LANE_BIN
 const IMPLEMENT = 'task-1-1-implement'
 const IMPL_DONE = JSON.stringify({ status: 'DONE', summary: 'Wrote the file.', head: '', tests: 'ok', concerns: '', question: '' })
 const REVIEW_READY = JSON.stringify({ verdict: 'ready', findings: [], declined: [], summary: 'The diff does what the brief asks.' })
-const PAIR = { id: 'grok/grok-4.7@high', harness: 'grok', model: 'grok-4.7', effort: 'high' }
-const OK_TESTS = { command: 'true', exitCode: 0, passed: true, timedOut: false, outputTail: '' }
 
 // A stand-in for the agy CLI that plays a simulated implementer: on an implementer prompt (one that
 // carries `## Paths you own`) it checks out a detached HEAD first (or stays attached in `attached`
@@ -452,24 +450,141 @@ test('an attached HEAD moves nothing, and the result line names the branch and i
   assert.equal(attached.done.status, 'ok', JSON.stringify(attached.done))
   assert.equal(attached.done.result.head, branchOf(attached.repo, attached.branch), 'the swarm result names the commit the branch is at')
 
-  const head = attached.repo.git('rev-parse', 'HEAD')
+  const dRepo = makeRepo(t)
+  commitIn(dRepo, dRepo.dir, 'setup.txt', 'setup\n', 'setup')
+  const integrationBefore = dRepo.git('rev-parse', 'HEAD')
+  const witness = path.join(tempDir(t, 'aether-witness-'), 'witness.jsonl')
+  const env = { ...fx.laneEnv(t, { command: detachCommand(t, { mode: 'attached', witness, files: { committed: [['src/new.js', 'hello\n']], uncommitted: [] } }) }), AETHER_LANE_HARNESSES: 'agy' }
+  const dBrief = path.join(dRepo.dir, 'brief.md')
+  fs.writeFileSync(dBrief, ['Write src/new.js saying hello and commit it.', `FAKE-AGY: answer ${IMPL_DONE}`, ''].join('\n'))
+  dRepo.git('add', 'brief.md')
+  dRepo.git('commit', '-q', '-m', 'brief')
+  const base = dRepo.git('rev-parse', 'HEAD')
+  const del = runBin(LANE_BIN, ['delegate', '--brief', dBrief, '--model', 'haiku', '--effort', 'high', '--owns', 'src/**', '--tests', 'true', '--session', 's1'], dRepo.dir, env)
+  assert.equal(del.status, 0, del.stdout + del.stderr)
+  const done = del.json
+  assert.equal(done.status, 'done', JSON.stringify(done))
+  const expectedBranch = `aether/${done.id}/task-1`
+  assert.equal(done.branch, expectedBranch)
+  assert.equal(done.head, witnessHead(witness))
+  assert.equal(done.head, branchOf(dRepo, expectedBranch), 'the delegate result names the unit branch tip')
+  assert.notEqual(done.head, base)
+  assert.notEqual(done.head, integrationBefore)
+
   const dataDir = tempDir(t, 'aether-data-')
   const brief = path.join(dataDir, 'brief.md')
   fs.writeFileSync(brief, 'Write src/new.js.\n')
-  fs.mkdirSync(path.join(attached.repo.dir, 'src'), { recursive: true })
-  fs.writeFileSync(path.join(attached.repo.dir, 'src', 'new.js'), 'hello\n')
   const file = path.join(dataDir, 'delegates', 'external', 't1.json')
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, JSON.stringify({
-    id: 't1', session: 's1', cwd: attached.repo.dir, attempt: 1, step: 'haiku', effort: 'high', launchKind: 'first',
+    id: 't1', session: 's1', cwd: dRepo.dir, attempt: 1, step: 'haiku', effort: 'high', launchKind: 'first',
     edits: true, owns: ['src/**'], tests: 'true', brief, findings: null, carry: null, pin: null,
-    base: head, harness: 'grok', rung: { model: 'grok-4.7', effort: 'high', group: 'grok' },
+    base, harness: 'grok', rung: { model: 'grok-4.7', effort: 'high', group: 'grok' },
     task: { description: 'd', prompt: 'P' }, alternates: [], timeoutMs: 570000,
   }))
-  const done = { status: 'done', id: 'run1', run: 'run1', branch: 'aether/run1/task-1', worktree: attached.repo.dir, head, base: head, pair: PAIR, summary: 'wrote it', tests: OK_TESTS, review: null, merge: 'aether-wt merge run1 task-1' }
-  const result = await dr.runTask({ id: 't1', cwd: attached.repo.dir, dataDir }, { delegateCommand: async () => done })
+  const result = await dr.runTask({ id: 't1', cwd: dRepo.dir, dataDir }, { delegateCommand: async () => done })
   assert.equal(result.ok, true)
-  assert.ok(result.text.includes(`Branch: aether/run1/task-1 at ${head}`), result.text)
+  assert.ok(result.text.includes(`Branch: ${expectedBranch} at ${done.head}`), result.text)
+})
+
+test('reattachDetached refuses a non-worktree directory', (t) => {
+  const notAWorktree = tempDir(t, 'aether-not-wt-')
+  assert.throws(() => work.reattachDetached(notAWorktree, 'aether/20261112-000000-abcd/task-1'), /is not a worktree/)
+})
+
+test('reattachDetached refuses a subdirectory without changing the enclosing checkout', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const unit = work.prepareImplementer(repo.dir, args.runId, 'task-1').workdir
+  const branch = run.unitBranch(args.runId, 'task-1')
+  const child = path.join(unit, 'child')
+  fs.mkdirSync(child)
+  repo.git('-C', unit, 'checkout', '-q', '--detach')
+  const before = repo.git('-C', unit, 'rev-parse', 'HEAD')
+  assert.throws(() => work.reattachDetached(child, branch), /is not a worktree/)
+  assert.equal(attachedBranch(repo, unit), 'HEAD')
+  assert.equal(repo.git('-C', unit, 'rev-parse', 'HEAD'), before)
+})
+
+test('a HEAD attached to another branch names that branch in the rejection and deletes the stray branch', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const unit = work.prepareImplementer(repo.dir, args.runId, 'task-1').workdir
+  const branch = run.unitBranch(args.runId, 'task-1')
+  const base = repo.git('rev-parse', branch)
+  commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'unit work')
+  repo.git('-C', unit, 'checkout', '-q', '-b', 'stray-off-line', base)
+
+  const rejected = work.reattachDetached(unit, branch)
+  assert.equal(rejected.rejected, true)
+  assert.ok(rejected.reason.includes('is on branch stray-off-line'), rejected.reason)
+  assert.equal(rejected.reason.includes('detached'), false, rejected.reason)
+  assert.equal(attachedBranch(repo, unit), branch)
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/stray-off-line'], { cwd: repo.dir }).status, 1)
+})
+
+test('a HEAD attached to a descendant branch moves the unit branch and deletes the stray branch', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const unit = work.prepareImplementer(repo.dir, args.runId, 'task-1').workdir
+  const branch = run.unitBranch(args.runId, 'task-1')
+  repo.git('-C', unit, 'checkout', '-q', '-b', 'agent-branch')
+  commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'ahead on agent branch')
+  const ahead = repo.git('-C', unit, 'rev-parse', 'HEAD')
+  fs.writeFileSync(path.join(unit, 'src/t1/a.js'), 'one\nlocal edits\n')
+
+  const moved = work.reattachDetached(unit, branch)
+  assert.deepEqual(moved, { moved: true, head: ahead })
+  assert.equal(attachedBranch(repo, unit), branch)
+  assert.equal(repo.git('rev-parse', branch), ahead)
+  assert.equal(fs.readFileSync(path.join(unit, 'src/t1/a.js'), 'utf8'), 'one\nlocal edits\n')
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/agent-branch'], { cwd: repo.dir }).status, 1)
+})
+
+test('another branch at the unit tip is removed without moving the unit or losing local edits', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const unit = work.prepareImplementer(repo.dir, args.runId, 'task-1').workdir
+  const branch = run.unitBranch(args.runId, 'task-1')
+  const tip = repo.git('rev-parse', branch)
+  repo.git('-C', unit, 'checkout', '-q', '-b', 'same-tip-agent')
+  fs.writeFileSync(path.join(unit, 'local.js'), 'local\n')
+
+  assert.deepEqual(work.reattachDetached(unit, branch), { moved: false })
+  assert.equal(attachedBranch(repo, unit), branch)
+  assert.equal(repo.git('rev-parse', branch), tip)
+  assert.equal(fs.readFileSync(path.join(unit, 'local.js'), 'utf8'), 'local\n')
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/same-tip-agent'], { cwd: repo.dir }).status, 1)
+})
+
+test('a HEAD attached to the main branch names it in the rejection and keeps the branch', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const unit = work.prepareImplementer(repo.dir, args.runId, 'task-1').workdir
+  const branch = run.unitBranch(args.runId, 'task-1')
+  commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'unit work')
+  const tip = repo.git('rev-parse', branch)
+  repo.git('-C', unit, 'checkout', '-q', 'main')
+
+  const rejected = work.reattachDetached(unit, branch)
+  assert.equal(rejected.rejected, true)
+  assert.ok(rejected.reason.includes('is on branch main'), rejected.reason)
+  assert.equal(attachedBranch(repo, unit), branch)
+  assert.equal(repo.git('rev-parse', branch), tip)
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/main'], { cwd: repo.dir }).status, 0)
+})
+
+test('a HEAD attached to another unit branch names it in the rejection and keeps the branch', (t) => {
+  const { repo, args } = fx.laneRun(t)
+  const unit = work.prepareImplementer(repo.dir, args.runId, 'task-1').workdir
+  const branch = run.unitBranch(args.runId, 'task-1')
+  const base = repo.git('rev-parse', branch)
+  commitIn(repo, unit, 'src/t1/a.js', 'one\n', 'unit work')
+  const tip = repo.git('rev-parse', branch)
+  const other = run.unitBranch(args.runId, 'task-9')
+  repo.git('-C', unit, 'checkout', '-q', '-b', other, base)
+
+  const rejected = work.reattachDetached(unit, branch)
+  assert.equal(rejected.rejected, true)
+  assert.ok(rejected.reason.includes(`is on branch ${other}`), rejected.reason)
+  assert.equal(attachedBranch(repo, unit), branch)
+  assert.equal(repo.git('rev-parse', branch), tip)
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${other}`], { cwd: repo.dir }).status, 0)
 })
 
 test('the brief of an editing delegate on another harness never asks for checkout --detach', async (t) => {

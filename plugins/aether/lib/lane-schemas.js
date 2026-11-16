@@ -28,7 +28,7 @@ const IMPLEMENTER_SCHEMA = {
     status: { type: 'string', enum: ['DONE', 'DONE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'BLOCKED'] },
     summary: { type: 'string', description: 'what you implemented, or what you attempted' },
     head: { type: 'string', description: 'the commit your unit branch ends on; empty if you made none' },
-    tests: { type: 'string', description: 'the test commands you ran and their results, RED then GREEN' },
+    tests: { type: 'string', description: 'the test commands you ran and their results' },
     concerns: { type: 'string', description: 'doubts about the work; empty if none' },
     question: { type: 'string', description: 'for NEEDS_CONTEXT or BLOCKED: exactly what you need; empty otherwise' },
   },

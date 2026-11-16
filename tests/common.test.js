@@ -6,8 +6,8 @@ const path = require('node:path')
 const { tempDir, makeRepo } = require('./helpers.js')
 const common = require('../plugins/aether/lib/common.js')
 
-test('common exports exactly the twenty-one helpers', () => {
-  assert.deepEqual(Object.keys(common).sort(), ['exists', 'isExecutableFile', 'isNumber', 'isObject', 'isText', 'killGroup', 'messageOf', 'nulEntries', 'numberOrZero', 'parseJson', 'pidAlive', 'readJson', 'readJsonOrNull', 'readTextOrEmpty', 'removeWorktree', 'runShell', 'sleep', 'sleepSync', 'withLock', 'writeAtomic', 'writeFileAtomic'])
+test('common exports exactly the twenty-two helpers', () => {
+  assert.deepEqual(Object.keys(common).sort(), ['exists', 'isExecutableFile', 'isNumber', 'isObject', 'isText', 'killGroup', 'messageOf', 'nulEntries', 'numberOrZero', 'parseJson', 'pidAlive', 'readJson', 'readJsonOrNull', 'readTextOrEmpty', 'removeWorktree', 'runShell', 'sleep', 'sleepSync', 'walkNoFollow', 'withLock', 'writeAtomic', 'writeFileAtomic'])
 })
 
 test('the predicates', () => {

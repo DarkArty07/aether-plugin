@@ -451,8 +451,16 @@ function checkUnitUnchanged(cwd, runId, taskId, before) {
   return same ? { ok: true } : { ok: false, detail: 'the unit worktree changed during a read-only lane call' }
 }
 
+// A branch the run shares, never a stray the agent created: the main lines and every unit branch.
+// The stray cleanup leaves those alone; deleting one would break the checkout or another unit.
+function isSharedBranch(name) {
+  return name === 'main' || name === 'master' || name.startsWith('aether/')
+}
+
 // Called after an attempt of an implementer on another harness, before checkOwns and before the package is made.
 // worktree: path; branch: the unit's branch. HEAD attached to `branch`: { moved: false }.
+// HEAD attached to another branch follows the same ancestry checks as a detached HEAD; the reason then
+//   says `is on branch <other>` instead of `is detached`, and a branch the agent itself created is removed.
 // HEAD detached, ahead of the branch and the branch is its ancestor: runs `git branch -f <branch> HEAD`, then
 //   `git checkout <branch>` in the worktree (uncommitted files stay in the working tree), returns { moved: true, head: <sha> }.
 // HEAD detached and not a descendant of the branch (and not equal to it): the branch is not moved.
@@ -460,17 +468,24 @@ function checkUnitUnchanged(cwd, runId, taskId, before) {
 //   keep the next attempt off the branch). The off-branch commit stays reachable by the sha in
 //   { rejected: true, reason: 'HEAD <sha7> is detached and does not descend from <branch> (<sha7>); its commit is not on the unit branch' }.
 function reattachDetached(worktree, branch) {
-  const onBranch = () => git(['rev-parse', '--abbrev-ref', 'HEAD'], worktree).stdout === branch
-  // Every return leaves the worktree on `branch`. A forced checkout is only used when a plain one
-  // did not, or when the attempt is rejected: the accepted path keeps uncommitted files.
+  if (!isWorktreeRoot(worktree)) throw new Error(`${worktree} is not a worktree; run aether-wt ensure first`)
+  const currentBranch = () => git(['rev-parse', '--abbrev-ref', 'HEAD'], worktree).stdout
+  const onBranch = () => currentBranch() === branch
+  const attached = currentBranch()
+  if (attached === branch) return { moved: false }
+  const stray = attached !== 'HEAD' ? attached : null
+  // Every return leaves the worktree on `branch` and removes a stray branch the agent created
+  // (a shared branch is kept: see isSharedBranch).
+  // A forced checkout is only used when a plain one did not, or when the attempt is rejected:
+  // the accepted path keeps uncommitted files.
   // git() throws on a non-zero status unless allowFail is set. A plain checkout refuses an unmerged
   // index (and local changes it would overwrite); that refusal must reach the forced checkout.
   const checkoutBranch = () => git(['checkout', branch], worktree, { allowFail: true })
   const settle = (result) => {
     if (!onBranch()) git(['checkout', '-f', branch], worktree)
+    if (stray && !isSharedBranch(stray)) git(['branch', '-D', stray], worktree)
     return result
   }
-  if (onBranch()) return { moved: false }
   const headSha = git(['rev-parse', 'HEAD'], worktree).stdout
   const branchSha = git(['rev-parse', branch], worktree).stdout
   if (headSha === branchSha) {
@@ -483,7 +498,8 @@ function reattachDetached(worktree, branch) {
     return settle({ moved: true, head: git(['rev-parse', branch], worktree).stdout })
   }
   const short = (sha) => sha.slice(0, 7)
-  return settle({ rejected: true, reason: `HEAD ${short(headSha)} is detached and does not descend from ${branch} (${short(branchSha)}); its commit is not on the unit branch` })
+  const where = stray ? `is on branch ${stray}` : 'is detached'
+  return settle({ rejected: true, reason: `HEAD ${short(headSha)} ${where} and does not descend from ${branch} (${short(branchSha)}); its commit is not on the unit branch` })
 }
 
 // Commits what the external agent left in the unit worktree, then packages the unit for review.

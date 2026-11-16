@@ -11,6 +11,7 @@ const path = require('node:path')
 const { useDataDir, tempDir, makeRepo, compile, commitIn, runBin, WT_BIN, PLUGIN } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { T0, MIN, finishedRun } = require('./report-fixtures.js')
+const { runWorkflow } = require('./workflow-harness.js')
 const { CLASSES, recordTiming, timingsOf, quotaWaitOf } = require('../plugins/aether/lib/run-timings.js')
 const { gateCommand } = require('../plugins/aether/lib/wt-gate.js')
 const { report } = require('../plugins/aether/lib/report.js')
@@ -53,6 +54,12 @@ test('recordTiming writes nothing and does not throw on a duration that is not a
   assert.equal(fs.existsSync(path.join(runDir, 'timings.jsonl')), false)
 })
 
+test('recordTiming does not create a missing run directory', (t) => {
+  const missing = path.join(tempDir(t), 'missing-run')
+  recordTiming(missing, 'gate', 100)
+  assert.equal(fs.existsSync(missing), false)
+})
+
 test('timingsOf totals by class', (t) => {
   useDataDir(t)
   const { args } = finishedRun(t)
@@ -89,7 +96,11 @@ test('the report of a fixture run with a timings file shows each class and the t
   assert.equal(r.timings.byClass.baseline.count, before.byClass.baseline.count + 1)
   assert.equal(r.timings.byClass.baseline.ms, before.byClass.baseline.ms + 500)
   assert.equal(r.timings.totalMs, before.totalMs + 3500)
-  assert.ok(r.notes.includes(`not a model: ${r.timings.totalMs}ms of 1800000ms`), r.notes.join('\n'))
+  const note = r.notes.find((n) => n.startsWith('not a model: '))
+  const wallMatch = /^not a model: (\d+)ms of 1800000ms$/.exec(note || '')
+  assert.ok(wallMatch, r.notes.join('\n'))
+  const wallMs = Number(wallMatch[1])
+  assert.ok(wallMs >= 2000 && wallMs <= r.timings.totalMs, `wallMs=${wallMs}, totalMs=${r.timings.totalMs}`)
 })
 
 test('a fixture run without the file reports as before, with no timings key', (t) => {
@@ -189,4 +200,78 @@ test('the report of a quota-waited run shows a wait-quota entry', (t) => {
   assert.equal(r.timings.byClass.baseline.count, 1)
   assert.equal(r.timings.totalMs, 5 * MIN + r.timings.byClass.baseline.ms)
   assert.ok(r.notes.includes(`not a model: ${r.timings.totalMs}ms of 1800000ms`), r.notes.join('\n'))
+})
+
+test('quotaWaitOf skips a pause whose started is after now', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  autonomyRun(repo.dir, [pause(args.runId, T0 + 20 * MIN, T0 + 30 * MIN)])
+  assert.deepEqual(quotaWaitOf(repo.dir, args.runId, T0 + 10 * MIN), { count: 0, ms: 0 })
+})
+
+test('the not-a-model note uses the union of intervals while per-class figures stay summed', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  const lines = [
+    { class: 'gate', ms: 20 * MIN, at: iso(T0 + 25 * MIN) }, // [5, 25] minutes
+    { class: 'gate', ms: 20 * MIN, at: iso(T0 + 30 * MIN) }, // [10, 30]: union is 25 minutes
+    { class: 'merge-tests', ms: 2 * MIN, at: iso(T0 + 2 * MIN) }, // disjoint: 27 minutes in total
+  ]
+  fs.writeFileSync(path.join(args.runDir, 'timings.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n')
+  const r = report(repo.dir, args.runId, { tests: false })
+  assert.deepEqual(r.timings.byClass.gate, { count: 2, ms: 40 * MIN })
+  assert.deepEqual(r.timings.byClass['merge-tests'], { count: 1, ms: 2 * MIN })
+  assert.equal(r.timings.totalMs, 42 * MIN)
+  assert.ok(r.timings.totalMs > r.speed.run.ms, 'the summed work exceeds the run clock')
+  assert.ok(r.notes.includes(`not a model: ${27 * MIN}ms of 1800000ms`), r.notes.join('\n'))
+})
+
+test('the not-a-model union includes overlapping quota pauses only once', (t) => {
+  useDataDir(t)
+  const { repo, args } = finishedRun(t)
+  autonomyRun(repo.dir, [pause(args.runId, T0, T0 + 5 * MIN), pause(args.runId, T0 + 2 * MIN, T0 + 4 * MIN)])
+  fs.writeFileSync(path.join(args.runDir, 'timings.jsonl'), [
+    { class: 'gate', ms: 3 * MIN, at: iso(T0 + 6 * MIN) },
+    { class: 'gate', ms: 0, at: iso(T0 + 7 * MIN) },
+    { class: 'gate', ms: 100, at: 'invalid' },
+    { class: 'unknown', ms: 10 * MIN, at: iso(T0 + 10 * MIN) },
+  ].map((entry) => JSON.stringify(entry)).join('\n') + '\nnot json\n')
+  const r = report(repo.dir, args.runId, { tests: false })
+  assert.deepEqual(r.timings.byClass['wait-quota'], { count: 2, ms: 7 * MIN })
+  assert.deepEqual(r.timings.byClass.gate, { count: 3, ms: 3 * MIN + 100 })
+  assert.ok(r.notes.includes(`not a model: ${6 * MIN}ms of 1800000ms`), r.notes.join('\n'))
+})
+
+test('C6: compile and merge timings through the stubbed workflow reach the report', async (t) => {
+  useDataDir(t)
+  const repo = makeRepo(t)
+  const args = compile(repo, plan([task(1)], { execution: ['- Test command: `true`'] }))
+  const run = await runWorkflow(args, {
+    implementer: () => {
+      const created = runBin(WT_BIN, ['ensure', args.runId, 'task-1'], repo.dir)
+      assert.equal(created.status, 0, created.stdout)
+      commitIn(repo, created.json.path, 'src/t1/a.js', 'one\n', 'add a')
+      const sha = repo.git('-C', created.json.path, 'rev-parse', 'HEAD')
+      return { status: 'DONE', summary: 'wrote a', head: sha, tests: 'true: pass' }
+    },
+    ops: (call, wt) => {
+      if (call.command.verb === 'gate' || call.command.verb === 'merge') {
+        const res = runBin(WT_BIN, [call.command.verb, ...call.command.rest], repo.dir)
+        assert.equal(res.status, 0, res.stdout + res.stderr)
+        if (call.command.verb === 'merge') assert.equal(res.json.merged, true, JSON.stringify(res.json))
+        return res.json
+      }
+      return wt(call)
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.units.find((unit) => unit.id === 'task-1').status, 'merged')
+  fs.writeFileSync(path.join(args.runDir, 'result.json'), JSON.stringify(run.result) + '\n')
+  const r = report(repo.dir, args.runId, { tests: false })
+  assert.equal(r.timings.byClass.baseline.count, 1)
+  assert.equal(r.timings.byClass.gate.count, 1)
+  assert.equal(r.timings.byClass['merge-tests'].count, 1)
+  for (const klass of ['baseline', 'gate', 'merge-tests']) {
+    assert.ok(Number.isInteger(r.timings.byClass[klass].ms) && r.timings.byClass[klass].ms >= 0, `${klass} has a duration`)
+  }
 })

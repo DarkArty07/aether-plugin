@@ -14,10 +14,12 @@ const run = require('./run.js')
 const { killGroup, killMarked } = require('./lanes.js')
 const { judge } = require('./baseline.js')
 const common = require('./common.js')
-const { exists, nulEntries, pidAlive: processAlive, sleepSync } = common
+const { exists, nulEntries, pidAlive: processAlive, sleepSync, walkNoFollow } = common
 const { stampDue, writeStamp, STAMP_INTERVAL_MS: SWEEP_STALE_INTERVAL_MS } = require('./tree-clean.js')
-const { walkNoFollow } = require('./wt-watch.js')
 const { recordTiming } = require('./run-timings.js')
+
+// Commit shape accepted by adoptUnit and deliverFix: a hex id or branch-like name, never a leading dash.
+const COMMIT_SHAPE = /^[0-9A-Za-z][0-9A-Za-z._/-]*$/
 
 function loadGraph(mainRoot, runId) {
   run.assertRunId(runId)
@@ -269,7 +271,7 @@ function adoptUnit(cwd, runId, taskId, { commit, reason } = {}) {
   if (!graph.tasks[taskId]) throw new Error(`${taskId} is not in run ${runId}`)
   if (typeof commit !== 'string' || commit === '') throw new Error('adopt needs --commit <sha>, the commit of the integration branch that holds the unit')
   if (typeof reason !== 'string' || reason.trim() === '') throw new Error('adopt needs --reason <why the unit was integrated by hand>')
-  const resolved = /^[0-9A-Za-z][0-9A-Za-z._/-]*$/.test(commit) ? git(['rev-parse', '--verify', '--quiet', `${commit}^{commit}`], mainRoot, { allowFail: true }) : null
+  const resolved = COMMIT_SHAPE.test(commit) ? git(['rev-parse', '--verify', '--quiet', `${commit}^{commit}`], mainRoot, { allowFail: true }) : null
   if (!resolved || resolved.status !== 0) throw new Error(`${commit} is not a commit of this repository`)
   const sha = resolved.stdout
   if (git(['merge-base', '--is-ancestor', sha, graph.integration.branch], mainRoot, { allowFail: true }).status !== 0) {
@@ -1470,6 +1472,7 @@ function sweepStale(cwd, { hours = 24, now = Date.now(), dataDir = run.dataDir()
 }
 
 module.exports = {
+  COMMIT_SHAPE,
   ensure,
   diffPackage,
   salvageUnit,

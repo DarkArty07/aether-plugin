@@ -101,11 +101,19 @@ test('a unit fixed on launch 1 and blocked without a fix on launch 2 has no fixe
 test('the quality comment names fixedUnits, and neither comment says correction (#256 2, #236 5)', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'report.js'), 'utf8')
   const delegateLog = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'delegate-log.js'), 'utf8')
-  const above = source.slice(0, source.indexOf('function qualityOf')).trimEnd().split('\n')
-  const comment = above.slice(above.findLastIndex((line) => !line.startsWith('//')) + 1).join('\n')
-  assert.match(comment, /fixedUnits/)
-  assert.doesNotMatch(source, /correction/i)
-  assert.doesNotMatch(delegateLog, /correction/i)
+  const commentAbove = (text, anchor) => {
+    const index = text.indexOf(anchor)
+    assert.notEqual(index, -1, `missing comment anchor: ${anchor}`)
+    const above = text.slice(0, index).trimEnd().split('\n')
+    const comment = above.slice(above.findLastIndex((line) => !line.startsWith('//')) + 1).join('\n')
+    assert.ok(comment, `missing comment above ${anchor}`)
+    return comment
+  }
+  const qualityComment = commentAbove(source, 'function qualityOf')
+  const windowsComment = commentAbove(delegateLog, 'function delegateAttemptWindows')
+  assert.match(qualityComment, /fixedUnits/)
+  assert.doesNotMatch(qualityComment, /correction/i)
+  assert.doesNotMatch(windowsComment, /correction/i)
 })
 
 test('a later launch replaces the fixedByLead entry of the same unit in order of appearance', (t) => {
