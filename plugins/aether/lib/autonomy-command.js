@@ -193,6 +193,8 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
     ensureExcluded(gitCommonDir)
     const res = autonomy.start(mainRoot, { quote, session, hours, usd }, { dataDir: env.AETHER_DATA_DIR || dataDir(env), configDir: env.CLAUDE_CONFIG_DIR })
     if (!res.ok) return { code: 2, out: { verified: false, reason: res.reason } }
+    const c = res.run.ceilings
+    const usdLabel = c.usd === null ? 'unlimited' : c.usd
     return {
       code: 0,
       out: {
@@ -200,7 +202,9 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
           id: res.run.id,
           runFile: res.runFile,
           diary: res.diary,
-          ceilings: res.run.ceilings,
+          ceilings: c,
+          summary: `hours ${c.hours} (${c.source.hours}), usd ${usdLabel} (${c.source.usd})`,
+          notices: res.notices,
         },
       },
     }
