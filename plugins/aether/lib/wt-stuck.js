@@ -81,10 +81,22 @@ function toSeconds(value) {
   return n
 }
 
-function defaultStopped(mainRoot) {
+function readRunSession(mainRoot, runId) {
+  const file = path.join(run.runDir(mainRoot, runId), 'state.json')
+  if (!fs.existsSync(file)) return null
   try {
-    const st = autonomy.status(mainRoot)
-    return Boolean(st && st.open && st.stop === 'time')
+    const state = JSON.parse(fs.readFileSync(file, 'utf8'))
+    return state && typeof state.session === 'string' && state.session !== '' ? state.session : null
+  } catch {
+    return null
+  }
+}
+
+function defaultStopped(mainRoot, runId) {
+  try {
+    const session = readRunSession(mainRoot, runId)
+    const st = autonomy.status(mainRoot, { session })
+    return Boolean(st && st.open && st.selected !== false && !st.foreign && st.stop === 'time')
   } catch {
     return false
   }
@@ -100,7 +112,7 @@ async function stuckTick(cwd, runId, taskId, seconds, { sleep, stopped } = {}) {
   run.writeJson(run.heartbeatFile(mainRoot, runId), { at: new Date().toISOString(), task: taskId })
   const record = readRecord(mainRoot, runId, taskId)
   if (!record) throw new Error(`${taskId} has no stuck record`)
-  const stop = Boolean(await (stopped || (() => defaultStopped(mainRoot)))())
+  const stop = Boolean(await (stopped || (() => defaultStopped(mainRoot, runId)))())
   if (record.state === 'delivered') {
     const out = { paused, state: record.state, stop, commit: record.delivered.commit, reason: record.delivered.reason }
     if (Array.isArray(record.delivered.widen) && record.delivered.widen.length > 0) out.widen = [...record.delivered.widen]
