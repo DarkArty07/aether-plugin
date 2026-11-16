@@ -13,6 +13,7 @@
 - Un módulo nuevo de `P/lib/**` o un bin nuevo se registra en `docs/reference/components.md` dentro de la tarea que lo crea; una tarea que cambia `docs/decisions.md` posee también `docs/index.md`, `T/docs-032.test.js` y `T/docs-facts.test.js` (`.specify/plan-rules.json`).
 - Las decisiones nuevas toman los números siguientes al último de `docs/decisions.md` en el momento de construir (hoy A127, así que A128 a A131); si otra rama ya los usó, se toman los siguientes libres.
 - Los textos de usuario nuevos van en inglés, como los demás mensajes de `P/lib/`, salvo donde la tarea da el texto exacto.
+- Las tareas 1 y 2 no se construyen hasta que el Lead enmiende R1 y C1 de la spec (Muse sin medio de captura, texto pedido en `plan.md` bajo Risks); T1 fija `"muse": null` y la prueba `no-capture`.
 
 ## Aether Execution
 
@@ -30,7 +31,7 @@
 - [ ] T007 [US12] Limpieza del arranque respeta la corrida abierta y nombra lo borrado en P/lib/tree-clean.js y P/lib/session-start.js → Task 4
 - [ ] T008 [US13] La cadena de delegado obedece la pausa y `stop` y `quota-brake` la terminan en P/lib/delegate-chain.js, P/lib/lane-delegate.js, P/lib/lane-calls.js, P/lib/delegate-run.js y P/lib/autonomy-command.js → Task 5
 - [ ] T009 [P] [US15] Compile con `--run` conserva la selección de la corrida y avisa del crecimiento en P/lib/plan-compile.js → Task 6
-- [ ] T010 [P] [US17] Inventario y reconstrucción del índice del examen; el diseño devuelve las pruebas en P/lib/exam.js, P/bin/aether-exam, P/hooks/ops-command.mjs y P/workflows/design.workflow.js → Task 7
+- [ ] T010 [P] [US17] Inventario de solo lectura del examen (`aether-exam recover`); el diseño devuelve las pruebas en P/lib/exam.js, P/bin/aether-exam, P/hooks/ops-command.mjs y P/workflows/design.workflow.js → Task 7
 - [ ] T011 [US7] Textos de las skills y del Examiner para topes, limpieza, freno, reanudar y examen en P/skills/ y P/agents/examiner.md → Task 8
 - [ ] T012 [P] [US18] Mensaje de `merge-main`, aviso en AGENTS.md y fuera la frase de la fila Direct → Task 9
 - [ ] T013 [US6] Procedimiento del modelo nuevo, guía de reglas del plan y decisiones en .agents/skills/new-harness/SKILL.md y docs/ → Task 10
@@ -194,7 +195,7 @@
   - Un proceso de mentira que ignora `SIGTERM` muere por `SIGKILL` tras `graceMs` (se pasa uno corto en la prueba).
   - Con pid muerto devuelve `stopped:false` sin lanzar; con un archivo cuyo `startedAt` es de hace un día y un pid vivo que arrancó ahora (pid reutilizado) devuelve `stopped:false`, `reason:'unverified'` y el proceso sigue vivo.
   - `stopAll(dataDir, {sessions:['A']})` con dos cadenas de la sesión A y una de la sesión B: mata las dos de A y la de B sigue viva; con `sessions` vacía no mata ninguna.
-- `tests/aether-lane.test.js` y `tests/seat-calls.test.js`: una llamada editora arrancada deja `lanes/links/<laneRunId>.json` con `taskKey` y `session`; `aether-lane stop <runId>` con vínculo termina también el proceso de la cadena (el pid de mentira del delegado muere) y sin vínculo se comporta como hoy; las llamadas de solo lectura no escriben vínculo o no rompen lo que ya fijan.
+- `tests/aether-lane.test.js` y `tests/seat-calls.test.js`: una llamada editora arrancada deja `lanes/links/<laneRunId>.json` con `id` y `session`; `aether-lane stop <runId>` con vínculo termina también el proceso de la cadena (el pid de mentira del delegado muere) y sin vínculo se comporta como hoy; las llamadas de solo lectura no escriben vínculo o no rompen lo que ya fijan.
 - `tests/quota-brake-command.test.js`, `tests/quota-brake-scenarios.test.js`, `tests/quota-brake.test.js`: `quota-brake` con un delegado en vuelo de la sesión de la corrida frenada termina su proceso y la salida contiene `chains stopped 1`; un delegado en vuelo de otra sesión del mismo directorio de datos sigue vivo; el texto de uso ya no pide al Lead detener delegados a mano.
 - `tests/quota-brake-docs.test.js`: ajustar lo que fijaba el texto de uso viejo.
 
@@ -240,21 +241,21 @@
 
 **Interfaces:**
 
-- `P/lib/exam.js`: `inventory(examDir) -> [{path, inIndex: boolean}]`, la lista de las pruebas de `.aether/exam/` (cada archivo de prueba, sin `exam.json`), marcada por si `readExam` (`:55`) las tiene; `rebuildIndex(examDir) -> object`, un `exam.json` con una entrada por prueba terminada (la que tiene su archivo de resultado según el criterio de `examProblem`, `:37-50`), conservando las entradas que ya estaban en el índice. Las dos solo leen.
-- `P/bin/aether-exam`: verbo nuevo `recover <specs/NNN-topic>` (el texto de uso lo nombra: `store | run | recover`). En el checkout de `cwd` llama a `inventory` y `rebuildIndex`, escribe el `exam.json` reconstruido en su `.aether/exam/` (no lo guarda en el almacén, eso es `store`) e imprime una línea `{feature, rebuilt: N, tests:[{path, inIndex}]}`; con la carpeta ausente imprime `tests: []`. La lógica va en `P/lib/exam.js` (`recoverCheckout(cwd, feature)`), el bin solo la llama.
+- `P/lib/exam.js`: `inventory(examDir) -> [{path, inIndex: boolean}]`, la lista de las pruebas de `.aether/exam/` (cada archivo de prueba, sin `exam.json`), marcada por si `readExam` (`:55`) las tiene en el índice. Solo lee: no reconstruye el índice ni escribe nada, porque R24 pide que una prueba fuera del índice se corra antes de añadirla y eso lo decide el Lead.
+- `P/bin/aether-exam`: verbo nuevo `recover <specs/NNN-topic>` (el texto de uso lo nombra: `store | run | recover`), de solo lectura. En el checkout de `cwd` llama a `inventory` e imprime una línea `{feature, tests:[{path, inIndex}]}`; con la carpeta ausente imprime `tests: []`. No escribe `exam.json` ni nada bajo `.aether/exam/`, y no toca el almacén (eso es `store`). La lógica va en `P/lib/exam.js` (`recoverCheckout(cwd, feature)`), el bin solo la llama.
 - `P/hooks/ops-command.mjs` (`:142`): la entrada `'aether-exam'` admite además `{ checks: [word('recover'), is(FEATURE)] }`; `store` no cambia y ninguna otra forma entra. `P/hooks/ops.test.ts` y `tests/ops-command-design.test.js` (`:46`, `:51`, `:85`) se ajustan para fijar la lista.
 - `P/workflows/design.workflow.js` `examine(author)` (`:989-1000`): el flujo no tiene `require` ni disco, así que todo va por `ops`. Cuando el Examiner (nativo tras su reintento, `:467-482`, o externo) termina sin una respuesta que cumpla su esquema, antes de devolver el fallo llama `opsTwice('aether-exam recover <feature>', {phase:'Exam', label:'exam: recover'})` y devuelve `{status:'failed', step:'examiner', reason, tests:[{path, inIndex}]}` con lo que `recover` imprimió. Si `recover` falla, devuelve el fallo del Examiner sin `tests` y con el error de `recover` en `reason`. El camino de un examen que sí contestó no cambia. `P/lib/seats.js` solo se toca si el índice reconstruido lo pide.
 
 **Tests (write first):**
-- `tests/exam.test.js`: con `.aether/exam/` de tres pruebas (`a.test.js`, `b.test.js`, `c.test.js`), `exam.json` con `a` y `b`, y archivos de resultado de las tres: `inventory` devuelve tres entradas con `inIndex` true, true, false; `rebuildIndex` devuelve las tres entradas terminadas; una prueba sin archivo de resultado no entra; las entradas ya presentes se conservan; con la carpeta ausente → `[]` sin lanzar.
-- `tests/exam.test.js` (también): `aether-exam recover specs/NNN-x` en un repositorio temporal con tres pruebas y un índice de dos imprime las tres marcas y deja en `.aether/exam/exam.json` las entradas terminadas; sin carpeta imprime `tests: []`; una forma con argumento de más da el error de uso y sale con 1.
+- `tests/exam.test.js`: con `.aether/exam/` de tres pruebas (`a.test.js`, `b.test.js`, `c.test.js`) y `exam.json` con `a` y `b`: `inventory` devuelve tres entradas con `inIndex` true, true, false; `exam.json` y los archivos de la carpeta quedan byte por byte iguales; con la carpeta ausente → `[]` sin lanzar.
+- `tests/exam.test.js` (también): `aether-exam recover specs/NNN-x` en un repositorio temporal con tres pruebas y un índice de dos imprime las tres marcas y deja `.aether/exam/` sin cambios (el `exam.json` no se toca); sin carpeta imprime `tests: []`; una forma con argumento de más da el error de uso y sale con 1.
 - `plugins/aether/hooks/ops.test.ts` y `tests/ops-command-design.test.js`: `aether-exam recover specs/007-demo` se admite y se analiza como `aether-exam` con `['recover', feature]`; `aether-exam recover docs/x`, `aether-exam recover specs/007-demo --from /tmp` y `aether-exam list` se rechazan; `store` sigue admitido.
 - `tests/workflow-design.test.js` (arnés `tests/workflow-harness.js`; su manejador de `ops` añade `recover`, y la prueba de `:393` suma `recover` a los verbos de `ops` del camino con fallo): un Examiner de mentira que escribe tres pruebas, deja dos en el índice y termina sin respuesta válida (dos veces en el camino nativo) → el diseño llama una vez a `aether-exam recover` por `ops` y devuelve `status:'failed'`, `step:'examiner'` y `tests` con las tres marcas (dos `inIndex:true`, una `false`); con un `recover` de mentira que falla, devuelve el fallo del Examiner sin `tests`; un Examiner que responde bien da el mismo resultado que hoy (`approved` con `exam`); el camino externo con salida parcial se prueba igual.
 - `tests/layout-exam.test.js` y `tests/seats-design.test.js`: ajustar solo lo que cambia (nuevo campo `tests`).
 
 **Acceptance:**
 
-- Un Examiner sin respuesta entrega al Lead las pruebas existentes marcadas en el índice o fuera de él, sin perder las del índice.
+- Un Examiner sin respuesta entrega al Lead las pruebas existentes marcadas en el índice o fuera de él, sin escribir nada: añadir al índice una prueba fuera de él lo decide el Lead tras correrla (R24).
 - `node --test tests/exam.test.js tests/layout-exam.test.js tests/workflow-design.test.js tests/seats-design.test.js tests/ops-command-design.test.js` pasa, y `npm run test:mod` (los `ops.test.ts` del mod) pasa.
 
 ### Task 8: Textos de las reglas del Lead y del Examiner
@@ -320,6 +321,8 @@ Textos (en inglés, como las skills existentes), una frase o párrafo corto por 
 - Owns: `.agents/skills/new-harness/SKILL.md`, `docs/guide/plan-rules.md`, `docs/index.md`, `docs/decisions.md`, `docs/guide/observe.md`, `docs/guide/troubleshooting.md`, `docs/guide/autonomy.md`, `docs/guide/delegates.md`, `docs/guide/design-seats.md`, `docs/guide/maintenance.md`, `docs/reference/components.md`, `tests/new-harness-skill.test.js`, `tests/docs-032.test.js`, `tests/docs-facts.test.js`
 - Depends on: Task 9 — comparte `tests/docs-facts.test.js` y esa tarea edita sus afirmaciones primero
 - Depends on: Task 1 — describe el aviso de modelos nuevos y comparte `docs/reference/components.md`
+- Depends on: Task 2 — describe lo que muestra `aether-doctor`, que esa tarea construye
+- Depends on: Task 4 — describe que la limpieza de `.aether/tmp` respeta la corrida abierta y nombra lo borrado, que esa tarea construye
 - Depends on: Task 3 — describe los topes del plan aprobado
 - Depends on: Task 5 — describe que el freno termina la cadena
 - Depends on: Task 6 — describe que `--run` conserva la selección
