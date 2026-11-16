@@ -95,7 +95,12 @@ function readRunSession(mainRoot, runId) {
 function defaultStopped(mainRoot, runId) {
   try {
     const session = readRunSession(mainRoot, runId)
-    const st = autonomy.status(mainRoot, { session })
+    const match = session
+      ? autonomy.openRuns(mainRoot).filter(({ run }) => autonomy.runSessions(run).has(session)).pop()
+      : null
+    const st = match
+      ? autonomy.status(mainRoot, { id: match.run.id })
+      : autonomy.status(mainRoot, { session })
     return Boolean(st && st.open && st.selected !== false && !st.foreign && st.stop === 'time')
   } catch {
     return false

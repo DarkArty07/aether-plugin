@@ -128,3 +128,14 @@ test('R14: with no session in the swarm state the units go to every open run who
   const outside = autonomy.recordSaved(s.repo.dir, { run: '20261116-070000-ef56', at: NOW, units: [unit] }, { now: NOW })
   assert.deepEqual([outside.recorded, outside.reason], [false, 'no-attribution'])
 })
+
+test('R8 and R12: an old-format run with no session receives saved units of a session-stamped swarm', (t) => {
+  const s = setupRuns(t)
+  const a = s.open(A)
+  s.patch(a.run.id, (run) => { delete run.session })
+  autonomy.recordCrossing(s.repo.dir, crossing, { now: NOW, dataDir: s.dataDir, session: B })
+  stampSwarm(s.repo, '20261116-100700-1234', { session: B, compiledAt: new Date(T0 + 5 * MIN).toISOString() })
+  const r = autonomy.recordSaved(s.repo.dir, { run: '20261116-100700-1234', at: NOW, units: [unit] }, { now: NOW })
+  assert.deepEqual([r.recorded, r.run], [true, a.run.id])
+  assert.equal(s.read(a.run.id).quotaPauses[0].savedUnits.length, 1)
+})
