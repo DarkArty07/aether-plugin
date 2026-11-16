@@ -76,3 +76,13 @@ test('the guide records the owner effort: the authorize usage, the naming rule a
     'the effort when the owner',
   ]) assert.ok(page.includes(needed), needed)
 })
+
+test('the guide says an external delegate answering BLOCKED or NEEDS_CONTEXT ends there and hands the question and patch path to the Lead', () => {
+  const section = page.slice(page.indexOf('## When a pair fails'), page.indexOf('## The log'))
+  for (const needed of [
+    'When an external delegate answers `BLOCKED` or `NEEDS_CONTEXT`, the attempt ends there: no other pair and no Claude agent tries it.',
+    "The Lead receives the delegate's full question and any salvaged patch path, and answers by launching the same task again with a corrected scope.",
+  ]) {
+    assert.ok(section.includes(needed), needed)
+  }
+})

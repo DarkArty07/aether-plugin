@@ -41,6 +41,8 @@ test('the quota-brake paragraph names aether-autonomy quota-brake and leaves the
   const brake = SKILL.slice(SKILL.indexOf('**The quota brake.**'), SKILL.indexOf('**Cost.**'))
   assert.ok(brake.includes('aether-autonomy quota-brake'))
   assert.ok(brake.includes('aether-lane stop'))
+  assert.ok(brake.includes('skipping any run swept as abandoned and naming it in `skipped`'))
+  assert.ok(brake.includes('After stopping, check that no `aether-delegate run` process of a stopped task is left'))
   assert.doesNotMatch(brake, /aether-wt save <runId>[\s\S]*quota-saved --from/)
   const swarm = read('skills', 'swarm', 'SKILL.md')
   const line = swarm.split('\n').find((row) => row.includes('follow its quota brake'))
