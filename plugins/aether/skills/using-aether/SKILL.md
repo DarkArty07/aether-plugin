@@ -147,7 +147,7 @@ A delegate that edits on Claude works with `isolation: "worktree"`. When you jud
 
 Load `aether:models` before answering about capabilities, efforts or manufacturer quotes. Do not guess model names or prices from your weights: read `${CLAUDE_PLUGIN_ROOT}/config/models/models.json` and `${CLAUDE_PLUGIN_ROOT}/config/prices.json`. You pick no delegate's model; the ladder and the owner's placement do. Weigh quality, cost and speed.
 
-Aether's own agents keep the model and effort of their definition: pass neither when you start one. With superdelegation on, spend other plans' quota: first the quota whose weekly window renews first, then the cheapest pair per task. Read `aether-lane quota` yourself. Reading Muse's quota costs a real call. Never run the CLI of agy, codex, grok, cursor, muse with a prompt or an approval flag from your own shell, or read their credentials; lanes and seats run them. A real validation call is a `paid-call` under a grant, through Aether's tools.
+Aether's own agents keep the model and effort of their definition: pass neither when you start one. With superdelegation on, spend other plans' quota: first the quota whose weekly window renews first, then the cheapest pair per task. Read `aether-lane quota` yourself. Only `--refresh` costs Muse a real call; without it, the command shows the stored reading. Never run the CLI of agy, codex, grok, cursor, muse with a prompt or an approval flag from your own shell, or read their credentials; lanes and seats run them. A real validation call is a `paid-call` under a grant, through Aether's tools.
 
 ## Designing
 

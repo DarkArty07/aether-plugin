@@ -189,7 +189,6 @@ test('a part command with a part that does not exist, or a bad argument, prints 
 const BASE = [8549, 8533, 6666]
 
 test('R32: each part slice is no longer than the 0.41.0 base, the three together are shorter, and each whole output stays within 9,800', () => {
-  assert.deepEqual(BASE, [8549, 8533, 6666])
   const installed = '/' + 'i'.repeat(63)
   const parts = splitParts(source(installed), installed)
   assert.equal(parts.length, BASE.length)
