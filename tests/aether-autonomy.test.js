@@ -99,13 +99,13 @@ test("a run starts from the owner's permission, records spend, and ends", (t) =>
   const { cli } = setup(t)
   const s = cli(['start', '--quote', HOURS, '--usd', '20'])
   assert.equal(s.status, 0, s.stdout + s.stderr)
-  const { id, runFile, diary, ceilings, summary, notices } = s.json.started
+  const { id, runFile, diary, ceilings } = s.json.started
+  assert.deepEqual(Object.keys(s.json.started).sort(), ['ceilings', 'diary', 'id', 'runFile'])
   assert.match(id, /^auto-\d{8}-\d{6}-[0-9a-f]{4}$/)
   assert.ok(fs.existsSync(runFile))
   assert.ok(fs.existsSync(diary))
   assert.deepEqual(ceilings, { hours: 8, usd: 20, source: { hours: 'default', usd: 'flag' } })
-  assert.equal(summary, 'hours 8 (default), usd 20 (flag)')
-  assert.deepEqual(notices, [])
+  assert.equal(s.stderr.trim(), 'hours 8 (default), usd 20 (flag)')
   const st = cli(['status'])
   assert.equal(st.status, 0)
   assert.deepEqual([st.json.open, st.json.id, st.json.stop, st.json.usd.ceiling], [true, id, null, 20])
@@ -337,9 +337,9 @@ test('start prints ceiling sources from the approved plan and override notices',
 
   const s = cli(['start', '--quote', HOURS])
   assert.equal(s.status, 0, s.stdout + s.stderr)
+  assert.deepEqual(Object.keys(s.json.started).sort(), ['ceilings', 'diary', 'id', 'runFile'])
   assert.deepEqual(s.json.started.ceilings, { hours: 10, usd: 300, source: { hours: 'plan', usd: 'plan' } })
-  assert.equal(s.json.started.summary, 'hours 10 (plan), usd 300 (plan)')
-  assert.deepEqual(s.json.started.notices, [])
+  assert.equal(s.stderr.trim(), 'hours 10 (plan), usd 300 (plan)')
   assert.equal(cli(['end', '--outcome', 'done']).status, 0)
 
   const future = new Date(Date.now() + 60_000).toISOString()
@@ -366,7 +366,41 @@ test('start prints ceiling sources from the approved plan and override notices',
   fs.appendFileSync(transcript, [planUse2, planResult2].join('\n') + '\n')
   const over = cli(['start', '--quote', HOURS, '--hours', '12'])
   assert.equal(over.status, 0, over.stdout + over.stderr)
+  assert.deepEqual(Object.keys(over.json.started).sort(), ['ceilings', 'diary', 'id', 'runFile'])
   assert.deepEqual(over.json.started.ceilings, { hours: 12, usd: 300, source: { hours: 'flag', usd: 'plan' } })
-  assert.equal(over.json.started.summary, 'hours 12 (flag), usd 300 (plan)')
-  assert.deepEqual(over.json.started.notices, ["--hours 12 overrides the approved plan's 10 h"])
+  assert.deepEqual(over.stderr.trim().split('\n'), [
+    'hours 12 (flag), usd 300 (plan)',
+    "--hours 12 overrides the approved plan's 10 h",
+  ])
+  assert.equal(cli(['end', '--outcome', 'done']).status, 0)
+
+  const future3 = new Date(Date.now() + 120_000).toISOString()
+  const planUse3 = JSON.stringify({
+    type: 'assistant',
+    entrypoint: 'cli',
+    timestamp: future3,
+    message: { role: 'assistant', content: [{ type: 'tool_use', id: 'p3', name: 'ExitPlanMode', input: {} }] },
+  })
+  const planResult3 = JSON.stringify({
+    type: 'user',
+    entrypoint: 'cli',
+    timestamp: future3,
+    message: {
+      role: 'user',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: 'p3',
+        is_error: false,
+        content: 'User has approved your plan. You can now start coding.\n\n## Approved Plan:\nFase 1: 4 h. Total: 10 h y US$ 300.',
+      }],
+    },
+  })
+  fs.appendFileSync(transcript, [planUse3, planResult3].join('\n') + '\n')
+  const badHours = cli(['start', '--quote', HOURS])
+  assert.equal(badHours.status, 0, badHours.stdout + badHours.stderr)
+  assert.deepEqual(badHours.json.started.ceilings, { hours: 8, usd: 300, source: { hours: 'default', usd: 'plan' } })
+  assert.deepEqual(badHours.stderr.trim().split('\n'), [
+    'hours 8 (default), usd 300 (plan)',
+    'the approved plan named more than one hours figure, so start could not read it',
+  ])
 })

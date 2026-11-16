@@ -84,6 +84,7 @@ const PLAN_HEADING = '## Approved Plan:'
 function approvedPlanEntry(records, latestStarted) {
   const uses = new Set()
   const counted = new Set()
+  let matched = null
   for (const record of records) {
     if (record && record.isSidechain === true) continue
     const content = record && record.message && record.message.content
@@ -98,12 +99,12 @@ function approvedPlanEntry(records, latestStarted) {
         if (latestStarted === null || Date.parse(record.timestamp) > latestStarted) {
           const joined = texts.join('\n')
           const idx = joined.indexOf(PLAN_HEADING)
-          return { planText: idx === -1 ? null : joined.slice(idx + PLAN_HEADING.length).trim() }
+          matched = { planText: idx === -1 ? null : joined.slice(idx + PLAN_HEADING.length).trim() }
         }
       }
     }
   }
-  return null
+  return matched
 }
 
 function hasApprovedPlanMode(records, latestStarted) {
@@ -139,7 +140,7 @@ function ceilingsFromPlan(text) {
   if (typeof text !== 'string' || !text.trim()) return { hours: null, usd: null, unreadable: [] }
   const num = '((?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?)'
   const hoursRe = new RegExp(`(?<![\\p{L}\\p{N}.$,])${num}\\s*(?:horas?|hours?|h)(?![\\p{L}\\p{N}])`, 'giu')
-  const usdPrefixRe = new RegExp(`(?<![\\p{L}\\p{N}])(?:US\\s*\\$|USD|\\$)\\s*${num}(?![\\p{L}\\p{N}])`, 'giu')
+  const usdPrefixRe = new RegExp(`(?<![\\p{L}\\p{N}])(?:US\\s*\\$|USD|\\$)\\s*${num}(?![\\p{L}\\p{N}]|\\.\\d)`, 'giu')
   const usdSuffixRe = new RegExp(`(?<![\\p{L}\\p{N}.$,])${num}\\s*(?:d[oó]lares|d[oó]lar|dollars?)(?![\\p{L}\\p{N}])`, 'giu')
 
   const hoursValues = collectUniqueNumbers(text, hoursRe)
@@ -605,7 +606,10 @@ function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { co
     notices.push(`--usd ${u.value} overrides the approved plan's US$ ${planCeilings.usd}`)
   }
   for (const kind of planCeilings.unreadable) {
-    notices.push(`the approved plan named more than one ${kind} figure, so start could not read it`)
+    const source = kind === 'hours' ? h.source : u.source
+    if (source === 'default') {
+      notices.push(`the approved plan named more than one ${kind} figure, so start could not read it`)
+    }
   }
   const run = {
     id: `auto-${newRunId(new Date(now))}`,
@@ -628,7 +632,9 @@ function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { co
   fs.mkdirSync(paths.dir)
   writeJsonFile(paths.runFile, run)
   fs.writeFileSync(paths.diary, diarySkeleton(run))
-  return { ok: true, run, runFile: paths.runFile, diary: paths.diary, notices }
+  const out = { ok: true, run, runFile: paths.runFile, diary: paths.diary }
+  if (notices.length) out.notices = notices
+  return out
 }
 
 // Widens the ceilings of the open run without closing it (issue 253): the new
