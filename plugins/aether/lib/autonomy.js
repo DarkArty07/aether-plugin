@@ -1098,6 +1098,32 @@ function end(mainRoot, outcome, { now = Date.now(), session = null, id = null } 
   return run
 }
 
+// Hands an open run to a new session after a restart without reading a transcript or asking for a quote.
+function continueRun(mainRoot, id, { session = null, now = Date.now() } = {}) {
+  if (!session) {
+    return { ok: false, reason: 'continue needs the session id of the caller; pass --session <id> or set CLAUDE_CODE_SESSION_ID' }
+  }
+  const sel = selectRun(mainRoot, { id: id ?? '' })
+  if (!sel.ok) return { ok: false, reason: sel.message }
+  const { run, paths } = sel.item
+  if (run.session === session) return { ok: true, run, from: session, unchanged: true }
+  const own = openRuns(mainRoot).find((item) => item.run.session === session && item.paths.dir !== paths.dir)
+  if (own) {
+    return { ok: false, reason: `session ${session} already has run ${own.run.id} open; close it before continuing another` }
+  }
+  const from = run.session || null
+  const prev = Array.isArray(run.previousSessions) ? run.previousSessions : []
+  run.previousSessions = from ? [...prev, from] : [...prev]
+  run.session = session
+  const iso = new Date(now).toISOString()
+  fs.appendFileSync(
+    paths.diary,
+    `\n## Continuación ${iso}\n\n- La corrida pasa de la sesión ${from || 'sin sesión'} a la sesión ${session}.\n`,
+  )
+  writeJsonFile(paths.runFile, run)
+  return { ok: true, run, from }
+}
+
 function resolveDataDir(dataDir) {
   return dataDir === undefined || dataDir === null ? runDataDir() : dataDir
 }
@@ -1380,6 +1406,7 @@ module.exports = {
   spend,
   status,
   end,
+  continueRun,
   brakeSettings,
   recordCrossing,
   brakeOff,
