@@ -4,6 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { PLUGIN, makeRepo, compile } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const { ladderCommand } = require('../plugins/aether/lib/wt-ladder.js')
@@ -331,7 +332,7 @@ test('in a repository without spaces, applyVerdict leaves --payload bare so the 
   }
 })
 
-test('#256 27: in a repository with spaces in its path, the stuck open quotes --payload', async (t) => {
+test('stuck open preserves a spaced payload path through command parsing', async (t) => {
   const repo = makeRepo(t, { prefix: 'aether test ' })
   assert.ok(repo.dir.includes(' '), `repo path must contain a space: ${repo.dir}`)
   const args = compile(repo, plan([task(1)]))
@@ -388,6 +389,10 @@ test('#256 27: in a repository with spaces in its path, the stuck open quotes --
   const tokens = shellSplit(stuckLine)
   const payloadPath = tokens[tokens.indexOf('--payload') + 1]
   assert.ok(payloadPath.includes(' '), payloadPath)
-  assert.ok(stuckLine.includes(`--payload '${payloadPath}'`), `the spaced payload must be quoted in the stuck command: ${stuckLine}`)
   assert.equal(payloadPath, payloadOf(stuckPrompt).path)
+  // Exercise the shell too: dropping the quotes must split this path into multiple arguments.
+  const payloadWord = stuckLine.match(/--payload (.+) --digest /)[1]
+  const shell = spawnSync('bash', ['-c', `set -- ${payloadWord}; printf '%s\\n' "$#" "$1"`], { encoding: 'utf8' })
+  assert.equal(shell.status, 0, shell.stderr)
+  assert.equal(shell.stdout, `1\n${payloadOf(stuckPrompt).path}\n`)
 })

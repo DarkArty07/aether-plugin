@@ -114,6 +114,12 @@ test('design workflow: a trailing ops note after the JSON line still approves (i
   assert.equal(run.result.status, 'approved', JSON.stringify(run.result))
 })
 
+test('design workflow: a leading ops note before the JSON line still approves (issue #257)', async () => {
+  const run = await go(ARGS, checkReads((json) => `Note: running aether-plan check.\n${json}\n`))
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved', JSON.stringify(run.result))
+})
+
 test('design workflow: a check reply with no JSON line keeps the unreadable error (issue #257)', async () => {
   const run = await go(ARGS, checkReads('I could not run that command.'))
   assert.equal(run.error, null, run.error && run.error.stack)
@@ -125,7 +131,7 @@ test('design workflow: a check reply with no JSON line keeps the unreadable erro
 
 for (const [name, stdout, merged] of [
   ['text around the JSON line', (json) => `text\n${json}\nmore`, true],
-  ['a brace line that is not JSON above the JSON line', (json) => `{bad\n${json}`, true],
+  ['a brace line that is not JSON below the JSON line', (json) => `${json}\n{bad`, true],
   ['a JSON array is no object', '[1,2]', false],
   ['an empty reply is no object', '', false],
 ]) {

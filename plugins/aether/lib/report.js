@@ -16,7 +16,7 @@ const { readAllLogs, quotaConsumed, laneTokens } = require('./lanes.js')
 const { sweepRun } = require('./worktrees.js')
 const { judge } = require('./baseline.js')
 const { isSessionId, newestIn } = require('./spend.js')
-const { timingsOf, quotaWaitOf } = require('./run-timings.js')
+const { timingsOf, quotaWaitOf, timingWallMs } = require('./run-timings.js')
 const { archiveSpend, noteFailure, clearFailure } = require('./spend-archive.js')
 const { skillsReport } = require('./skill-registry.js')
 
@@ -728,7 +728,7 @@ function report(cwd, runId, { session = null, tests = true, dataDir = run.dataDi
     if (quotaWait.count > 0) byClass['wait-quota'] = { ...quotaWait }
     timings = { byClass, totalMs: Object.values(byClass).reduce((sum, item) => sum + item.ms, 0) }
   }
-  if (timings) notes.push(`not a model: ${timings.totalMs}ms of ${speed.run.ms}ms`)
+  if (timings) notes.push(`not a model: ${timingWallMs(mainRoot, dir, runId, now)}ms of ${speed.run.ms}ms`)
   const adopted = readIfThere(path.join(dir, 'adopted.json')) || {}
   const quality = { ...qualityOf(results, adopted), tests: tests ? runTests(graph, dir) : null }
   quality.ladder = ladderOf(results)

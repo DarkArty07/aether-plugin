@@ -75,7 +75,7 @@ const IMPLEMENTER_SCHEMA = {
     status: { type: 'string', enum: ['DONE', 'DONE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'BLOCKED'] },
     summary: { type: 'string', description: 'what you implemented, or what you attempted' },
     head: { type: 'string', description: 'the commit your unit branch ends on; empty if you made none' },
-    tests: { type: 'string', description: 'the test commands you ran and their results, RED then GREEN' },
+    tests: { type: 'string', description: 'the test commands you ran and their results' },
     concerns: { type: 'string', description: 'doubts about the work; empty if none' },
     question: { type: 'string', description: 'for NEEDS_CONTEXT or BLOCKED: exactly what you need; empty otherwise' },
   },
@@ -1800,7 +1800,9 @@ async function rescue(unit) {
     }
   } catch (err) {
     // mergeHeld, or the reason built from its result, can throw. The wait still ends (spec 036, #256 24).
-    log(`${unit.id}: the rescue failed: ${message(err)}`)
+    const why = message(err)
+    unit.reason = `${before}${/[.!?]$/.test(before) ? '' : '.'} The rescue failed: ${why}`
+    log(`${unit.id}: the rescue failed: ${why}`)
     try {
       await end('rejected')
     } catch (endErr) {

@@ -15,9 +15,6 @@ const { sleep: commonSleep } = require('./common.js')
 
 const OUTCOMES = ['expired', 'ceiling', 'declined', 'merged', 'rejected']
 
-// The same shape adoptUnit accepts: a hex id or a branch-like name, never a leading dash.
-const COMMIT_SHAPE = /^[0-9A-Za-z][0-9A-Za-z._/-]*$/
-
 function timeWait(mainRoot, runId, record, endAt) {
   const ms = Date.parse(endAt) - Date.parse(record.at)
   require('./run-timings.js').recordTiming(run.runDir(mainRoot, runId), 'wait-stuck', ms)
@@ -208,7 +205,7 @@ function deliverFix(cwd, runId, taskId, { commit, reason, widen } = {}) {
   if (fs.existsSync(run.launchEndFile(mainRoot, runId))) throw new Error(`run ${runId} has ended`)
   const record = readWaiting(mainRoot, runId, taskId)
   const want = commit.trim()
-  if (!COMMIT_SHAPE.test(want)) throw new Error(`${want} is not a commit: a commit is a hex id or a branch-like name and must not start with -`)
+  if (!worktrees.COMMIT_SHAPE.test(want)) throw new Error(`${want} is not a commit: a commit is a hex id or a branch-like name and must not start with -`)
   const resolved = git(['rev-parse', '--verify', '--quiet', '--end-of-options', `${want}^{commit}`], mainRoot, { allowFail: true })
   if (resolved.status !== 0 || resolved.stdout === '') throw new Error(`${want} is not a commit of this repository`)
   const sha = resolved.stdout

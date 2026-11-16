@@ -4,7 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { makeRepo, compile, age, ageRun, commitIn, useDataDir } = require('./helpers.js')
+const { tempDir, makeRepo, compile, age, ageRun, commitIn, useDataDir } = require('./helpers.js')
 const { task, plan } = require('./plan-fixtures.js')
 const run = require('../plugins/aether/lib/run.js')
 const wt = require('../plugins/aether/lib/worktrees.js')
@@ -232,27 +232,76 @@ test('a worktree of an attended unit does not keep a quiet run alive', async (t)
   }
 })
 
-test('newestWriteMs and modifiedSince share one lstat walk that does not follow links', () => {
-  const watchSrc = fs.readFileSync(require.resolve('../plugins/aether/lib/wt-watch.js'), 'utf8')
-  const wtSrc = fs.readFileSync(require.resolve('../plugins/aether/lib/worktrees.js'), 'utf8')
-  assert.match(watchSrc, /function walkNoFollow/)
-  const body = wtSrc.slice(wtSrc.indexOf('function modifiedSince'), wtSrc.indexOf('function lastRecordStatus'))
-  assert.match(body, /walkNoFollow\(/)
-  assert.equal(body.includes('lstatSync'), false)
-  const { walkNoFollow } = require('../plugins/aether/lib/wt-watch.js')
-  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aether-walk-'))
-  const outside = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'aether-walk-out-'))
-  fs.writeFileSync(path.join(outside, 'secret'), 'x')
+test('walkNoFollow, newestWriteMs and sweepStale do not follow symlinks', (t) => {
+  useDataDir(t)
+  const { walkNoFollow } = require('../plugins/aether/lib/common.js')
+  const { newestWriteMs } = require('../plugins/aether/lib/wt-watch.js')
+  const root = tempDir(t, 'aether-walk-')
+  const outside = tempDir(t, 'aether-walk-out-')
+  const secret = path.join(outside, 'secret')
+  fs.writeFileSync(secret, 'x')
+  const future = new Date(Date.now() + 60000)
+  fs.utimesSync(secret, future, future)
+  fs.utimesSync(outside, future, future)
   const linked = path.join(root, 'linked')
   fs.symlinkSync(outside, linked)
+
   const seen = []
   walkNoFollow(root, (current) => {
     seen.push(current)
     return false
   })
-  assert.equal(seen.includes(path.join(outside, 'secret')), false)
-  fs.rmSync(root, { recursive: true, force: true })
-  fs.rmSync(outside, { recursive: true, force: true })
+  assert.equal(seen.includes(secret), false)
+  assert.equal(seen.includes(path.join(linked, 'secret')), false)
+  assert.ok(newestWriteMs(root) < future.getTime(), 'newestWriteMs ignores the symlink target mtime')
+
+  // Early stop: visit returning true halts the walk.
+  fs.writeFileSync(path.join(root, 'a'), '1')
+  fs.writeFileSync(path.join(root, 'b'), '2')
+  let visits = 0
+  const stopped = walkNoFollow(root, () => {
+    visits++
+    return visits === 2
+  })
+  assert.equal(stopped, true)
+  assert.equal(visits, 2)
+
+  // modifiedSince via sweepStale ignores a symlink to a freshly modified outside directory.
+  const s = scenario(t)
+  const runLink = path.join(s.args.runDir, 'linked-out')
+  fs.symlinkSync(outside, runLink)
+  ageRun(s.args, 48)
+  const old = new Date(Date.now() - 48 * 3600 * 1000)
+  fs.lutimesSync(runLink, old, old)
+  fs.utimesSync(outside, future, future)
+  fs.utimesSync(secret, future, future)
+  const swept = wt.sweepStale(s.repo.dir, { hours: 24 })
+  assert.deepEqual(swept, { swept: [s.args.runId] })
+})
+
+test('watchCommand does not walk live unit worktrees when the run directory is already fresh', async (t) => {
+  const s = scenario(t)
+  const unit = wt.ensure(s.repo.dir, s.args.runId, 'task-1')
+  fs.writeFileSync(path.join(unit.path, 'file.js'), 'x\n')
+  const mark = run.launchEndFile(s.repo.dir, s.args.runId)
+  const origLstat = fs.lstatSync
+  let walkedUnit = false
+  t.after(() => { fs.lstatSync = origLstat })
+  fs.lstatSync = (target, ...rest) => {
+    if (String(target).startsWith(unit.path)) walkedUnit = true
+    return origLstat(target, ...rest)
+  }
+  let polls = 0
+  const out = await watchCommand(s.repo.dir, s.args.runId, {
+    interval: 0.001,
+    silence: 600,
+    sleep: async () => {
+      polls++
+      if (polls === 1) fs.writeFileSync(mark, JSON.stringify({ run: s.args.runId, at: new Date().toISOString() }) + '\n')
+    },
+  })
+  assert.equal(out.watch, 'ended')
+  assert.equal(walkedUnit, false, 'the fresh run directory alone proved liveness without walking unit worktrees')
 })
 
 test('a bad option and an unknown run are refused', async (t) => {

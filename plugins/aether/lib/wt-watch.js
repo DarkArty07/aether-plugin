@@ -9,6 +9,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { repoPaths } = require('./git.js')
 const run = require('./run.js')
+const { walkNoFollow } = require('./common.js')
 const { loadSwarmConfig } = require('./wt-config.js')
 
 const DEFAULT_INTERVAL_SECONDS = 5
@@ -29,52 +30,29 @@ function parseSilence(value) {
   return seconds
 }
 
-// One lstat walk that does not follow links. visit(path, stat) returns true to stop.
-// Shared with worktrees.modifiedSince. A path that disappears or cannot be read is skipped.
-function walkNoFollow(dir, visit) {
-  const pending = [dir]
-  while (pending.length > 0) {
-    const current = pending.pop()
-    let stat
-    try {
-      stat = fs.lstatSync(current)
-    } catch {
-      continue // gone since it was listed
-    }
-    if (visit(current, stat)) return true
-    if (!stat.isDirectory()) continue
-    let names
-    try {
-      names = fs.readdirSync(current)
-    } catch {
-      continue // unreadable or gone: nothing more to learn from it
-    }
-    for (const name of names) pending.push(path.join(current, name))
-  }
-  return false
-}
-
 // The newest modification time under dir, files and folders alike, without following links.
+// Stops early once an entry meets `freshAfter` when given.
 // The heartbeat counts as a sign of life, since every pause of the stuck wait writes it.
-function newestWriteMs(dir) {
+function newestWriteMs(dir, freshAfter) {
   let newest = -Infinity
   walkNoFollow(dir, (_current, stat) => {
     if (stat.mtimeMs > newest) newest = stat.mtimeMs
-    return false
+    return freshAfter !== undefined && newest >= freshAfter
   })
   return newest
 }
 
-// A unit the run has already attended is not working. Its worktree is what it left behind, and
-// only a unit that is still going (no stuck record, or one still waiting) counts as a sign of life.
+// Decline, delivery and end finish the unit's wait: its implementer is no longer working.
+// Further rescue progress writes to the run directory; leftover unit files must not prolong liveness.
 const ATTENDED = new Set(['declined', 'delivered', 'ended'])
 
 // The run directory and the worktrees of units that are still going. A quiet run directory is
 // still alive while such a unit worktree is being written. An attended unit's tree does not count:
 // once the run directory itself is quiet, the watch ends instead of waiting out the silence cap
 // on files that unit already left.
-function newestActivityMs(mainRoot, runId) {
-  let newest = newestWriteMs(run.runDir(mainRoot, runId))
+function newestActivityMs(mainRoot, runId, freshAfter) {
+  let newest = newestWriteMs(run.runDir(mainRoot, runId), freshAfter)
+  if (freshAfter !== undefined && newest >= freshAfter) return newest
   const attended = new Set()
   for (const record of readStuckRecords(mainRoot, runId)) {
     if (ATTENDED.has(record.state)) attended.add(record.task)
@@ -88,8 +66,9 @@ function newestActivityMs(mainRoot, runId) {
   }
   for (const name of names) {
     if (attended.has(name)) continue
-    const found = newestWriteMs(path.join(root, name))
+    const found = newestWriteMs(path.join(root, name), freshAfter)
     if (found > newest) newest = found
+    if (freshAfter !== undefined && newest >= freshAfter) return newest
   }
   return newest
 }
@@ -164,7 +143,8 @@ async function watchCommand(cwd, runId, { interval, silence, sleep, now } = {}) 
       })
       return { watch: 'ended', run: runId, stuck, message: endedMessage(records) }
     }
-    const silentSeconds = (clock() - newestActivityMs(mainRoot, runId)) / 1000
+    const nowMs = clock()
+    const silentSeconds = (nowMs - newestActivityMs(mainRoot, runId, nowMs - silenceCap * 1000)) / 1000
     const silent = silentSeconds > silenceCap
     if (!silent) {
       const waiting = readStuckRecords(mainRoot, runId).filter((record) => record.state === 'waiting')
@@ -190,4 +170,4 @@ async function watchCommand(cwd, runId, { interval, silence, sleep, now } = {}) 
   }
 }
 
-module.exports = { watchCommand, walkNoFollow, newestWriteMs }
+module.exports = { watchCommand, newestWriteMs }

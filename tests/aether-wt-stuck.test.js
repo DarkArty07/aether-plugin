@@ -43,7 +43,7 @@ test('a delivery goes through deliver, shows in the next tick, and the end close
   assert.deepEqual(wt(s.repo, 'stuck-end', s.args.runId, 'task-1', '--outcome', 'merged').json, { ended: true, task: 'task-1', outcome: 'merged' })
 })
 
-test('decline attends the unit: the tick says so and a watch relaunched after it does not end with that unit', (t) => {
+test('decline attends the unit: the tick and the saved record say so', (t) => {
   const s = waiting(t)
   const declined = wt(s.repo, 'decline', s.args.runId, 'task-1', '--reason', 'the plan puts the test outside Owns')
   assert.deepEqual(declined.json, { declined: true, task: 'task-1', reason: 'the plan puts the test outside Owns' })

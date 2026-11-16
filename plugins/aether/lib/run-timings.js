@@ -23,7 +23,7 @@ function recordTiming(runDir, klass, ms) {
   const rounded = Math.round(ms)
   if (!Number.isFinite(rounded)) return
   try {
-    fs.mkdirSync(runDir, { recursive: true })
+    if (!fs.existsSync(runDir)) return
     fs.appendFileSync(path.join(runDir, 'timings.jsonl'), JSON.stringify({ class: klass, ms: rounded, at: new Date().toISOString() }) + '\n')
   } catch {
     // A timing must not stop a run.
@@ -71,18 +71,25 @@ function timingsOf(runDir) {
 // `resumeAt` is later. Returns { count: 0, ms: 0 } when none names the run;
 // a run.json that cannot be read or whose dates are not valid is skipped.
 function quotaWaitOf(mainRoot, runId, now = Date.now()) {
+  const intervals = quotaIntervals(mainRoot, runId, now)
+  return { count: intervals.length, ms: intervals.reduce((sum, [start, end]) => sum + (end - start), 0) }
+}
+
+// autonomy.js keeps pausedMsOf private. Match its date checks and clamping here;
+// keep the swarm predicate shared by the summed figures and wall-clock union.
+function quotaIntervals(mainRoot, runId, now) {
   let names
+  const root = path.join(mainRoot, '.aether', 'autonomy')
   try {
-    names = fs.readdirSync(path.join(mainRoot, '.aether', 'autonomy'))
+    names = fs.readdirSync(root)
   } catch {
-    return { count: 0, ms: 0 }
+    return []
   }
-  let count = 0
-  let ms = 0
+  const intervals = []
   for (const name of names) {
     let run
     try {
-      run = JSON.parse(fs.readFileSync(path.join(mainRoot, '.aether', 'autonomy', name, 'run.json'), 'utf8'))
+      run = JSON.parse(fs.readFileSync(path.join(root, name, 'run.json'), 'utf8'))
     } catch {
       continue
     }
@@ -91,13 +98,58 @@ function quotaWaitOf(mainRoot, runId, now = Date.now()) {
       if (!pause || typeof pause !== 'object') continue
       if (!Array.isArray(pause.savedUnits) || !pause.savedUnits.some((unit) => unit && unit.swarmRun === runId)) continue
       const started = Date.parse(pause.started)
-      const resumeAt = Date.parse(pause.resumeAt)
-      if (!Number.isFinite(started) || !Number.isFinite(resumeAt)) continue
-      count++
-      ms += Math.max(0, Math.min(resumeAt, now) - started)
+      const until = Math.min(Date.parse(pause.resumeAt), now)
+      if (!Number.isFinite(started) || !Number.isFinite(until) || started > now) continue
+      intervals.push([started, Math.max(started, until)])
     }
   }
-  return { count, ms }
+  return intervals
 }
 
-module.exports = { CLASSES, recordTiming, timingsOf, quotaWaitOf }
+// Merges overlapping [start, end] intervals and returns their total duration in ms.
+function unionMs(intervals) {
+  if (intervals.length === 0) return 0
+  const sorted = [...intervals].sort((a, b) => a[0] - b[0])
+  let [curStart, curEnd] = sorted[0]
+  let total = 0
+  for (let i = 1; i < sorted.length; i++) {
+    const [start, end] = sorted[i]
+    if (start <= curEnd) {
+      if (end > curEnd) curEnd = end
+    } else {
+      total += curEnd - curStart
+      curStart = start
+      curEnd = end
+    }
+  }
+  return total + (curEnd - curStart)
+}
+
+// Wall-clock union of every recorded timing interval [at - ms, at] and every matching quota pause.
+function timingWallMs(mainRoot, runDir, runId, now = Date.now()) {
+  const intervals = []
+  try {
+    const text = fs.readFileSync(path.join(runDir, 'timings.jsonl'), 'utf8')
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue
+      let entry
+      try {
+        entry = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (!entry || typeof entry !== 'object') continue
+      if (!CLASSES.includes(entry.class)) continue
+      if (typeof entry.ms !== 'number' || !Number.isFinite(entry.ms) || entry.ms <= 0) continue
+      const at = Date.parse(entry.at)
+      if (!Number.isFinite(at)) continue
+      intervals.push([at - entry.ms, at])
+    }
+  } catch {
+    // Missing or unreadable timings file contributes no intervals.
+  }
+  intervals.push(...quotaIntervals(mainRoot, runId, now))
+  return Math.round(unionMs(intervals))
+}
+
+module.exports = { CLASSES, recordTiming, timingsOf, quotaWaitOf, timingWallMs }
