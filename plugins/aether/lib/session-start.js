@@ -443,16 +443,19 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
   }
 
   // 5. Clean project temporary and stale items (spec 030 R17). With a run open anywhere in the
-  // project the tmp folders are left alone (spec 043 R13).
+  // project the tmp folders are left alone (spec 043 R13). When the open runs cannot be read, an unreadable run.json
+  // may be hiding an open one, so the cleanup fails closed and leaves the tmp folders alone too.
   let cleanNote = ''
   if (mainRoot !== null && injects) {
     try {
       const { cleanProject } = require('./tree-clean.js')
       const { dataDir } = require('./run.js')
-      let openRun = false
+      let openRun = true
       try {
         openRun = require('./autonomy.js').openRuns(mainRoot).length > 0
-      } catch {}
+      } catch {
+        openRun = true
+      }
       const cleanRes = cleanProject(cwd, { dataDir: dataDir(env), now, openRun })
       if (cleanRes?.removed?.length > 0) {
         const names = cleanRes.removed.map((r) => path.relative(cwd, r.path))
@@ -598,7 +601,9 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     const { contextNotice, additionalContext } = contextOf(lines)
     const output = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext } }
     if (welcomeLine !== null) {
-      const sysLines = [welcomeLine, ...lines, ...issueNotices.map((n) => noticeLine(n))].filter((s) => typeof s === 'string' && s !== '')
+      // The new-models line goes to the person too: the context alone never reaches them. On clear and compact it
+      // stays in the context only, and the trim below drops it there first.
+      const sysLines = [welcomeLine, ...lines, modelLine, ...issueNotices.map((n) => noticeLine(n))].filter((s) => typeof s === 'string' && s !== '')
       output.systemMessage = sysLines.join('\n')
     } else if (source === 'clear' && contextNotice) {
       output.systemMessage = contextNotice
@@ -652,9 +657,10 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
   }
   const payload = buildPayload(noticeLines, issueNotices)
   stdout.write(payload)
-  // The difference counts as shown only when the payload kept its line: a line the trim dropped stays pending for the
-  // next start. Only the notes command reaches here; the part commands return before contextOf.
-  if (modelLine !== '' && modelDir !== null) {
+  // The difference counts as shown only when the payload kept its line and the person could see it: a line the trim
+  // dropped stays pending for the next start, and on clear and compact, where it stays in the context only, it is
+  // never marked. Only the notes command reaches here; the part commands return before contextOf.
+  if (modelLine !== '' && modelDir !== null && (source === 'startup' || source === 'resume')) {
     try {
       require('./model-watch.js').markNoticed(modelDir)
     } catch { /* A notice must never stop startup. */ }

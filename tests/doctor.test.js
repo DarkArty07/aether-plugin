@@ -722,11 +722,81 @@ test('models: a harness that could not be read is a warning that says why, and t
   const box = sandbox(t)
   const dir = tempDir(t, 'aether-data-')
   writeResult(dir, { grok: { status: 'failed', reason: 'timed out after 10000ms' } })
+  settings(box.config, 'settings.json', { pluginConfigs: { 'aether@aether-plugin': { options: { superdelegation: true, harnesses: 'grok' } } } })
   const r = report(box, { env: withModels(box, dir, 'grok') })
   const entry = byId(r, 'models')
   assert.equal(entry.status, 'warn')
   assert.ok(entry.detail.includes('grok') && entry.detail.includes('timed out after 10000ms'), entry.detail)
   assert.equal(r.ok, true, 'a warning is not an error')
+})
+
+test('models: the harnesses come from the saved option first, then the environment, then agy', (t) => {
+  // The saved option names the harnesses even when the terminal has no environment variable.
+  {
+    const box = sandbox(t)
+    const dir = tempDir(t, 'aether-data-')
+    writeResult(dir, { grok: { new: ['grok-new-1'], retired: [] }, codex: { new: [], retired: [] } })
+    settings(box.config, 'settings.json', { pluginConfigs: { 'aether@aether-plugin': { options: { superdelegation: true, harnesses: 'grok,codex' } } } })
+    const entry = byId(report(box, { env: { AETHER_DATA_DIR: dir } }), 'models')
+    assert.equal(entry.status, 'info')
+    assert.ok(entry.detail.includes('grok') && entry.detail.includes('codex'), entry.detail)
+  }
+  // The saved option wins over the environment.
+  {
+    const box = sandbox(t)
+    const dir = tempDir(t, 'aether-data-')
+    writeResult(dir, { grok: { new: ['grok-new-1'], retired: [] }, codex: { new: [], retired: [] } })
+    settings(box.config, 'settings.json', { pluginConfigs: { 'aether@aether-plugin': { options: { harnesses: 'codex' } } } })
+    const entry = byId(report(box, { env: withModels(box, dir, 'grok') }), 'models')
+    assert.ok(entry.detail.includes('codex'), entry.detail)
+    assert.ok(!entry.detail.includes('grok-new-1'), entry.detail)
+  }
+  // Without a saved option the environment decides.
+  {
+    const box = sandbox(t)
+    const dir = tempDir(t, 'aether-data-')
+    writeResult(dir, { grok: { new: ['grok-new-1'], retired: [] } })
+    const entry = byId(report(box, { env: withModels(box, dir, 'grok') }), 'models')
+    assert.ok(entry.detail.includes('grok-new-1'), entry.detail)
+  }
+  // Without either, the default is agy.
+  {
+    const box = sandbox(t)
+    const dir = tempDir(t, 'aether-data-')
+    writeResult(dir, { agy: { new: ['agy-new-1'], retired: [] } })
+    const entry = byId(report(box, { env: { AETHER_DATA_DIR: dir } }), 'models')
+    assert.ok(entry.detail.includes('agy-new-1'), entry.detail)
+  }
+})
+
+test('models: a harness that is not installed is an info, never a warning', (t) => {
+  for (const superdelegation of [true, false, undefined]) {
+    const box = sandbox(t)
+    const dir = tempDir(t, 'aether-data-')
+    writeResult(dir, { agy: { status: 'not-installed', reason: 'agy not found on PATH' } })
+    if (superdelegation !== undefined) {
+      settings(box.config, 'settings.json', { pluginConfigs: { 'aether@aether-plugin': { options: { superdelegation, harnesses: 'agy' } } } })
+    }
+    const entry = byId(report(box, { env: { AETHER_DATA_DIR: dir } }), 'models')
+    assert.equal(entry.status, 'info', `${String(superdelegation)}: ${entry.detail}`)
+    assert.ok(entry.detail.includes('agy'), entry.detail)
+  }
+})
+
+test('models: with superdelegation off a failed reading is an info; with it on it warns', (t) => {
+  const dir = tempDir(t, 'aether-data-')
+  writeResult(dir, { grok: { status: 'failed', reason: 'timed out after 10000ms' } })
+  for (const superdelegation of [false, 'false', 'off', null, undefined]) {
+    const box = sandbox(t)
+    if (superdelegation !== undefined && superdelegation !== null) {
+      settings(box.config, 'settings.json', { pluginConfigs: { 'aether@aether-plugin': { options: { superdelegation, harnesses: 'grok' } } } })
+    }
+    const entry = byId(report(box, { env: withModels(box, dir, 'grok') }), 'models')
+    assert.equal(entry.status, 'info', `${String(superdelegation)}: ${entry.detail}`)
+  }
+  const box = sandbox(t)
+  settings(box.config, 'settings.json', { pluginConfigs: { 'aether@aether-plugin': { options: { superdelegation: true, harnesses: 'grok' } } } })
+  assert.equal(byId(report(box, { env: withModels(box, dir, 'grok') }), 'models').status, 'warn')
 })
 
 test('models: codex names its cache limit and muse its missing capture, without a warning', (t) => {
