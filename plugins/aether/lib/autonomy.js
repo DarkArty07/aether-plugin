@@ -412,6 +412,67 @@ function findOpenRun(mainRoot) {
   return open
 }
 
+function openRuns(mainRoot) {
+  const list = []
+  for (const item of runs(mainRoot)) {
+    if (item.run.ended === null) list.push(item)
+  }
+  return list
+}
+
+function runsSummary(open) {
+  return open.map(({ run }) => ({ id: run.id, session: run.session ?? null }))
+}
+
+function formatRunList(open) {
+  return open.map(({ run }) => `${run.id} (session ${run.session || 'unknown'})`).join(', ')
+}
+
+function ambiguousMessage(open) {
+  return `more than one run is open and this call does not say which is its own: ${formatRunList(open)}; name one with aether-autonomy status <id> or aether-autonomy end <id> --outcome incomplete, or pass --session <id>`
+}
+
+function foreignMessage(session, open) {
+  const continues = open.map(({ run }) => `aether-autonomy continue ${run.id}`).join(' or ')
+  const ends = open.map(({ run }) => `aether-autonomy end ${run.id} --outcome incomplete`).join(' or ')
+  return `session ${session} has no run open; open runs: ${formatRunList(open)}; if one is yours from a restarted session, continue it with: ${continues}; otherwise close an old run with: ${ends}`
+}
+
+function selectRun(mainRoot, { session = null, id = null } = {}) {
+  const open = openRuns(mainRoot)
+  const list = runsSummary(open)
+  if (id !== null && id !== undefined) {
+    for (const item of runs(mainRoot)) {
+      if (item.run.id !== id && path.basename(item.paths.dir) !== id) continue
+      if (item.run.ended === null) return { ok: true, item }
+      return { ok: false, code: 'not-open', message: `run ${id} is not open`, runs: list }
+    }
+    return { ok: false, code: 'unknown-id', message: `no run ${id}`, runs: list }
+  }
+  if (!open.length) return { ok: false, code: 'no-run', message: 'no open run', runs: [] }
+  if (session) {
+    const own = open.filter((item) => item.run.session === session)
+    if (own.length) return { ok: true, item: own[own.length - 1] }
+    if (open.length === 1 && !open[0].run.session) return { ok: true, item: open[0] }
+    if (open.every((item) => !item.run.session)) {
+      return { ok: false, code: 'ambiguous', message: ambiguousMessage(open), runs: list }
+    }
+    const result = { ok: false, code: 'foreign', message: foreignMessage(session, open), runs: list }
+    if (open.length === 1) result.item = open[0]
+    return result
+  }
+  if (open.length === 1) return { ok: true, item: open[0] }
+  return { ok: false, code: 'ambiguous', message: ambiguousMessage(open), runs: list }
+}
+
+function runsFor(mainRoot, session) {
+  const open = openRuns(mainRoot)
+  const picked = selectRun(mainRoot, { session })
+  const own = picked.ok ? picked.item : null
+  const others = own ? open.filter((item) => item.paths.dir !== own.paths.dir) : open
+  return { own, others }
+}
+
 function latestSessionRunStart(mainRoot, session) {
   let latest = null
   for (const { run } of runs(mainRoot)) {
@@ -466,8 +527,10 @@ function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { co
   const defaults = loadCeilings()
   const h = ceiling(hours, defaults.hours)
   const u = ceiling(usd, defaults.usd)
-  const open = openRun(mainRoot)
-  if (open) throw new Error(`run ${open.id} is already open`)
+  const sel = selectRun(mainRoot, { session })
+  if (sel.ok && (!session || sel.item.run.session === session)) {
+    throw new Error(`run ${sel.item.run.id} is already open`)
+  }
   const verified = verifyQuote(session, quote, { configDir })
   if (!verified.ok) return { ok: false, reason: verified.reason }
   if (isAetherSession(resolveDataDir(dataDir), session)) {
@@ -510,11 +573,11 @@ function extend(mainRoot, { hours, usd, quote, session } = {}, { configDir, now 
   if (hours === undefined && usd === undefined) throw new Error('extend needs --hours or --usd')
   if (hours !== undefined && !isPositive(hours)) throw new Error(`invalid ceiling: ${hours}`)
   if (usd !== undefined && usd !== null && !isPositive(usd)) throw new Error(`invalid ceiling: ${usd}`)
-  const open = findOpenRun(mainRoot)
-  if (!open) return { ok: false, reason: 'no open run' }
+  const sel = selectRun(mainRoot, { session })
+  if (!sel.ok) return sel.code === 'no-run' ? { ok: false, reason: sel.message } : { ok: false, reason: sel.message, code: sel.code }
   const verified = verifyQuote(session, quote, { configDir })
   if (!verified.ok) return { ok: false, reason: verified.reason }
-  const { run, paths } = open
+  const { run, paths } = sel.item
   if (!Array.isArray(run.ceilingChanges)) run.ceilingChanges = []
   const from = { hours: run.ceilings.hours, usd: run.ceilings.usd }
   const to = { hours: hours !== undefined ? hours : from.hours, usd: usd !== undefined ? usd : from.usd }
@@ -961,14 +1024,21 @@ function statusOfRun(run, paths, now, { mainRoot = null, dataDir = runDataDir() 
   }
 }
 
-function status(mainRoot, { now = Date.now(), dataDir = runDataDir() } = {}) {
-  const open = findOpenRun(mainRoot)
-  if (!open) return { open: false }
-  return statusOfRun(open.run, open.paths, now, { mainRoot, dataDir: resolveDataDir(dataDir) })
+function status(mainRoot, { now = Date.now(), dataDir = runDataDir(), session = null, id = null } = {}) {
+  const sel = selectRun(mainRoot, { session, id })
+  const resolvedDataDir = resolveDataDir(dataDir)
+  if (sel.ok) return statusOfRun(sel.item.run, sel.item.paths, now, { mainRoot, dataDir: resolvedDataDir })
+  if (sel.code === 'no-run' || sel.code === 'not-open') return { open: false }
+  if (sel.code === 'unknown-id') throw new Error(sel.message)
+  if (sel.code === 'foreign' && sel.item) {
+    return { ...statusOfRun(sel.item.run, sel.item.paths, now, { mainRoot, dataDir: resolvedDataDir }), foreign: true }
+  }
+  return { open: true, selected: false, code: sel.code, runs: sel.runs, message: sel.message }
 }
 
 function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date.now() } = {}) {
-  if (!isAetherSession(resolveDataDir(dataDir), session)) return null
+  const resolvedDataDir = resolveDataDir(dataDir)
+  if (!isAetherSession(resolvedDataDir, session)) return null
   let mainRoot
   try {
     mainRoot = repoPaths(cwd).mainRoot
@@ -980,26 +1050,35 @@ function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date
   // caller (plan-compile has no catch): the run cannot be honored, and its
   // state names the broken file.
   let st
+  let others
   try {
-    st = status(mainRoot, { now, dataDir: resolveDataDir(dataDir) })
+    const sel = selectRun(mainRoot, { session })
+    if (!sel.ok) return null
+    st = statusOfRun(sel.item.run, sel.item.paths, now, { mainRoot, dataDir: resolvedDataDir })
+    if (!st.open || !st.stop) return null
+    others = runsFor(mainRoot, session).others
   } catch (error) {
     return { stop: 'unreadable', id: null, message: `the open run's state could not be read: ${error.message}` }
   }
-  if (!st.open || !st.stop) return null
   let message
   if (st.stop === 'time') message = `autonomous run ${st.id} reached its time ceiling (${st.hours.elapsed}h / ${st.hours.ceiling}h); close it with: aether-autonomy end --outcome ceiling`
   else if (st.stop === 'cost') message = `autonomous run ${st.id} reached its spend ceiling ($${st.usd.spent} / $${st.usd.ceiling}); close it with: aether-autonomy end --outcome ceiling`
-  else if (st.stop === 'quota') message = `autonomous run ${st.id} is paused by the quota brake (${st.quota.percentUsed}% used; resumeAt ${st.quota.resumeAt || 'pending'}); it is paused, not ended; start nothing of this run and wait until it resumes; and only an old run that another session left open is closed, with: aether-autonomy end --outcome incomplete`
+  else if (st.stop === 'quota') {
+    const endClause = others.length
+      ? others.map(({ run }) => `aether-autonomy end ${run.id} --outcome incomplete`).join(' or ')
+      : 'aether-autonomy end --outcome incomplete'
+    message = `autonomous run ${st.id} is paused by the quota brake (${st.quota.percentUsed}% used; resumeAt ${st.quota.resumeAt || 'pending'}); it is paused, not ended; start nothing of this run and wait until it resumes; and only an old run that another session left open is closed, with: ${endClause}`
+  }
   else return null
   return { stop: st.stop, id: st.id, hours: st.hours, usd: st.usd, quota: st.quota, message }
 }
 
-function spend(mainRoot, usd, source, { now = Date.now(), dataDir = runDataDir() } = {}) {
+function spend(mainRoot, usd, source, { now = Date.now(), dataDir = runDataDir(), session = null } = {}) {
   if (typeof usd !== 'number' || !Number.isFinite(usd) || usd < 0) throw new Error(`invalid spend: ${usd}`)
   if (typeof source !== 'string' || source === '') throw new Error('a spend needs a source')
-  const open = findOpenRun(mainRoot)
-  if (!open) throw new Error('no open run')
-  const { run, paths } = open
+  const sel = selectRun(mainRoot, { session })
+  if (!sel.ok) throw new Error(sel.message)
+  const { run, paths } = sel.item
   const entry = { source, usd, at: new Date(now).toISOString() }
   const index = run.spend.findIndex((e) => e.source === source)
   if (index === -1) run.spend.push(entry)
@@ -1008,11 +1087,11 @@ function spend(mainRoot, usd, source, { now = Date.now(), dataDir = runDataDir()
   return statusOfRun(run, paths, now, { mainRoot, dataDir: resolveDataDir(dataDir) })
 }
 
-function end(mainRoot, outcome, { now = Date.now() } = {}) {
+function end(mainRoot, outcome, { now = Date.now(), session = null, id = null } = {}) {
   assertOutcome(outcome)
-  const open = findOpenRun(mainRoot)
-  if (!open) throw new Error('no open run')
-  const { run, paths } = open
+  const sel = selectRun(mainRoot, { session, id })
+  if (!sel.ok) throw new Error(sel.message)
+  const { run, paths } = sel.item
   run.ended = new Date(now).toISOString()
   run.outcome = outcome
   writeJsonFile(paths.runFile, run)
@@ -1119,11 +1198,11 @@ function recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, noti
 }
 
 function brakeOff(mainRoot, { quote, session } = {}, { configDir, now = Date.now() } = {}) {
-  const open = findOpenRun(mainRoot)
-  if (!open) return { ok: false, reason: 'no open run' }
+  const sel = selectRun(mainRoot, { session })
+  if (!sel.ok) return sel.code === 'no-run' ? { ok: false, reason: sel.message } : { ok: false, reason: sel.message, code: sel.code }
   const verified = verifyQuote(session, quote, { configDir })
   if (!verified.ok) return { ok: false, reason: verified.reason }
-  const { run, paths } = open
+  const { run, paths } = sel.item
   const record = { quote, session, time: verified.time, added: new Date(now).toISOString() }
   run.brakeOff = record
   writeJsonFile(paths.runFile, run)
@@ -1221,6 +1300,9 @@ module.exports = {
   revoke,
   check,
   list,
+  openRuns,
+  selectRun,
+  runsFor,
   openRun,
   start,
   extend,
