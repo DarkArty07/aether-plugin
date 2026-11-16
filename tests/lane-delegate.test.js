@@ -720,3 +720,14 @@ test('R5: an editing delegate and its review never go to a pair whose model lack
   assert.notEqual(result.review.pair.model, 'gemini-4-hydrogen')
 })
 
+test('the state of a delegate run holds the session of the call (spec 041 R7)', (t) => {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t) })
+  const brief = writeBrief(repo, briefLines())
+  const r = runDelegate(repo, env, { brief, tests: 'node -e "process.exit(0)"', session: 'sess-delegate-1' })
+  assert.equal(r.json.status, 'done', r.stdout + r.stderr)
+  const state = JSON.parse(fs.readFileSync(path.join(repo.dir, '.aether', 'runs', r.json.id, 'state.json'), 'utf8'))
+  assert.equal(state.session, 'sess-delegate-1')
+})
+
+

@@ -859,6 +859,13 @@ function aetherVersion() {
 // waiting (no retained branch, no patch of a task not integrated), its run directory.
 function finalize(cwd, runId, options = {}) {
   const { now = Date.now(), dataDir = run.dataDir() } = options
+  const mainRoot = repoPaths(cwd).mainRoot
+  let state = null
+  try {
+    state = readIfThere(path.join(run.runDir(mainRoot, runId), 'state.json'))
+  } catch {
+    state = null
+  }
   const r = report(cwd, runId, { ...options, dataDir })
   const versions = { aether: aetherVersion(), claudeCode: r.usage.claudeCode }
   // One version per lane harness that the lane log saw: agy's among them, as versions.agy.
@@ -867,8 +874,9 @@ function finalize(cwd, runId, options = {}) {
     runId,
     status: 'finalized',
     finalizedAt: iso(now),
-    repo: repoPaths(cwd).mainRoot,
+    repo: mainRoot,
     plan: r.plan,
+    session: (state && state.session) || null,
     versions,
     report: r,
   }

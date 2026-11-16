@@ -42,6 +42,9 @@ const AETHER_VARIABLES = [
 for (const name of Object.keys(process.env)) if (name.startsWith('AETHER_')) delete process.env[name]
 delete process.env.CLAUDE_PLUGIN_OPTION_OBSERVEDEV
 delete process.env.CLAUDE_PLUGIN_OPTION_AUTOISSUE
+// npm test may run inside a live Lead or implementer session, and helpers.compile, finishedRun and the bins would
+// stamp that session into every swarm; a test that needs a session passes it in the env of runBin or sets it itself.
+delete process.env.CLAUDE_CODE_SESSION_ID
 
 // The owner's real home comes from the account, not from HOME, and is read before HOME moves. A test must never write
 // under it: the Claude config folder and the home point at a temporary folder (removed when the process exits), so the
