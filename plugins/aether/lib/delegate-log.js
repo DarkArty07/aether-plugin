@@ -139,6 +139,89 @@ function fileKey(session, id) {
 // A launch entry in the delegate log that opened an attempt (not a refused relaunch).
 const isLaunch = (entry) => entry.kind === 'launch' && entry.launchKind !== 'refused'
 
+// Extracts the one-unit runId from a finished `result` entry's branch (`aether/<runId>/<unit>`)
+// or worktree (`.../.aether/worktrees/<runId>/<unit>`). Returns null when absent or invalid.
+function resultRunId(entry) {
+  if (!entry || typeof entry !== 'object') return null
+  if (typeof entry.branch === 'string') {
+    const match = /^aether\/([^/]+)\/[^/]+$/.exec(entry.branch)
+    if (match && run.isRunId(match[1])) return match[1]
+  }
+  if (typeof entry.worktree === 'string') {
+    const runDir = path.dirname(entry.worktree)
+    const candidate = path.basename(runDir)
+    if (path.basename(path.dirname(runDir)) === 'worktrees' && run.isRunId(candidate)) return candidate
+  }
+  return null
+}
+
+// Reads the brief file written for a delegate attempt across all install data directories.
+function attemptBriefText(dataDir, session, task, attempt) {
+  if (!Number.isInteger(attempt)) return null
+  let key
+  try {
+    key = fileKey(session ?? null, task)
+  } catch {
+    return null
+  }
+  const rel = path.join('delegates', 'briefs', `${key}-${attempt}.md`)
+  for (const dir of run.installDirs(dataDir)) {
+    try {
+      return fs.readFileSync(path.join(dir, rel), 'utf8')
+    } catch {
+      // Try the next install directory.
+    }
+  }
+  return null
+}
+
+// Summarizes editing delegate attempts from the log:
+// - `byRunId`: Map<runId, resultTime> for `result` entries that carry a branch or worktree.
+// - `attempts`: editing launches paired with their `result` (or `resultTime: null` while in flight).
+function delegateAttemptWindows(dataDir) {
+  const entries = readAllEntries(dataDir)
+  const byRunId = new Map()
+  const attemptKey = (session, task, attempt) => `${session ?? ''}\0${task}\0${attempt}`
+  const results = new Map()
+  const ended = new Set()
+  for (const entry of entries) {
+    if (entry.kind === 'ended' && typeof entry.task === 'string' && Number.isInteger(entry.attempt)) {
+      ended.add(attemptKey(entry.session ?? null, entry.task, entry.attempt))
+      continue
+    }
+    if (entry.kind !== 'result' || typeof entry.time !== 'number' || !Number.isFinite(entry.time)) continue
+    const runId = resultRunId(entry)
+    if (runId) {
+      const prev = byRunId.get(runId)
+      if (prev === undefined || entry.time > prev) byRunId.set(runId, entry.time)
+    }
+    if (typeof entry.task === 'string' && Number.isInteger(entry.attempt)) {
+      const key = attemptKey(entry.session ?? null, entry.task, entry.attempt)
+      const prev = results.get(key)
+      if (!prev || entry.time >= prev.time) results.set(key, { time: entry.time, runId })
+    }
+  }
+  const attempts = []
+  for (const entry of entries) {
+    if (!isLaunch(entry) || entry.edits !== true) continue
+    if (typeof entry.time !== 'number' || !Number.isFinite(entry.time)) continue
+    if (typeof entry.task !== 'string' || !Number.isInteger(entry.attempt)) continue
+    const session = entry.session ?? null
+    const key = attemptKey(session, entry.task, entry.attempt)
+    const res = results.get(key)
+    if (!res && ended.has(key)) continue
+    attempts.push({
+      session,
+      task: entry.task,
+      attempt: entry.attempt,
+      launchTime: entry.time,
+      resultTime: res ? res.time : null,
+      runId: res ? res.runId : null,
+    })
+  }
+  return { byRunId, attempts }
+}
+
 module.exports = {
   MAX_TEXT,
   logFile,
@@ -146,6 +229,9 @@ module.exports = {
   readEntries,
   readAllEntries,
   isLaunch,
+  resultRunId,
+  attemptBriefText,
+  delegateAttemptWindows,
   previousWork,
   fileKey,
 }

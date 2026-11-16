@@ -16,6 +16,7 @@ const { isObject } = require('./common.js')
 const { trustedFile } = require('./skill-rules.js')
 const { report: reportRun, runStartOf, finalizedRecords, readUsage } = require('./report.js')
 const { loadPrices, priceEntry } = require('./prices.js')
+const { delegateAttemptWindows, attemptBriefText } = require('./delegate-log.js')
 
 const CLASSES = ['merge-main', 'push', 'publish', 'deploy', 'delete', 'credentials', 'paid-call', 'skill-install']
 const SCOPES = ['repo', 'session']
@@ -661,6 +662,72 @@ function abandonedEnd(dir, start, sweptAt) {
   return start
 }
 
+function isDelegateRunGraph(graph) {
+  return (
+    isObject(graph) &&
+    graph.plan === null &&
+    isObject(graph.tasks) &&
+    isObject(graph.tasks['task-1']) &&
+    graph.tasks['task-1'].area === 'delegate' &&
+    graph.tasks['task-1'].tierReason === 'delegate'
+  )
+}
+
+// End of a delegate attempt's one-unit run without result.json: the `result` time in the delegate log.
+// Finished attempts carry `branch`/`worktree` on `result`; failed/timed-out attempts lack them and are
+// matched via `graph.json` (delegate marker) + `briefs/task-1.md` (exact) or `[launchTime, resultTime]`.
+// Returns null when the run is not a delegate run or the attempt is still in flight.
+function delegateAttemptEnd(dir, id, start, windows, dataDir, briefCache = new Map()) {
+  let graph
+  try {
+    graph = JSON.parse(fs.readFileSync(path.join(dir, 'graph.json'), 'utf8'))
+  } catch {
+    return null
+  }
+  if (!isDelegateRunGraph(graph)) return null
+
+  if (windows.byRunId.has(id)) {
+    const end = windows.byRunId.get(id)
+    return end >= start ? end : start
+  }
+
+  const unlinked = windows.attempts.filter((a) => a.runId === null)
+  let briefText = null
+  try {
+    briefText = fs.readFileSync(path.join(dir, 'briefs', 'task-1.md'), 'utf8')
+  } catch {
+    // Brief may be absent; fall back to launch..result window matching below.
+  }
+  if (briefText !== null) {
+    const cachedBrief = (a) => {
+      const key = `${a.session ?? ''}\0${a.task}\0${a.attempt}`
+      if (briefCache.has(key)) return briefCache.get(key)
+      const text = attemptBriefText(dataDir, a.session, a.task, a.attempt)
+      briefCache.set(key, text)
+      return text
+    }
+    const briefMatches = unlinked.filter((a) => cachedBrief(a) === briefText)
+    if (briefMatches.length > 0) {
+      const narrowed = briefMatches.length === 1
+        ? briefMatches
+        : briefMatches.filter((a) => a.launchTime <= start && (a.resultTime === null || start <= a.resultTime))
+      if (narrowed.length === 1) {
+        const hit = narrowed[0]
+        if (hit.resultTime === null) return null
+        return hit.resultTime >= start ? hit.resultTime : start
+      }
+      return null
+    }
+  }
+
+  const windowMatches = unlinked.filter((a) => a.launchTime <= start && (a.resultTime === null || start <= a.resultTime))
+  if (windowMatches.length === 1 && windowMatches[0].resultTime !== null) {
+    const end = windowMatches[0].resultTime
+    return end >= start ? end : start
+  }
+  return null
+}
+
 // The swarm runs of this repository that belong to the open run: compiled at or after the run started and before it
 // ended (issue 191). Each one's figure is the lanes total of aether-report --run, read now from the usage meter and the
 // lane logs, or from its record in runs.jsonl once it is finalized; the larger reading counts when both exist. A run
@@ -671,6 +738,8 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
   const until = run.ended ? Date.parse(run.ended) : Infinity
   const inWindow = (start) => Number.isFinite(start) && start >= from && start < until
   const abandoned = abandonedRuns(mainRoot, dataDir)
+  const delegateWindows = delegateAttemptWindows(dataDir)
+  const briefCache = new Map()
   const runsInfo = new Map()
   const failed = new Set()
   const keep = (id, rep) => {
@@ -702,9 +771,15 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
       continue
     }
     if (!inWindow(start)) continue
-    const reportNow = abandoned.has(id) && !fs.existsSync(path.join(dir, 'result.json'))
-      ? abandonedEnd(dir, start, abandoned.get(id))
-      : now
+    let reportNow = now
+    if (!fs.existsSync(path.join(dir, 'result.json'))) {
+      if (abandoned.has(id)) {
+        reportNow = abandonedEnd(dir, start, abandoned.get(id))
+      } else {
+        const delegateEnd = delegateAttemptEnd(dir, id, start, delegateWindows, dataDir, briefCache)
+        if (delegateEnd !== null) reportNow = delegateEnd
+      }
+    }
     try {
       keep(id, reportRun(mainRoot, id, { tests: false, dataDir, now: reportNow }))
     } catch {
