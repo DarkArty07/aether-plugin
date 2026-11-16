@@ -80,6 +80,19 @@ test('a new model of a harness that is already in: read its pages, show the ladd
   assert.match(section, /owner's own words|owner's yes/i, 'the draft waits for the owner')
 })
 
+test('the new-model step compares figures with the ladder rungs, checks dominance, and never shows the model in refresh-lanes (spec 043 C2)', () => {
+  const at = SKILL.indexOf('## A new model of a harness that is already in')
+  assert.ok(at >= 0, 'the skill has the new-model section')
+  const section = SKILL.slice(at)
+  assert.match(section, /Claude rows of `config\/pairs\.json` named by `config\/ladder\.json`/i, 'rungs are the Claude rows ladder.json names')
+  assert.match(section, /reaches the rung's points minus 1/i, 'an external pair serves a rung at points minus 1')
+  assert.match(section, /supervisor or reviewer needs the exact points/i, 'supervisor and reviewer need exact points')
+  assert.match(section, /cheaper pair of the same harness/i, 'dominance is checked within the quota group')
+  assert.match(section, /dominated and never chosen/i, 'a dominated pair is never chosen')
+  assert.match(section, /only the Claude ladder itself/i, 'refresh-lanes without --write shows only the Claude ladder')
+  assert.match(section, /config\/prices\.json.*config\/models\/harness-models\.json|config\/models\/harness-models\.json.*config\/prices\.json/, 'no write to the tables without the owner')
+})
+
 test('the repository skills live in .agents/skills/ with relative symlinks in .claude/skills/ and pass plugin review', (t) => {
   const { reviewSkill, posttool } = require('../plugins/aether/lib/skill-review.js')
   const { classifySkillPath } = require('../plugins/aether/lib/skill-rules.js')

@@ -101,6 +101,12 @@ test('the Examiner runs on Opus at high effort, writes only its exam, and never 
   assert.ok(body.includes('`.aether/exam/exam.json`'))
 })
 
+test('the Examiner indexes a test only after running it, and fixes its own defects before indexing (R22, #297)', () => {
+  const { body } = agentFile('examiner')
+  assert.ok(body.includes('only then add its entry to `.aether/exam/exam.json`'), 'entry goes in only after the run')
+  assert.ok(body.includes('fixed before it is indexed'), 'own defects are fixed before indexing')
+})
+
 test('the Examiner runs every test on the base tree, uses plan interfaces and sentinels, follows the plan at edges, and starts where a change can show (#283)', () => {
   const { body } = agentFile('examiner')
   for (const needle of [

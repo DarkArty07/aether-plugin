@@ -33,6 +33,14 @@ test('the Examiner keeps exam.json valid after each test, one entry per test (R2
   assert.match(content, /written when that test is finished/i)
 })
 
+test('the Examiner runs each test before its entry goes in the index, and fixes its own defects first (R22, #297)', () => {
+  const content = examiner()
+  assert.match(content, /run each test once against the base tree/i)
+  assert.match(content, /only then adds? its entry to `?\.?aether\/exam\/exam\.json`?/i)
+  assert.match(content, /fixed before it is indexed/i)
+  assert.match(content, /syntax error|broken helper/i)
+})
+
 test('the designing skill handles a partial exam when exam.status is failed (#229)', () => {
   const content = designing()
   assert.ok(content.includes('exam.status` `failed`'))
