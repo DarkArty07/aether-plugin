@@ -682,6 +682,18 @@ function logStopped(paths) {
   lanes.appendLog(run.dataDir(), info.session, callEntry(info, { time, status: 'stopped', usage: reported.usage, conversation: reported.conversation, quotaAfter: null, detail }))
 }
 
+function stopLinkedTask(dataDir, runId) {
+  try {
+    const link = readJsonOrNull(path.join(dataDir, 'lanes', 'links', `${runId}.json`))
+    if (!link || typeof link.id !== 'string' || link.id === '') return
+    // Dynamic path avoids a static require cycle in lib/ (delegate-run -> lane-delegate -> lane-calls).
+    const { stopTask } = require(path.join(__dirname, 'delegate-run.js'))
+    stopTask(dataDir, { id: link.id, session: typeof link.session === 'string' ? link.session : null })
+  } catch {
+    // A missing or unreadable link must not keep stop from returning.
+  }
+}
+
 function stop(cwd, runId, call = null) {
   run.assertRunId(runId)
   const { mainRoot } = repoPaths(cwd)
@@ -707,6 +719,7 @@ function stop(cwd, runId, call = null) {
     }
     work.removeReader(cwd, runId, name)
   }
+  stopLinkedTask(run.dataDir(), runId)
   return { stopped }
 }
 

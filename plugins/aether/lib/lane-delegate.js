@@ -29,7 +29,7 @@ const { HARNESS_NAMES } = require('./harness-names.js')
 const { findingsSection } = require('./delegate-task.js')
 
 const ALLOWED_HARNESSES = [...HARNESS_NAMES]
-const DELEGATE_USAGE = 'delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--pair <pair id>] [--carry <patch file>] [--findings <file>] [--session <id>]'
+const DELEGATE_USAGE = 'delegate --brief <file> --model <haiku|sonnet|opus> --effort <low|medium|high|xhigh|max> --owns <glob>[,<glob>...] [--tests <command>] [--pair <pair id>] [--carry <patch file>] [--findings <file>] [--session <id>] [--task <id>]'
 const TASK_ID = 'task-1'
 const WAIT_MARGIN_SECONDS = 180
 const TEST_TIMEOUT_MS = 15 * 60 * 1000
@@ -66,9 +66,9 @@ function isFile(cwd, name) {
 
 // The flags of the charge, checked. Throws the usage error the bin prints as { error }.
 function checkFlags(cwd, flags) {
-  const known = ['brief', 'model', 'effort', 'owns', 'tests', 'pair', 'carry', 'findings', 'session']
+  const known = ['brief', 'model', 'effort', 'owns', 'tests', 'pair', 'carry', 'findings', 'session', 'task']
   for (const name of Object.keys(flags ?? {})) if (!known.includes(name)) throw usageError()
-  const { brief, model, effort, owns, tests, pair, carry, findings, session } = flags ?? {}
+  const { brief, model, effort, owns, tests, pair, carry, findings, session, task } = flags ?? {}
   if (typeof brief !== 'string' || brief === '') throw usageError()
   if (!pairs.nativeModels(pairs.loadPairs().pairs).includes(model)) throw usageError()
   if (!pairs.EFFORTS.includes(effort)) throw usageError()
@@ -80,6 +80,7 @@ function checkFlags(cwd, flags) {
   if (carry !== undefined && !isFile(cwd, carry)) throw usageError()
   if (findings !== undefined && !isFile(cwd, findings)) throw usageError()
   if (session !== undefined && !/^[A-Za-z0-9_-]+$/.test(session)) throw usageError()
+  if (task !== undefined && !/^[A-Za-z0-9_-]+$/.test(task)) throw usageError()
   return {
     brief,
     model,
@@ -90,6 +91,7 @@ function checkFlags(cwd, flags) {
     carry: carry === undefined ? null : path.resolve(cwd, carry),
     findings: findings === undefined ? null : fs.readFileSync(path.resolve(cwd, findings), 'utf8').trimEnd(),
     session: session ?? null,
+    task: task ?? null,
   }
 }
 
@@ -416,6 +418,13 @@ async function delegateWithEnv(cwd, flags, deps) {
   const id = typeof deps.newRunId === 'function' ? deps.newRunId() : run.newRunId()
   run.assertRunId(id)
   run.ensureExcluded(paths.gitCommonDir)
+  if (charge.task !== null) {
+    run.writeJson(path.join(run.dataDir(env), 'lanes', 'links', `${id}.json`), {
+      id: charge.task,
+      session: charge.session,
+      writtenAt: nowOf(deps),
+    })
+  }
   const runDir = run.runDir(paths.mainRoot, id)
   const briefPath = path.join(runDir, 'briefs', `${TASK_ID}.md`)
   fs.mkdirSync(path.dirname(briefPath), { recursive: true })

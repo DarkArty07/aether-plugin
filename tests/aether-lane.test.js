@@ -825,3 +825,31 @@ test('quota prints the same for people, and marks a grok reading older than 30 m
   const unknown = runBin(fx.LANE_BIN, ['quota', 'grok'], ended.dir, ended.env)
   assert.ok(unknown.stdout.includes(`grok, "Grok plan": unknown, used until a call fails for quota (no reading; --refresh asks grok for one)`), unknown.stdout)
 })
+
+test('stop with a link in lanes/links/<runId>.json also terminates the linked delegate run process', async (t) => {
+  const { args } = fx.laneRun(t)
+  const env = fx.laneEnv(t)
+  const { spawn } = require('node:child_process')
+  const { fileKey } = require('../plugins/aether/lib/delegate-log.js')
+  const readyFile = path.join(env.AETHER_DATA_DIR, 'delegate-ready')
+  fs.mkdirSync(env.AETHER_DATA_DIR, { recursive: true })
+  const delegateProc = spawn(process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(readyFile)}, 'ok'); setInterval(() => {}, 60000)`], {
+    detached: true,
+    stdio: 'ignore',
+  })
+  delegateProc.unref()
+  t.after(() => fx.killQuietly(delegateProc.pid))
+  await fx.waitForFile(readyFile)
+
+  const runFile = path.join(env.AETHER_DATA_DIR, 'delegates', 'run', `${fileKey('s-link', 't-link')}.json`)
+  fs.mkdirSync(path.dirname(runFile), { recursive: true })
+  fs.writeFileSync(runFile, JSON.stringify({ pid: delegateProc.pid, startedAt: Date.now() }))
+  const linkFile = path.join(env.AETHER_DATA_DIR, 'lanes', 'links', `${args.runId}.json`)
+  fs.mkdirSync(path.dirname(linkFile), { recursive: true })
+  fs.writeFileSync(linkFile, JSON.stringify({ id: 't-link', session: 's-link', writtenAt: Date.now() }))
+
+  const digest = fx.writePrompt(args, IMPLEMENT, `FAKE-AGY: sleep 60\nFAKE-AGY: answer ${DONE}`)
+  fx.lane(args, 'start', [IMPLEMENT, ...flags(digest)], env)
+  assert.deepEqual(fx.lane(args, 'stop', [IMPLEMENT], env).json, { stopped: [IMPLEMENT] })
+  assert.equal(fx.alive(delegateProc.pid), false)
+})
