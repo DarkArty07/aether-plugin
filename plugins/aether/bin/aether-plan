@@ -1,10 +1,23 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-plan: checks and compiles plans and briefs.
-// Calls lib/plan-compile.js to check a plan or compile it for a run.
+// aether-plan: checks and compiles plans and briefs, and finds the next spec number.
+// Calls lib/plan-compile.js or lib/plan-number.js.
 
 const path = require('node:path')
-const { main } = require(path.join(__dirname, '..', 'lib', 'plan-compile.js'))
+const argv = process.argv.slice(2)
+const verb = argv[0]
 
-main(process.argv.slice(2), { cwd: process.cwd(), stdout: process.stdout })
+const USAGE =
+  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline] | aether-plan next-spec'
+
+if (verb === 'next-spec') {
+  const { nextSpec } = require(path.join(__dirname, '..', 'lib', 'plan-number.js'))
+  nextSpec({ cwd: process.cwd(), stdout: process.stdout })
+} else if (verb === 'check' || verb === 'compile') {
+  const { main } = require(path.join(__dirname, '..', 'lib', 'plan-compile.js'))
+  main(argv, { cwd: process.cwd(), stdout: process.stdout })
+} else {
+  process.stdout.write(JSON.stringify({ ok: false, errors: [USAGE], warnings: [] }) + '\n')
+  process.exit(1)
+}

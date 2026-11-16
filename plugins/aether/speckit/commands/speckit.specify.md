@@ -15,7 +15,7 @@ Never stop to ask. Where the intent is silent, choose a reversible default, one 
 The input is the intent card, `intent.md`, in the feature folder: the owner's own words, the understanding the owner confirmed, the criteria, what is out of scope, and the answers to the clarifying questions. If the message names a folder that has an `intent.md`, use that folder, skip steps 1 and 2 (do not write `.specify/feature.json`), and write only `spec.md` there. Otherwise follow every step.
 
 1. **Choose the feature folder yourself.** Never ask the owner for it.
-   - List the folders under `specs/` whose names start with a three-digit number. `NNN` is the next free number: one more than the highest number in use. Use `001` when no number is in use. Keep three digits.
+   - Run `aether-plan next-spec` and take `NNN` from its `next` field.
    - Choose `<topic>`: a short kebab-case name for the feature, such as `user-login`.
    - The folder is `specs/NNN-<topic>/`. Create it.
 

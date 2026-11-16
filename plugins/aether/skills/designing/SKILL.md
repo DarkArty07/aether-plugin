@@ -9,7 +9,7 @@ Design runs by itself, from the owner's intent to an approved plan. You hand ove
 
 **Ask only what matters.** Before the card, ask the owner at most five questions, one at a time, each about a choice that is hard to reverse, surprising, or a real trade-off. Their answers go into the card.
 
-**Write the intent card.** Create `specs/NNN-<topic>/` (NNN is one more than the highest number in use) and write `.specify/feature.json` with it. Then write `specs/NNN-<topic>/intent.md` in the owner's language. Only you write the card: aether-guard refuses every other writer. It lets only you and the Writer write specs, plans and tasks, and the Examiner only under `.aether/exam/`. The card holds:
+**Write the intent card.** Create `specs/NNN-<topic>/` (take NNN from `aether-plan next-spec`) and write `.specify/feature.json` with it. Then write `specs/NNN-<topic>/intent.md` in the owner's language. Only you write the card: aether-guard refuses every other writer. It lets only you and the Writer write specs, plans and tasks, and the Examiner only under `.aether/exam/`. The card holds:
 - the owner's words, quoted as they said them;
 - the understanding the owner confirmed;
 - the criteria: what and why, never how, each tied to a quote;
