@@ -79,7 +79,7 @@ A read-only delegate can be charged with a file that another writer of the same 
 
 ## aether-delegate
 
-`aether-delegate` is the bin that holds the ladder. Each verb prints one JSON line and none of them merges or pushes. The Lead uses `verdict` and `authorize`; the mod uses the rest.
+`aether-delegate` is the bin that holds the ladder. Each verb prints one JSON line. Only `approve` merges, into the current branch, and none of them pushes. The Lead uses `approve`, `verdict` and `authorize`; the mod uses the rest.
 
 - `begin --session <id> --input <file>`: takes the `Agent` call the mod caught and says how the attempt runs: the step's model and effort, the brief with the findings and the earlier work a rise carries, the isolation of an editing task, and the external pair when there is one. It writes the `launch` entry.
 - `verdict --task <id> --verdict <approve, fix or infeasible> [--reason <text>] [--finding <file[:line]: what is missing>]... [--from-scratch] [--worktree <path>] [--ignore <glob>]...`: judges the last attempt, runs the checks before an `approve`, and says what the next launch is. `--ignore` leaves out of a read-only check the files another writer of the checkout changed.
