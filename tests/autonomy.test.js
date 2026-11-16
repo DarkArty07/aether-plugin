@@ -1063,23 +1063,41 @@ test('launchRefusal recognizes non-repository errors in a localized Git environm
   }
 })
 
-test('ceilingsFromPlan parses hours and usd figures, rejects conflicting duplicates, and handles empty/null', () => {
+test('ceilingsFromPlan reads only the Topes/Ceilings line, rejects conflicting duplicates, and handles empty/null', () => {
   const cases = [
-    ['10 horas', { hours: 10, usd: null, unreadable: [] }],
-    ['$300', { hours: null, usd: 300, unreadable: [] }],
-    ['300 dollars', { hours: null, usd: 300, unreadable: [] }],
-    ['USD 1,000', { hours: null, usd: 1000, unreadable: [] }],
     ['- **Topes:** 10 h y US$ 300, hasta cerrar.', { hours: 10, usd: 300, unreadable: [] }],
-    ['2.5 hours and 12.50 dólares', { hours: 2.5, usd: 12.5, unreadable: [] }],
-    ['10 h primero y 10 horas después', { hours: 10, usd: null, unreadable: [] }],
-    ['4 h y luego 10 h, US$ 300', { hours: null, usd: 300, unreadable: ['hours'] }],
-    ['10 h, $300 y $500', { hours: 10, usd: null, unreadable: ['usd'] }],
+    ['Topes: 10 h y US$ 300', { hours: 10, usd: 300, unreadable: [] }],
+    ['- Topes: 10 horas y 300 dólares', { hours: 10, usd: 300, unreadable: [] }],
+    ['Ceilings: 10 hours and USD 300', { hours: 10, usd: 300, unreadable: [] }],
+    ['tOpEs: 10 h y US$ 300', { hours: 10, usd: 300, unreadable: [] }],
+    ['- **Topes:** 10 h y US$ 1.000', { hours: 10, usd: 1000, unreadable: [] }],
+    ['- **Topes:** 10 h y US$ 1,000', { hours: 10, usd: 1000, unreadable: [] }],
+    ['- **Topes:** 2.5 hours and 12.50 dólares', { hours: 2.5, usd: 12.5, unreadable: [] }],
+    ['- **Topes:** 12,5 h y US$ 12,5', { hours: 12.5, usd: 12.5, unreadable: [] }],
+    ['- **Topes:** 10 h primero y 10 h después, US$ 300', { hours: 10, usd: 300, unreadable: [] }],
+    ['- **Topes:** 4 h y luego 10 h, US$ 300', { hours: null, usd: 300, unreadable: ['hours'] }],
+    ['- **Topes:** 10 h, $300 y $500', { hours: 10, usd: null, unreadable: ['usd'] }],
+    ['- **Topes:** 10 h', { hours: 10, usd: null, unreadable: ['usd'] }],
+    ['10 horas', { hours: null, usd: null, unreadable: [] }],
+    ['$300', { hours: null, usd: null, unreadable: [] }],
+    ['300 dollars', { hours: null, usd: null, unreadable: [] }],
+    ['USD 1,000', { hours: null, usd: null, unreadable: [] }],
+    ['2.5 hours and 12.50 dólares', { hours: null, usd: null, unreadable: [] }],
+    ['4 h y luego 10 h, US$ 300', { hours: null, usd: null, unreadable: [] }],
+    ['10 h, $300 y $500', { hours: null, usd: null, unreadable: [] }],
+    ['Fase 1: 4 h. Total: 10 h y US$ 300.\n- **Topes:** 10 h y US$ 300', { hours: 10, usd: 300, unreadable: [] }],
     ['', { hours: null, usd: null, unreadable: [] }],
     [null, { hours: null, usd: null, unreadable: [] }],
   ]
   for (const [input, expected] of cases) {
-    assert.deepEqual(autonomy.ceilingsFromPlan(input), expected, String(input))
+    const got = autonomy.ceilingsFromPlan(input)
+    assert.deepEqual({ hours: got.hours, usd: got.usd, unreadable: got.unreadable }, expected, String(input))
   }
+})
+
+test('ceilingsFromPlan keeps the figures named on the ceilings line (R11)', () => {
+  assert.deepEqual(autonomy.ceilingsFromPlan('- **Topes:** 10 h, $300 y $500').figures, { hours: ['10 h'], usd: ['$300', '$500'] })
+  assert.deepEqual(autonomy.ceilingsFromPlan('# Plan\nSolo pasos técnicos: 2 h y US$ 40.').figures, { hours: [], usd: [] })
 })
 
 test('start reads ceilings from the approved plan, lets flags override with notice, and handles missing/unreadable figures', (t) => {
@@ -1184,7 +1202,7 @@ test('start reads ceilings from the approved plan, lets flags override with noti
     assert.equal(flagged.notices, undefined)
   }
 
-  // 4. Plan with two distinct hours figures (4 h and 10 h) and US$ 300 -> default hours + unreadable notice, usd from plan; conflicting usd -> default usd + unreadable notice; flag overrides unreadable without unreadable notice
+  // 4. Figures outside a ceilings line are not read: several figures with no Topes line open with the defaults and no notice; a ceilings line with two hours figures opens with the default hours and names them; a flag overrides the unreadable kind with no unreadable notice
   {
     const { configDir, mainRoot } = setup(t, {
       [SESSION]: [
@@ -1196,8 +1214,8 @@ test('start reads ceilings from the approved plan, lets flags override with noti
     markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
     const res = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
     assert.equal(res.ok, true)
-    assert.deepEqual(res.run.ceilings, { hours: 8, usd: 300, source: { hours: 'default', usd: 'plan' } })
-    assert.deepEqual(res.notices, ['the approved plan named more than one hours figure, so start could not read it'])
+    assert.deepEqual(res.run.ceilings, { hours: 8, usd: 50, source: { hours: 'default', usd: 'default' } })
+    assert.equal(res.notices, undefined)
   }
   {
     const { configDir, mainRoot } = setup(t, {
@@ -1210,15 +1228,29 @@ test('start reads ceilings from the approved plan, lets flags override with noti
     markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
     const res = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
     assert.equal(res.ok, true)
-    assert.deepEqual(res.run.ceilings, { hours: 10, usd: 50, source: { hours: 'plan', usd: 'default' } })
-    assert.deepEqual(res.notices, ['the approved plan named more than one usd figure, so start could not read it'])
+    assert.deepEqual(res.run.ceilings, { hours: 8, usd: 50, source: { hours: 'default', usd: 'default' } })
+    assert.equal(res.notices, undefined)
   }
   {
     const { configDir, mainRoot } = setup(t, {
       [SESSION]: [
         human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
         planUse('p1', '2026-04-06T10:00:02.000Z'),
-        planResult('p1', true, '2026-04-06T10:00:03.000Z', '# Plan\nFase 1: 4 h. Total: 10 h y US$ 300.'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', '- **Topes:** 4 h y luego 10 h, US$ 300.'),
+      ],
+    })
+    markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+    const res = autonomy.start(mainRoot, { quote: QUOTE, session: SESSION }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+    assert.equal(res.ok, true)
+    assert.deepEqual(res.run.ceilings, { hours: 8, usd: 300, source: { hours: 'default', usd: 'plan' } })
+    assert.deepEqual(res.notices, ['the approved plan named 4 h and 10 h, but start opened with the default ceilings'])
+  }
+  {
+    const { configDir, mainRoot } = setup(t, {
+      [SESSION]: [
+        human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+        planUse('p1', '2026-04-06T10:00:02.000Z'),
+        planResult('p1', true, '2026-04-06T10:00:03.000Z', '- **Topes:** 4 h y luego 10 h, US$ 300.'),
       ],
     })
     markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
@@ -1268,4 +1300,105 @@ test('start reads ceilings from the approved plan, lets flags override with noti
     assert.equal(autonomy.approvedPlanText(records, null), '10 h y US$ 300')
     assert.equal(autonomy.approvedPlanText(records, Date.parse('2026-04-06T10:02:00.000Z')), null)
   }
+})
+
+function startWithPlan(t, planText, args = {}) {
+  const dataDir = useDataDir(t)
+  const { markSession } = require('../plugins/aether/lib/session.js')
+  const { configDir, mainRoot } = setup(t, {
+    [SESSION]: [
+      human(QUOTE, '2026-04-06T10:00:01.000Z', { entrypoint: 'cli' }),
+      planUse('p1', '2026-04-06T10:00:02.000Z'),
+      planResult('p1', true, '2026-04-06T10:00:03.000Z', planText),
+    ],
+  })
+  markSession(dataDir, SESSION, 1000, { repo: mainRoot, claude: null })
+  return autonomy.start(mainRoot, { quote: QUOTE, session: SESSION, ...args }, { configDir, dataDir, now: Date.parse('2026-04-06T10:00:05.000Z') })
+}
+
+test('start reads the ceilings only from the Topes line, ignoring the estimate figures (spec 043)', (t) => {
+  const planText = [
+    '# Plan',
+    '## Costo y tiempo estimados',
+    '- Diseño: 2 h y US$ 40 (aether-report --seats).',
+    '- Examen: 1 h y US$ 20.',
+    '- Unidades: de 4 a 6 h y de US$ 90 a 260.',
+    '- **Total:** de 4 a 6 h y de US$ 90 a 260, dentro de los topes de 10 h y US$ 300.',
+    '- **Topes:** 10 h y US$ 300, la cifra que elegiste. Las pausas por cuota no cuentan como horas.',
+  ].join('\n')
+  const res = startWithPlan(t, planText)
+  assert.equal(res.ok, true)
+  assert.deepEqual(res.run.ceilings, { hours: 10, usd: 300, source: { hours: 'plan', usd: 'plan' } })
+  assert.equal(res.notices, undefined)
+})
+
+test('start with a plan that names no ceilings line opens with the defaults and no notice (spec 043)', (t) => {
+  const res = startWithPlan(t, '# Plan\nSolo pasos técnicos: 2 h y US$ 40, sin topes.')
+  assert.equal(res.ok, true)
+  assert.deepEqual(res.run.ceilings, { hours: 8, usd: 50, source: { hours: 'default', usd: 'default' } })
+  assert.equal(res.notices, undefined)
+})
+
+test('a ceilings line with two dollar figures opens with the default dollar ceiling and names both figures (spec 043, R11)', (t) => {
+  const res = startWithPlan(t, '- **Topes:** 10 h y US$ 300 o US$ 500')
+  assert.equal(res.ok, true)
+  assert.deepEqual(res.run.ceilings, { hours: 10, usd: 50, source: { hours: 'plan', usd: 'default' } })
+  assert.deepEqual(res.notices, ['the approved plan named US$ 300 and US$ 500, but start opened with the default ceilings'])
+})
+
+test('US$ 1.000 and US$ 1,000 on the ceilings line read as one thousand (spec 043)', (t) => {
+  for (const thousands of ['US$ 1.000', 'US$ 1,000']) {
+    const res = startWithPlan(t, `- **Topes:** 10 h y ${thousands}`)
+    assert.equal(res.ok, true, thousands)
+    assert.deepEqual(res.run.ceilings, { hours: 10, usd: 1000, source: { hours: 'plan', usd: 'plan' } }, thousands)
+    assert.equal(res.notices, undefined, thousands)
+  }
+})
+
+test('ceilingsFromPlan reads every bold form of the Topes/Ceilings label (spec 043)', () => {
+  const cases = [
+    ['- **Topes:** 10 h y US$ 300', { hours: 10, usd: 300, unreadable: [], hasLine: true }],
+    ['- **Topes**: 10 h y US$ 300', { hours: 10, usd: 300, unreadable: [], hasLine: true }],
+    ['Topes: 10 h y US$ 300', { hours: 10, usd: 300, unreadable: [], hasLine: true }],
+    ['- **Ceilings:** 10 hours and USD 300', { hours: 10, usd: 300, unreadable: [], hasLine: true }],
+    ['- **Ceilings**: 10 hours and USD 300', { hours: 10, usd: 300, unreadable: [], hasLine: true }],
+    ['Ceilings: 10 hours and USD 300', { hours: 10, usd: 300, unreadable: [], hasLine: true }],
+  ]
+  for (const [input, expected] of cases) {
+    const got = autonomy.ceilingsFromPlan(input)
+    assert.deepEqual({ hours: got.hours, usd: got.usd, unreadable: got.unreadable, hasLine: got.hasLine }, expected, String(input))
+  }
+})
+
+test('a ceilings line with no figure leaves its kinds unreadable (spec 043)', () => {
+  const cases = [
+    ['Topes:', { hours: null, usd: null, unreadable: ['hours', 'usd'], hasLine: true }],
+    ['- **Topes**:', { hours: null, usd: null, unreadable: ['hours', 'usd'], hasLine: true }],
+    ['- **Ceilings:**', { hours: null, usd: null, unreadable: ['hours', 'usd'], hasLine: true }],
+    ['- **Topes:** 10 h', { hours: 10, usd: null, unreadable: ['usd'], hasLine: true }],
+    ['- **Topes:** US$ 300', { hours: null, usd: 300, unreadable: ['hours'], hasLine: true }],
+    ['# Plan\nSolo pasos técnicos: 2 h y US$ 40.', { hours: null, usd: null, unreadable: [], hasLine: false }],
+  ]
+  for (const [input, expected] of cases) {
+    const got = autonomy.ceilingsFromPlan(input)
+    assert.deepEqual({ hours: got.hours, usd: got.usd, unreadable: got.unreadable, hasLine: got.hasLine }, expected, String(input))
+  }
+})
+
+test('start with a ceilings line it cannot read opens with the defaults and says so (spec 043, R11)', (t) => {
+  const notice = 'the approved plan named a ceilings line that start could not read, but start opened with the default ceilings'
+  const labelOnly = startWithPlan(t, '# Plan\nTopes:')
+  assert.equal(labelOnly.ok, true)
+  assert.deepEqual(labelOnly.run.ceilings, { hours: 8, usd: 50, source: { hours: 'default', usd: 'default' } })
+  assert.deepEqual(labelOnly.notices, [notice])
+
+  const noUsd = startWithPlan(t, '- **Topes**: 10 h')
+  assert.equal(noUsd.ok, true)
+  assert.deepEqual(noUsd.run.ceilings, { hours: 10, usd: 50, source: { hours: 'plan', usd: 'default' } })
+  assert.deepEqual(noUsd.notices, [notice])
+
+  const noHours = startWithPlan(t, '- **Ceilings:** US$ 300')
+  assert.equal(noHours.ok, true)
+  assert.deepEqual(noHours.run.ceilings, { hours: 8, usd: 300, source: { hours: 'default', usd: 'plan' } })
+  assert.deepEqual(noHours.notices, [notice])
 })
