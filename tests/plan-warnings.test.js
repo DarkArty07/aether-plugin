@@ -116,6 +116,20 @@ test('no test file, a test in node_modules, or a test that names nothing warns a
   assert.deepEqual(testWarningsOf(t, { 'src/foo.js': '', 'tests/other.test.js': 'x\n' }, [task(1, { owns: '`src/foo.js`' })]), [])
 })
 
+test('a task that owns a glob or a folder warns about the test that imports a matching file (#266)', (t) => {
+  const files = {
+    'lib/foo-a.js': 'module.exports = 1\n',
+    'tests/bar.test.js': "require('../lib/foo-a.js')\n",
+  }
+  assert.deepEqual(testWarningsOf(t, files, [task(1, { owns: '`lib/foo-*.js`' })]), [
+    `Task 1 changes lib/foo-a.js ${NOT_OWNED}: tests/bar.test.js (no task owns it)`,
+  ])
+  assert.deepEqual(testWarningsOf(t, files, [task(1, { owns: '`lib/`' })]), [
+    `Task 1 changes lib/foo-a.js ${NOT_OWNED}: tests/bar.test.js (no task owns it)`,
+  ])
+  assert.deepEqual(testWarningsOf(t, files, [task(1, { owns: '`lib/foo-*.js`, `tests/bar.test.js`' })]), [])
+})
+
 // The doc warnings of a check (issue 179): a task that owns or names a doc, a changelog or a
 // config file warns about the test that reads it, when no task owns that test.
 function docWarningsOf(t, files, tasks) {

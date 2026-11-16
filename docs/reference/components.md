@@ -61,7 +61,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | observe | `observe-` | `observe-calibrate.js`, `observe-detect.js`, `observe-dev.js`, `observe-digest.js`, `observe-issue.js`, `observe-read.js` | `observe.js` |
 | seat | `seat-` | `seat-partial.js`, `seat-round.js` | `seats.js` |
 | spend | `spend-` | `spend-archive.js`, `spend-tokens.js` | `spend.js` |
-| plan | `plan-` | `plan-compile.js`, `plan-design.js`, `plan-number.js`, `plan-scope.js` | `plan.js` |
+| plan | `plan-` | `plan-compile.js`, `plan-design.js`, `plan-number.js`, `plan-rules.js`, `plan-scope.js`, `plan-warnings.js` | `plan.js` |
 | session | `session-` | `session-start.js` | `session.js` |
 | harness | `lib/harness/` | `index.js`, `structured.js`, `agy.js`, `codex.js`, `cursor.js`, `grok.js`, `muse.js`, `muse-quota.js`, `harness-names.js` | `index.js` |
 | wt | `wt-` | `wt-config.js`, `wt-gate.js`, `wt-ladder.js`, `wt-stuck.js`, `wt-watch.js` | none |

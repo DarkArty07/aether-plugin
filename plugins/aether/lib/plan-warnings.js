@@ -10,7 +10,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
-const { isGlob, matchesAny } = require('./globs.js')
+const { isGlob, matchesAny, normalizePattern } = require('./globs.js')
 
 // Each task needs an implementer and a supervisor at least (issue 80). Max agents counts every model
 // agent of the run, so a budget under that is spent before the last tasks start.
@@ -37,9 +37,23 @@ function isTest(file) {
   return TEST_PATH.test(file)
 }
 
-// The literal source files a task owns: not a glob, a folder, a test or a doc.
-function sourcesOf(task) {
-  return task.owns.filter((pattern) => !pattern.endsWith('/') && !isGlob(pattern) && !isTest(pattern) && !DOC_PATH.test(pattern))
+// The source files a task owns: literal files, or existing files matching a glob or a folder (issue 266),
+// excluding tests and docs.
+function sourcesOf(task, files) {
+  const sources = new Set()
+  for (const pattern of task.owns) {
+    const norm = normalizePattern(pattern)
+    if (norm === '') continue
+    const isFolder = pattern.trim().endsWith('/') || files.some((f) => f.startsWith(`${norm}/`))
+    if (isGlob(pattern) || isFolder) {
+      for (const file of files) {
+        if (!isTest(file) && !DOC_PATH.test(file) && matchesAny(file, [pattern])) sources.add(file)
+      }
+    } else if (!isTest(norm) && !DOC_PATH.test(norm)) {
+      sources.add(norm)
+    }
+  }
+  return [...sources]
 }
 
 // The repo-relative paths of the files under root, in sorted order, up to the scan's limit.
@@ -262,10 +276,12 @@ const listed = (items) => (items.length > LISTED ? [...items.slice(0, LISTED), `
 // task and the tasks it depends on do not own, is warned about, one warning for each task. A heuristic: it
 // reads names and imports, and the runs of a bin that loads the source (issue 188).
 function testWarnings(parsed, root) {
-  const changing = parsed.tasks.filter((task) => sourcesOf(task).length > 0)
+  if (!parsed.tasks.some((task) => task.owns.length > 0)) return []
+  const files = filesOf(root)
+  const bySources = new Map(parsed.tasks.map((task) => [task.number, sourcesOf(task, files)]))
+  const changing = parsed.tasks.filter((task) => bySources.get(task.number).length > 0)
   if (changing.length === 0) return []
   const tests = testFilesOf(root)
-  const files = filesOf(root)
   const bins = binsLoadingLibs(root, files)
   const texts = new Map()
   const index = helperIndexOf(root, files, tests, texts)
@@ -280,7 +296,7 @@ function testWarnings(parsed, root) {
     const covering = [task, ...[...dependenciesOf(task, byNumber)].map((n) => byNumber.get(n)).filter(Boolean)]
     const sources = new Set()
     const left = new Map()
-    for (const source of sourcesOf(task)) {
+    for (const source of bySources.get(task.number)) {
       for (const test of tests) {
         const direct = exercises(test, source, root, texts)
         const bin = direct ? null : binRunning(source, bins, runsOfTest(test))
@@ -351,4 +367,4 @@ function planWarnings(parsed, root) {
   return [...budgetWarnings(parsed), ...testWarnings(parsed, root), ...syntaxWarnings(parsed)]
 }
 
-module.exports = { planWarnings }
+module.exports = { planWarnings, filesOf, dependenciesOf }

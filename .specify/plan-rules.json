@@ -1,0 +1,17 @@
+[
+  {
+    "adds": "plugins/aether/lib/**",
+    "owns": ["docs/reference/components.md"],
+    "why": "Every module in plugins/aether/lib/ must be declared in a family or as loose in docs/reference/components.md."
+  },
+  {
+    "adds": "plugins/aether/bin/*",
+    "owns": ["docs/reference/components.md"],
+    "why": "Every command in plugins/aether/bin/ must be listed in docs/reference/components.md."
+  },
+  {
+    "changes": "docs/decisions.md",
+    "owns": ["docs/index.md", "tests/docs-032.test.js", "tests/docs-facts.test.js"],
+    "why": "If it adds a decision, docs/index.md, tests/docs-032.test.js and tests/docs-facts.test.js pin the decision range."
+  }
+]
