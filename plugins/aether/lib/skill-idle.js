@@ -4,7 +4,6 @@
 // Family: skill.
 
 const fs = require('node:fs')
-const path = require('node:path')
 const { readCreatedDeduplicated, readInstalls, readUses } = require('./skill-registry.js')
 
 const IDLE_DAYS = 30

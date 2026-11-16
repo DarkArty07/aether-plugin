@@ -30,7 +30,7 @@
     {
       "id": "google-colab",
       "label": "Google Colab",
-      "files": [".ipynb"],
+      "files": [],
       "dependencies": ["google-colab", "colab"],
       "words": ["google colab", "colab", "cuaderno colab", "tpu colab"],
       "skillKeywords": ["colab", "google colab", "cuaderno"]
@@ -48,7 +48,7 @@
       "label": "Containers and Docker",
       "files": ["Dockerfile", "docker-compose.yml", "compose.yaml"],
       "dependencies": [],
-      "words": ["docker", "contenedor", "dockerfile", "compose"],
+      "words": ["docker", "contenedor", "dockerfile", "docker compose", "docker-compose"],
       "skillKeywords": ["docker", "container", "contenedor", "compose"]
     },
     {
@@ -64,7 +64,7 @@
       "label": "Shaders and GPU Graphics",
       "files": [".wgsl", ".glsl", ".frag", ".vert"],
       "dependencies": ["three", "regl", "twgl.js"],
-      "words": ["shader", "wgsl", "glsl", "fragment shader", "gpu"],
+      "words": ["shader", "wgsl", "glsl", "fragment shader"],
       "skillKeywords": ["shader", "wgsl", "glsl", "gpu"]
     }
   ]

@@ -204,24 +204,29 @@ test('oversized startup payload trims topic search notice before idle and tidy n
   assert.ok(baseline.out.hookSpecificOutput.additionalContext.includes('Skills nobody used in 30 days:'), 'baseline has idle notice')
   assert.ok(baseline.out.hookSpecificOutput.additionalContext.includes('Tidy:'), 'baseline has tidy notice')
 
-  // Create a customized plugin root that pads version in plugin.json so output slightly exceeds PART_LIMIT
-  const fakePlugin = tempDir(t, 'aether-plugin-pad-')
-  fs.cpSync(PLUGIN, fakePlugin, { recursive: true })
-  const pluginJsonPath = path.join(fakePlugin, '.claude-plugin', 'plugin.json')
-  const pj = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'))
-
   const topicNotice = baseline.out.hookSpecificOutput.additionalContext.split('\n\n').find((l) => l.includes('aether:skills'))
   const topicLen = JSON.stringify(`\n\n${topicNotice}`).length - 2
-  const padding = PART_LIMIT - baseline.stdout.length + Math.floor(topicLen / 2)
-  pj.version = `${pj.version}-${'x'.repeat(padding)}`
-  fs.writeFileSync(pluginJsonPath, JSON.stringify(pj))
+  // Grow the idle-skills notice so core + tidy + idle fits within PART_LIMIT, while adding topicNotice exceeds it.
+  let remaining = PART_LIMIT - baseline.stdout.length + Math.floor(topicLen / 2)
+  const createdLines = [fs.readFileSync(path.join(w.data, 'skills', 'created.jsonl'), 'utf8').trim()]
+  let idx = 0
+  while (remaining > 0) {
+    idx += 1
+    const chunk = Math.min(remaining, 180)
+    const name = `pad-${String(idx).padStart(2, '0')}-${'x'.repeat(Math.max(1, chunk - 8))}`
+    const padDir = path.join(w.repo.dir, '.agents', 'skills', name)
+    put(path.join(padDir, 'SKILL.md'), `---\nname: ${name}\ndescription: d\n---\nrules\n`)
+    createdLines.push(JSON.stringify({ time: Date.now() - 40 * 86400000, session: 'x', repo: w.repo.dir, name, path: padDir, type: 'project' }))
+    remaining -= name.length + 2
+  }
+  fs.writeFileSync(path.join(w.data, 'skills', 'created.jsonl'), createdLines.join('\n') + '\n')
 
   // Clear continuity notes so the second run is also treated as the first session
   const store = require('../plugins/aether/lib/continuity-store.js')
   const cdir = store.continuityDir({ cwd: w.repo.dir, env: { CLAUDE_CONFIG_DIR: w.configDir }, home: w.home })
   fs.rmSync(cdir, { recursive: true, force: true })
 
-  const env = { ...process.env, CLAUDE_PLUGIN_ROOT: fakePlugin, AETHER_DATA_DIR: w.data, CLAUDE_CONFIG_DIR: w.configDir, HOME: w.home, LANG: 'en_US.UTF-8' }
+  const env = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: w.data, CLAUDE_CONFIG_DIR: w.configDir, HOME: w.home, LANG: 'en_US.UTF-8' }
   const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: w.repo.dir, input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 's2', source: 'startup', agent_type: 'aether:lead' }), encoding: 'utf8', env })
   assert.equal(r.status, 0)
   const out = JSON.parse(r.stdout)
@@ -229,4 +234,25 @@ test('oversized startup payload trims topic search notice before idle and tidy n
   assert.ok(!out.hookSpecificOutput.additionalContext.includes('visible signals of'), 'topic notice was trimmed first')
   assert.ok(out.hookSpecificOutput.additionalContext.includes('Skills nobody used in 30 days:'), 'idle notice is preserved')
   assert.ok(out.hookSpecificOutput.additionalContext.includes('Tidy:'), 'tidy notice is preserved')
+  const reg = require('../plugins/aether/lib/skill-registry.js')
+  assert.equal(reg.readNotices(w.data).filter((n) => n.kind === 'topic-search' && n.session === 's2').length, 0, 'trimmed topic-search is not recorded')
+  assert.ok(reg.readNotices(w.data).filter((n) => n.kind === 'idle-skills' && n.session === 's2').length >= 1, 'kept idle-skills is recorded')
+})
+
+test('topic search notice does not fire on a later startup, or when .aether/runs or .aether/autonomy exists (R13)', (t) => {
+  const w1 = world(t)
+  put(path.join(w1.repo.dir, 'notebook.ipynb'), '{}\n')
+  assert.ok(w1.start('startup').out.hookSpecificOutput.additionalContext.includes('visible signals of'))
+  const later = w1.start('startup')
+  assert.ok(!later.out.hookSpecificOutput.additionalContext.includes('visible signals of'), 'later startup does not emit topic notice')
+
+  const w2 = world(t)
+  put(path.join(w2.repo.dir, 'notebook.ipynb'), '{}\n')
+  fs.mkdirSync(path.join(w2.repo.dir, '.aether', 'runs'), { recursive: true })
+  assert.ok(!w2.start('startup').out.hookSpecificOutput.additionalContext.includes('visible signals of'), '.aether/runs suppresses topic notice')
+
+  const w3 = world(t)
+  put(path.join(w3.repo.dir, 'notebook.ipynb'), '{}\n')
+  fs.mkdirSync(path.join(w3.repo.dir, '.aether', 'autonomy'), { recursive: true })
+  assert.ok(!w3.start('startup').out.hookSpecificOutput.additionalContext.includes('visible signals of'), '.aether/autonomy suppresses topic notice')
 })

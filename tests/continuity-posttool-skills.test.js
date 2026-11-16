@@ -162,3 +162,17 @@ test('a Skill call in a session that is not the Lead writes no file and prints n
   assert.deepEqual([run.status, run.stdout], [0, ''])
   assert.deepEqual(fs.readdirSync(w.data), [])
 })
+
+test('skill notices and records do not fire for subagents (inputs with agent_id)', (t) => {
+  const w = world(t)
+  const badFile = path.join(w.repo.dir, '.claude', 'skills', 'sub-skill', 'SKILL.md')
+  put(badFile, '---\nname: sub-skill\ndescription: Prueba\n---\nbody\n')
+  assert.equal(posttool.posttool({ session_id: 's-lead', agent_id: 'agent-1', cwd: w.repo.dir, tool_name: 'Write', tool_input: { file_path: badFile } }, w.ctx), null)
+  assert.equal(reg.readCreated(w.data).length, 0)
+  assert.equal(reg.readNotices(w.data).length, 0)
+
+  log.appendEntry(w.data, { kind: 'verdict', time: 1, session: 's-lead', task: 't1', repo: w.repo.dir, attempt: 1, step: 'haiku', verdict: 'fix', input: { kind: 'fix', findings: [{ file: 'src/a.js', line: 1, what: 'missing empty check' }], reason: null, fromScratch: false } })
+  log.appendEntry(w.data, { kind: 'verdict', time: 2, session: 's-lead', task: 't2', repo: w.repo.dir, attempt: 1, step: 'haiku', verdict: 'fix', input: { kind: 'fix', findings: [{ file: 'src/a.js', line: 2, what: 'missing empty check' }], reason: null, fromScratch: false } })
+  assert.equal(posttool.posttool({ session_id: 's-lead', agent_id: 'agent-1', cwd: w.repo.dir, tool_name: 'Bash', tool_input: { command: 'aether-delegate verdict --task t2 --verdict fix' } }, w.ctx), null)
+  assert.equal(reg.readNotices(w.data).length, 0)
+})

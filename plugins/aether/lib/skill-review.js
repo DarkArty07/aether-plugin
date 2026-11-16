@@ -55,9 +55,11 @@ function reviewSkill(dir, { cwd, home = os.homedir() } = {}) {
 
   const workingDir = cwd || process.cwd()
   let projectRoots = []
+  let inRepo = false
   try {
     const paths = repoPaths(workingDir)
     projectRoots = [paths.worktree, paths.mainRoot]
+    inRepo = true
   } catch {
     projectRoots = [workingDir]
   }
@@ -68,6 +70,34 @@ function reviewSkill(dir, { cwd, home = os.homedir() } = {}) {
   } catch {
     homeReal = path.resolve(home)
   }
+
+  const projectRootsReal = []
+  const seenProjectRootsReal = new Set()
+  for (const root of projectRoots) {
+    let rReal
+    try {
+      rReal = fs.realpathSync(root)
+    } catch {
+      rReal = path.resolve(root)
+    }
+    if (!seenProjectRootsReal.has(rReal)) {
+      seenProjectRootsReal.add(rReal)
+      projectRootsReal.push(rReal)
+    }
+  }
+  projectRootsReal.sort((a, b) => b.length - a.length)
+
+  function repoRelOf(pReal) {
+    if (!inRepo) return null
+    for (const rReal of projectRootsReal) {
+      const rel = path.relative(rReal, pReal)
+      if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+        return rel.split(path.sep).join('/')
+      }
+    }
+    return null
+  }
+  const targetRepoRel = repoRelOf(targetReal)
 
   const searchFolders = []
   const seenFolders = new Set()
@@ -126,6 +156,7 @@ function reviewSkill(dir, { cwd, home = os.homedir() } = {}) {
       }
 
       if (candReal === targetReal || seenCandidateReal.has(candReal)) continue
+      if (targetRepoRel && repoRelOf(candReal) === targetRepoRel) continue
       seenCandidateReal.add(candReal)
 
       const candName = entry.name
@@ -211,6 +242,60 @@ function fileSignal(names, signal) {
   return names.some((name) => name === wanted || name.toLowerCase() === wanted.toLowerCase())
 }
 
+function addRequirementNames(text, names) {
+  for (const line of text.split(/\r?\n/)) {
+    const code = line.replace(/#.*$/, '').trim()
+    if (!code || code.startsWith('-')) continue
+    const match = code.match(/^([a-z0-9][a-z0-9._-]*)/)
+    if (match) names.add(match[1])
+  }
+}
+
+function addQuotedPackages(segment, names) {
+  for (const quoted of segment.matchAll(/["']\s*([a-z0-9][a-z0-9._-]*)/g)) {
+    names.add(quoted[1])
+  }
+}
+
+function isPyprojectArraySection(section, key) {
+  if (section === 'project' && key === 'dependencies') return true
+  if (section === 'project.optional-dependencies' || section === 'dependency-groups') return true
+  if (section === 'tool.pdm.dev-dependencies') return true
+  if (section === 'tool.uv' && key === 'dev-dependencies') return true
+  return section.endsWith('.dependencies') && key === 'dependencies'
+}
+
+function addPyprojectNames(text, names) {
+  let section = ''
+  let inDepArray = false
+  for (const line of text.split(/\r?\n/)) {
+    const code = line.replace(/#.*$/, '')
+    if (inDepArray) {
+      const end = code.indexOf(']')
+      addQuotedPackages(end >= 0 ? code.slice(0, end) : code, names)
+      if (end >= 0) inDepArray = false
+      continue
+    }
+    const header = code.match(/^\s*\[([^\]]+)\]/)
+    if (header) {
+      section = header[1].trim()
+      continue
+    }
+    if (/^tool\.poetry\.(?:dev-)?dependencies$/.test(section) || /^tool\.poetry\.group\.[^.]+\.dependencies$/.test(section)) {
+      const pkg = code.match(/^\s*([a-z0-9][a-z0-9._-]*)\s*=/)
+      if (pkg) names.add(pkg[1])
+      continue
+    }
+    const arr = code.match(/^\s*([a-z0-9._-]+)\s*=\s*\[(.*)$/)
+    if (arr && isPyprojectArraySection(section, arr[1])) {
+      const rest = arr[2]
+      const end = rest.indexOf(']')
+      addQuotedPackages(end >= 0 ? rest.slice(0, end) : rest, names)
+      if (end < 0) inDepArray = true
+    }
+  }
+}
+
 // The dependency names of the project, each one whole: a longer name, or a description that merely contains it, is not that dependency.
 function dependencyNames(root) {
   const names = new Set()
@@ -218,20 +303,12 @@ function dependencyNames(root) {
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
     for (const name of Object.keys({ ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}), ...(pkg.optionalDependencies || {}) })) names.add(name.toLowerCase())
   } catch {}
-  for (const file of ['requirements.txt', 'pyproject.toml']) {
-    let text
-    try {
-      text = fs.readFileSync(path.join(root, file), 'utf8').toLowerCase()
-    } catch {
-      continue
-    }
-    for (const line of text.split(/\r?\n/)) {
-      const code = line.replace(/#.*$/, '')
-      const leading = code.match(/^\s*([a-z0-9@][a-z0-9@._/-]*)/)
-      if (leading) names.add(leading[1])
-      for (const quoted of code.matchAll(/"\s*([a-z0-9@][a-z0-9@._/-]*)/g)) names.add(quoted[1])
-    }
-  }
+  try {
+    addRequirementNames(fs.readFileSync(path.join(root, 'requirements.txt'), 'utf8').toLowerCase(), names)
+  } catch {}
+  try {
+    addPyprojectNames(fs.readFileSync(path.join(root, 'pyproject.toml'), 'utf8').toLowerCase(), names)
+  } catch {}
   return names
 }
 
@@ -343,7 +420,8 @@ function topicSignaled(topic, { names, deps, words }) {
 function detectUncoveredTopics({ cwd, home, dataDir, session = null, intentPath = null, config = null } = {}) {
   const loaded = config || loadSkillsConfig()
   const topics = Array.isArray(loaded.topics) ? loaded.topics : []
-  const root = cwd || process.cwd()
+  let root = cwd || process.cwd()
+  try { root = repoPaths(root).worktree } catch {}
   const names = shallowNames(root)
   const deps = dependencyNames(root)
   const words = readIntentText(root, intentPath)
@@ -380,8 +458,15 @@ function startupTopicNotice({ cwd, home, dataDir, session, config = null } = {})
 function intentPathOf(file, cwd) {
   if (typeof file !== 'string' || !file.trim()) return null
   const abs = path.resolve(cwd || '.', file)
-  const rel = path.relative(cwd || '.', abs).split(path.sep).join('/')
-  return /^specs\/\d+-[^/]+\/intent\.md$/.test(rel) ? abs : null
+  const roots = [cwd || '.']
+  for (const probe of [cwd || '.', path.dirname(abs)]) {
+    try { roots.unshift(repoPaths(probe).worktree) } catch {}
+  }
+  for (const root of roots) {
+    const rel = path.relative(root, abs).split(path.sep).join('/')
+    if (/^specs\/\d+-[^/]+\/intent\.md$/.test(rel)) return abs
+  }
+  return null
 }
 
 function outsideAgents(file, info, cwd) {
@@ -409,9 +494,17 @@ function leadLoadedSkills(dataDir, session) {
   return readUses(dataDir).some((entry) => entry.kind === 'lead' && entry.session === session && Array.isArray(entry.skills) && entry.skills.some((name) => name === 'aether:skills' || name === 'skills'))
 }
 
+function alreadyNoticed(dataDir, { session, repo, kind, name }) {
+  if (!dataDir) return false
+  const canon = canonicalRepo({ repo })
+  return readNotices(dataDir).some(
+    (n) => n.kind === kind && n.session === (session ?? null) && n.name === name && canonicalRepo(n) === canon,
+  )
+}
+
 function posttool(input, ctx = {}) {
   try {
-    if (!input || typeof input !== 'object') return null
+    if (!input || typeof input !== 'object' || input.agent_id) return null
     if (input.tool_name === 'Skill') return recordLeadSkillLoad(input, ctx)
     if (!['Write', 'Edit', 'MultiEdit'].includes(input.tool_name)) return null
 
@@ -458,13 +551,14 @@ function posttool(input, ctx = {}) {
     const problems = reviewSkill(info.dir, { cwd: input.cwd, home: ctx?.home })
     if (problems && problems.length) lines.push(...problems.map((problem) => `Skill "${info.name}": ${problem}`))
 
-    if (info.type === 'project' && outsideAgents(file, info, input.cwd)) {
+    const repo = info.type === 'project' ? mainRootOf(input.cwd || info.dir) : null
+    if (info.type === 'project' && outsideAgents(file, info, input.cwd) && !alreadyNoticed(ctx?.dataDir, { session: input.session_id, repo, kind: 'skill-location', name: info.name })) {
       lines.push(`Aether: the real copy of the project skill "${info.name}" belongs in .agents/skills/${info.name}/ with a symlink at .claude/skills/${info.name}.`)
-      if (ctx?.dataDir) recordNotice(ctx.dataDir, { time: ctx.now, session: input.session_id || null, repo: mainRootOf(input.cwd || info.dir), kind: 'skill-location', name: info.name })
+      if (ctx?.dataDir) recordNotice(ctx.dataDir, { time: ctx.now, session: input.session_id || null, repo, kind: 'skill-location', name: info.name })
     }
-    if (info.type === 'project' && ctx?.dataDir && !leadLoadedSkills(ctx.dataDir, input.session_id)) {
+    if (info.type === 'project' && ctx?.dataDir && !leadLoadedSkills(ctx.dataDir, input.session_id) && !alreadyNoticed(ctx.dataDir, { session: input.session_id, repo, kind: 'skill-unloaded', name: info.name })) {
       lines.push('Aether: load aether:skills before creating or changing a project skill, so the structure, the place in .agents/skills/ and the link in .claude/skills/ are checked.')
-      recordNotice(ctx.dataDir, { time: ctx.now, session: input.session_id || null, repo: mainRootOf(input.cwd || info.dir), kind: 'skill-unloaded', name: info.name })
+      recordNotice(ctx.dataDir, { time: ctx.now, session: input.session_id || null, repo, kind: 'skill-unloaded', name: info.name })
     }
 
     return lines.length ? lines.join('\n') : null
@@ -478,6 +572,7 @@ module.exports = {
   createdFile,
   recordLeadSkillLoad,
   detectUncoveredTopics,
+  topicLine,
   startupTopicNotice,
   posttool,
 }
