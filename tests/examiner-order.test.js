@@ -26,6 +26,13 @@ test('the Examiner writes one test per criterion first, keeps exam.json up to da
   assert.ok(firstIndex > 0 && widenIndex > firstIndex, 'covers one test per criterion before widening')
 })
 
+test('the Examiner keeps exam.json valid after each test, one entry per test (R22)', () => {
+  const content = examiner()
+  assert.match(content, /exam\.json.{0,80}valid.{0,40}after each test/i)
+  assert.match(content, /one entry per test/i)
+  assert.match(content, /written when that test is finished/i)
+})
+
 test('the designing skill handles a partial exam when exam.status is failed (#229)', () => {
   const content = designing()
   assert.ok(content.includes('exam.status` `failed`'))

@@ -42,7 +42,7 @@ test('the quota-brake paragraph names aether-autonomy quota-brake and leaves the
   assert.ok(brake.includes('aether-autonomy quota-brake'))
   assert.ok(brake.includes('aether-lane stop'))
   assert.ok(brake.includes('skipping any run swept as abandoned and naming it in `skipped`'))
-  assert.ok(brake.includes('After stopping, check that no `aether-delegate run` process of a stopped task is left'))
+  assert.ok(brake.includes('ends the delegate chain'))
   assert.doesNotMatch(brake, /aether-wt save <runId>[\s\S]*quota-saved --from/)
   const swarm = read('skills', 'swarm', 'SKILL.md')
   const line = swarm.split('\n').find((row) => row.includes('follow its quota brake'))
@@ -64,6 +64,28 @@ test('an unreadable run state is set aside with aether-autonomy quarantine, not 
   assert.match(line, /aether-autonomy quarantine run <id>/)
   assert.doesNotMatch(line, /Move it aside with Bash/)
   assert.match(line, /Do not treat it as a reason to stop\./)
+})
+
+test('the skill states the approved-plan ceiling form, the approval rule and the flag rule (R12)', () => {
+  const start = SKILL.slice(SKILL.indexOf('**Start:**'), SKILL.indexOf('**Permission prompts.**'))
+  assert.match(start, /N h/)
+  assert.match(start, /US\$ N/)
+  assert.match(start, /USD N/)
+  assert.match(start, /approv/i)
+  assert.match(start, /--hours/)
+  assert.match(start, /--usd/)
+})
+
+test('the skill keeps run-long files in .aether/autonomy/<id>/, never in .aether/tmp (R15)', () => {
+  assert.match(SKILL, /\.aether\/autonomy\/<id>\/[\s\S]{0,300}\.aether\/tmp/)
+})
+
+test('the brake ends delegate chains instead of asking for manual process hunts (R18)', () => {
+  const brake = SKILL.slice(SKILL.indexOf('**The quota brake.**'), SKILL.indexOf('**Cost.**'))
+  assert.match(brake, /quota-brake/)
+  assert.match(brake, /aether-lane stop/)
+  assert.match(brake, /chain/i)
+  assert.doesNotMatch(SKILL, /check that no `aether-delegate run` process/)
 })
 
 test('autonomous-runs and swarm skills describe automatic ceiling refusal and #214 rules', () => {
