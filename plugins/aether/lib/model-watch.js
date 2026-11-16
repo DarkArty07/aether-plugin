@@ -25,9 +25,8 @@ function stampFile(dataDir) {
   return path.join(watchDir(dataDir), 'stamp.json')
 }
 
-function readConfig(env) {
-  const file = (env && env.AETHER_MODEL_WATCH_CONFIG) || DEFAULT_CONFIG_PATH
-  return readJsonOrNull(file) || { perHarnessSeconds: 10, totalSeconds: 30, captureVia: {} }
+function readConfig() {
+  return readJsonOrNull(DEFAULT_CONFIG_PATH) || { perHarnessSeconds: 10, totalSeconds: 30, captureVia: {} }
 }
 
 function readTable() {
@@ -92,7 +91,7 @@ async function runWatch({
   config,
   env = process.env,
 } = {}) {
-  const cfg = config || readConfig(env)
+  const cfg = config || readConfig()
   if (!force && isStampedToday(dataDir, now)) {
     return readResult(dataDir) || { at: readStampAt(dataDir) || now, harnesses: {} }
   }
@@ -166,7 +165,7 @@ function launch({
 } = {}) {
   try {
     if (!isLead) return false
-    const cfg = config || readConfig(env)
+    const cfg = config || readConfig()
     const targets = watchableHarnesses(harnesses, cfg)
     if (targets.length === 0) return false
     if (dataDir && isStampedToday(dataDir, now)) return false

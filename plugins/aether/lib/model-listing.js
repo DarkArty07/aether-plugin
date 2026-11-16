@@ -174,7 +174,7 @@ function runCommandList(command, args, { env, timeoutMs, spawn }) {
 async function listModels(harnessName, options = {}) {
   const env = options.env || process.env
   const spawn = options.spawn || childProcess.spawn
-  const configPath = options.configPath || (env && env.AETHER_MODEL_WATCH_CONFIG) || DEFAULT_CONFIG_PATH
+  const configPath = options.configPath || DEFAULT_CONFIG_PATH
   const lanesConfigPath = options.lanesConfigPath || DEFAULT_LANES_PATH
   const home = options.home || env.HOME || os.homedir()
 
