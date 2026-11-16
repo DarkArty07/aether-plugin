@@ -19,7 +19,7 @@ const { loadPrices, priceModelUsage } = require(path.join(lib, 'prices.js'))
 const { spendReport, isSessionId } = require(path.join(lib, 'spend.js'))
 
 const USAGE =
-  'usage: aether-report [finalize] --run <id> [--session <id>] [--no-tests] | aether-report --seats [--session <id>] [--since <ms>] | aether-report price <claude-json> [--main-model <id>] | aether-report --spend [--session <id>]'
+  'usage: aether-report [finalize] --run <id> [--session <id>] [--no-tests] | aether-report --seats [--session <id>] [--since <ms>] | aether-report price <claude-json> [--main-model <id>] | aether-report --spend [--session <id>] | aether-report --skills [--repo <path>] [--since <ms|iso>] [--until <ms|iso>] [--session <id>]'
 
 // The value after a flag, or null when the flag is absent.
 function value(args, flag) {
@@ -64,11 +64,13 @@ function spend(argv) {
 
 const SKILLS_USAGE = 'usage: aether-report --skills [--repo <path>] [--since <ms|iso>] [--until <ms|iso>] [--session <id>]'
 
-// A millisecond count, or an ISO time. Absent stays null so skillsReport applies no bound.
-function timeBound(raw) {
+// A millisecond count, or an ISO time. A date-only --until covers the whole day (23:59:59.999Z).
+// Absent stays null so skillsReport applies no bound.
+function timeBound(raw, { endOfDay = false } = {}) {
   if (raw === null) return null
   if (/^\d+$/.test(raw)) return Number(raw)
-  const parsed = Date.parse(raw)
+  const iso = endOfDay && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T23:59:59.999Z` : raw
+  const parsed = Date.parse(iso)
   if (Number.isFinite(parsed)) return parsed
   throw new Error(SKILLS_USAGE)
 }
@@ -81,10 +83,11 @@ function skills(argv) {
     if (!allowed.has(rest[i])) throw new Error(SKILLS_USAGE)
     if (rest[i + 1] === undefined || rest[i + 1].startsWith('--')) throw new Error(SKILLS_USAGE)
   }
+  const rawRepo = value(rest, '--repo')
   return skillsReport(dataDir(), {
-    repo: value(rest, '--repo'),
+    repo: rawRepo === null ? null : path.resolve(rawRepo),
     since: timeBound(value(rest, '--since')),
-    until: timeBound(value(rest, '--until')),
+    until: timeBound(value(rest, '--until'), { endOfDay: true }),
     session: value(rest, '--session'),
   })
 }

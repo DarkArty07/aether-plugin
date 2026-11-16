@@ -100,18 +100,17 @@ test('aether:skills explains when to search on practical topics, Context7 for li
   assert.match(finding, /step-by-step operational procedures/, 'a practical topic is one where step-by-step procedures matter')
   assert.match(finding, /Machine Learning/, 'practical topic example: Machine Learning')
   assert.match(finding, /Google Colab/, 'practical topic example: Google Colab')
-  assert.match(
-    finding,
-    /Skills are for practical processes and repeatable procedures\.[\s\S]{0,160}The API documentation of a library is looked up with Context7/,
-    'skills are practical processes; library API documentation is looked up with Context7'
-  )
+  assert.match(finding, /practical processes and repeatable procedures/, 'skills are for practical processes and repeatable procedures')
+  assert.match(finding, /API documentation of a library[\s\S]*Context7/, 'library API documentation is looked up with Context7')
+  assert.match(finding, /Context7 is not connected[\s\S]*library's own documentation/, 'falls back to the library own documentation when Context7 is not connected')
 
   const creating = section(text, '## When to Create a Skill')
-  assert.match(
-    creating,
-    /no suitable skill[\s\S]{0,80}none passes review[\s\S]{0,200}writes the project skill in `\.agents\/skills\/<name>\/SKILL\.md` \(with its symlink in `\.claude\/skills\/<name>`\) with what it learned/,
-    'when no suitable skill is found or none passes review, write .agents/skills/<name>/SKILL.md and symlink .claude/skills/<name>'
-  )
+  assert.match(creating, /four circumstances/, 'lists four circumstances for creating a skill')
+  assert.match(creating, /4\.\s/, 'has a fourth numbered item')
+  assert.match(creating, /no suitable skill/, 'covers when no suitable skill is found')
+  assert.match(creating, /none passes review/, 'covers when none passes review')
+  assert.match(creating, /\.agents\/skills\/<name>\/SKILL\.md/, 'names the project skill path')
+  assert.match(creating, /\.claude\/skills\/<name>/, 'names the symlink path')
 })
 
 test('skills skill uses --author flag in aether-autonomy trust command', () => {

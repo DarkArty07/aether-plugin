@@ -250,3 +250,30 @@ test('aether-report --skills reads only the resolved data dir and does not write
   assert.equal(treeText(path.join(fx.root, 'plugins', 'data')), before)
   assert.match(fs.readFileSync(path.join(fx.sibling, 'skills', 'created.jsonl'), 'utf8'), /from-sibling/)
 })
+
+test('aether-report general usage lists --skills, and --repo / --until handle trailing slash, relative path and date-only bounds', (t) => {
+  const fx = skillsFilterFixture(t)
+  const bad = runBin(REPORT_BIN, [], fx.root, { AETHER_DATA_DIR: fx.mine, CLAUDE_CODE_SESSION_ID: '' })
+  assert.equal(bad.status, 1)
+  assert.match(bad.json.error, /--skills/)
+
+  // Trailing slash on a non-existent historical repo still matches the canonical repo.
+  const trailing = fx.run(['--repo', `${fx.repoA}/`])
+  assert.deepEqual(trailing.created.map((s) => s.name), ['alpha', 'beta'])
+
+  // Relative path for --repo resolves against cwd.
+  const localRepo = makeRepo(t)
+  reg.recordCreated(fx.mine, { time: fx.tMid, session: 's-local', repo: localRepo.dir, name: 'local-skill', path: `${localRepo.dir}/.agents/skills/local-skill`, type: 'project' })
+  const rel = runBin(REPORT_BIN, ['--skills', '--repo', path.basename(localRepo.dir)], path.dirname(localRepo.dir), { AETHER_DATA_DIR: fx.mine, CLAUDE_CODE_SESSION_ID: '' })
+  assert.equal(rel.status, 0, `${rel.stdout}${rel.stderr}`)
+  assert.deepEqual(rel.json.created.map((s) => s.name), ['local-skill'])
+
+  // Date-only --until covers the entire day (through 23:59:59.999Z), not just midnight.
+  const dayUntil = fx.run(['--until', '2026-11-08'])
+  assert.deepEqual(dayUntil.created.map((s) => s.name), ['alpha', 'beta', 'local-skill'])
+  assert.equal(dayUntil.period.until, Date.parse('2026-11-08T23:59:59.999Z'))
+
+  // Future --until includes all past records without dropping anything.
+  const futureUntil = fx.run(['--until', '2099-01-01'])
+  assert.deepEqual(futureUntil.created.map((s) => s.name), ['alpha', 'beta', 'gamma', 'local-skill'])
+})
