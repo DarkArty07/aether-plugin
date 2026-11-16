@@ -25,7 +25,8 @@ const EXCEPTIONS = [
 function tracked() {
   const r = spawnSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' })
   assert.equal(r.status, 0, r.stderr)
-  return r.stdout.split('\0').filter((file) => file !== '' && !BINARY.test(file) && fs.existsSync(path.join(ROOT, file)))
+  // A tracked symbolic link to a folder (.claude/skills/<name> -> .agents/skills/<name>) is not a file to read.
+  return r.stdout.split('\0').filter((file) => file !== '' && !BINARY.test(file) && fs.existsSync(path.join(ROOT, file)) && !fs.statSync(path.join(ROOT, file)).isDirectory())
 }
 
 const namesIn = (line) => NAMES.filter((name) => new RegExp(`(^|[^A-Za-z0-9_-])${name}($|[^A-Za-z0-9_-])`, 'i').test(line))

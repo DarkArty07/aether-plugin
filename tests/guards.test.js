@@ -76,6 +76,8 @@ test('R23: no tracked file holds the owner\'s home folder or email', () => {
   const found = []
   for (const file of tracked()) {
     if (/\.(png|jpe?g|gif|webp|ico|woff2?|zip|gz)$/i.test(file) || !fs.existsSync(path.join(ROOT, file))) continue
+    // A tracked symbolic link to a folder (.claude/skills/<name>) is read through the files it points to.
+    if (fs.statSync(path.join(ROOT, file)).isDirectory()) continue
     const text = fs.readFileSync(path.join(ROOT, file), 'utf8')
     for (const pattern of personal) if (pattern.test(text)) found.push(file)
   }
