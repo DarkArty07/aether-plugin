@@ -49,9 +49,9 @@ test('the usage names the verbs, and file-issues takes no argument (spec 020)', 
   const dir = tempDir(t)
   const stray = bin(['file-issues', 'extra'], dir)
   assert.equal(stray.status, 1)
-  assert.equal(stray.json.error, 'usage: aether-observe hook | file-issues | proposals')
-  assert.equal(bin(['nope'], dir).json.error, 'usage: aether-observe hook | file-issues | proposals')
-  assert.equal(bin(['proposals', 'extra'], dir).json.error, 'usage: aether-observe hook | file-issues | proposals')
+  assert.equal(stray.json.error, 'usage: aether-observe hook | file-issues | proposals | models-read')
+  assert.equal(bin(['nope'], dir).json.error, 'usage: aether-observe hook | file-issues | proposals | models-read')
+  assert.equal(bin(['proposals', 'extra'], dir).json.error, 'usage: aether-observe hook | file-issues | proposals | models-read')
 })
 
 test('hooks.json runs the five new hooks and the manifest gains no option (R3, R9)', () => {
