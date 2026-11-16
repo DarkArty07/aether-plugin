@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-observe hook | file-issues | proposals
+// aether-observe hook | file-issues | proposals | models-read
 // hook: the handler of the observation hooks; reads the hook's JSON from stdin, prints nothing, always exits 0.
 // file-issues: the worker of the automatic issues of the development installation (spec 020); prints one JSON line and
 // exits 1 only when the gate or the destination fails.
 // proposals: shows the calibration proposals and the frictions of the last reading (spec 036); reads only, exits 0.
+// models-read: daily background worker that lists models offered by active harnesses; prints one JSON line and exits 0.
 // Any other use prints one JSON line with the usage error and exits 1.
 
 const { readFileSync } = require('node:fs')
 const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
 
-const USAGE = 'usage: aether-observe hook | file-issues | proposals'
+const USAGE = 'usage: aether-observe hook | file-issues | proposals | models-read'
 
 function hook() {
   try {
@@ -53,16 +54,35 @@ function proposals() {
   return 0
 }
 
+async function modelsRead() {
+  let out
+  try {
+    const { dataDir } = require(path.join(lib, 'run.js'))
+    const { runWatch } = require(path.join(lib, 'model-watch.js'))
+    const { enabledHarnesses } = require(path.join(lib, 'lanes.js'))
+    const env = process.env
+    const harnesses = enabledHarnesses({
+      AETHER_LANE_HARNESSES: env.AETHER_LANE_HARNESSES || env.CLAUDE_PLUGIN_OPTION_HARNESSES,
+    })
+    out = await runWatch({ dataDir: dataDir(), harnesses, env, now: Date.now() })
+  } catch (err) {
+    out = { error: err && err.message ? err.message : String(err) }
+  }
+  process.stdout.write(`${JSON.stringify(out)}\n`)
+  return 0
+}
+
 function main(args) {
   const [verb, ...rest] = args
   if (verb === 'hook' && rest.length === 0) return hook()
   if (verb === 'file-issues' && rest.length === 0) return filed()
   if (verb === 'proposals' && rest.length === 0) return proposals()
+  if (verb === 'models-read' && rest.length === 0) return modelsRead()
   return fail(USAGE)
 }
 
-try {
-  process.exitCode = main(process.argv.slice(2))
-} catch (err) {
-  process.exitCode = process.argv[2] === 'hook' ? 0 : fail(err.message)
-}
+Promise.resolve(main(process.argv.slice(2)))
+  .then((code) => { process.exitCode = code })
+  .catch((err) => {
+    process.exitCode = process.argv[2] === 'hook' || process.argv[2] === 'models-read' ? 0 : fail(err.message)
+  })
