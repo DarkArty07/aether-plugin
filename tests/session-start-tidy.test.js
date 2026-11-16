@@ -106,7 +106,8 @@ test('oversized optional notices are trimmed before the continuity notice (R36, 
   const runFile = path.join(w.repo.dir, '.aether', 'autonomy', 'auto-test', 'run.json')
   const reset = 'Nov 07 2998 12:00:00 GMT'
   const run = {
-    id: 'auto-test', session: 'old', started: new Date().toISOString(), ended: null,
+    // The run is the starting session's own ('s1' is the id world().start gives the hook): only its owner gets the run note (spec 041 R10).
+    id: 'auto-test', session: 's1', started: new Date().toISOString(), ended: null,
     ceilings: { hours: 8, usd: 50 }, spend: [],
     quotaPauses: [{ resetsAt: reset, resumeAt: '2999-01-01T00:00:00Z' }],
   }

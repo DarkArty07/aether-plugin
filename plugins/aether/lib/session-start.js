@@ -145,20 +145,30 @@ function sweepNote(cwd, env) {
   }
 }
 
-function autonomyNote(cwd) {
+function autonomyNote(cwd, session = null) {
   try {
     const { repoPaths } = require('./git.js')
-    const { openRun, runPaths, status } = require('./autonomy.js')
+    const { runsFor, runPaths, status } = require('./autonomy.js')
     const { mainRoot } = repoPaths(cwd)
-    const run = openRun(mainRoot)
-    if (!run) return ''
-    const { diary } = runPaths(mainRoot, run.id)
-    let note = `Autonomous run ${run.id} is open: load the aether:autonomous-runs skill, then read ${diary} and run \`aether-autonomy status\` before anything else.`
-    const current = status(mainRoot)
-    if (current && current.stop === 'quota' && current.quota) {
-      note += ` The run is paused by the quota brake: the five-hour window resets ${current.quota.resetsAt} and the run resumes ${current.quota.resumeAt}. Do not start anything of this run before then; Aether re-arms the resume in this session.`
+    const { own, others } = runsFor(mainRoot, session)
+    if (!own && others.length === 0) return ''
+    const parts = []
+    if (own) {
+      const { diary } = runPaths(mainRoot, own.run.id)
+      parts.push(`Autonomous run ${own.run.id} is open: load the aether:autonomous-runs skill, then read ${diary} and run \`aether-autonomy status\` before anything else.`)
+      const current = status(mainRoot, { session })
+      if (current && current.stop === 'quota' && current.quota) {
+        parts.push(`The run is paused by the quota brake: the five-hour window resets ${current.quota.resetsAt} and the run resumes ${current.quota.resumeAt}. Do not start anything of this run before then; Aether re-arms the resume in this session.`)
+      }
+    } else {
+      parts.push('This session has no autonomous run open.')
     }
-    return note
+    if (others.length > 0) {
+      const list = others.map(({ run }) => `${run.id} (session ${run.session || 'unknown'})`).join(', ')
+      const continues = others.map(({ run }) => `aether-autonomy continue ${run.id}`).join(' or ')
+      parts.push(`Autonomous runs of other sessions are open (information only, not yours): ${list}. If one of them is yours from a restarted session, continue it before anything else: ${continues}.`)
+    }
+    return parts.join(' ')
   } catch {
     return ''
   }
@@ -536,7 +546,7 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
   } catch { /* A note must never stop startup. */ }
   // The open run's note stays the last thing of the context (tests/session-start-autonomy.test.js): the continuity notice
   // goes before it.
-  const runNote = autonomyNote(cwd)
+  const runNote = autonomyNote(cwd, input.session_id)
 
   // The welcome line is for the person and only at startup: a clear or a compact inside a session adds none. At startup the
   // notices of confirmed issues (spec 020) are shown too, oldest first, claiming only those that keep the whole output within

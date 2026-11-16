@@ -75,13 +75,15 @@ test('E10: a notice that never leaves still pauses, is recorded, and keeps its r
   assert.deepEqual(settings.paused, { run: run.id, resetsAt, resumeAt: crossing.json.resumeAt, percentUsed: 97 })
 })
 
-test('E2 and E3: after the resume hour the stop lifts, and a fresh session is told while it lasts', (t) => {
+test('E2 and E3: after the resume hour the stop lifts, and the session of the run is told at its next start while it lasts', (t) => {
   const { repo, cli, start, env } = setup(t)
   const run = start()
   const resetsAt = iso(Date.now() + 3600000)
   cli(['brake-crossing', '--kind', 'five_hour', '--percent', '96', '--resets-at', resetsAt, '--threshold', '95', '--notify', 'sent'])
   const sessionEnv = { ...process.env, CLAUDE_PLUGIN_ROOT: PLUGIN, AETHER_DATA_DIR: env.AETHER_DATA_DIR }
-  const input = { hook_event_name: 'SessionStart', session_id: 'sess-next', source: 'startup', agent_type: 'aether:lead' }
+  // The start notice names the pause only to the session that owns the run (spec 041 R10). A session with another id
+  // gets the list of the other sessions' runs instead; tests/session-start-sessions.test.js covers that.
+  const input = { hook_event_name: 'SessionStart', session_id: SESSION, source: 'startup', agent_type: 'aether:lead' }
   const r = spawnSync(process.execPath, [SESSION_BIN], { cwd: repo.dir, encoding: 'utf8', input: JSON.stringify(input), env: sessionEnv })
   assert.equal(r.status, 0, r.stderr)
   const context = JSON.parse(r.stdout).hookSpecificOutput.additionalContext
