@@ -149,7 +149,7 @@ To relaunch, keep the run id and name the tasks:
 
     aether-plan compile <plan.md> --run <runId> --only task-3,task-5
 
-After an interruption (the quota brake, the session limit, a crash, the owner), first run `aether-wt save <runId>`: every unit's uncommitted work is committed on its branch before any worktree is removed or reused. Then relaunch with the same run id and no `--only`: `aether-plan compile <plan.md> --run <runId>` leaves out the units already merged, and each saved unit continues from its branch. A relaunch continues each unit on its rung of `config/ladder.json`.
+After an interruption (the quota brake, the session limit, a crash, the owner), first run `aether-wt save <runId>`: every unit's uncommitted work is committed on its branch before any worktree is removed or reused. Then relaunch with the same run id and no `--only`: `aether-plan compile <plan.md> --run <runId>` leaves out the units already merged, and each saved unit continues from its branch. A relaunch continues each unit on its rung of `config/ladder.json`. Resuming a run is recompiling with `aether-plan compile <plan.md> --run <runId>`: the compile keeps the run's selection and warns on stderr when the offered set grows.
 
 Then launch `aether:run` again with the new JSON, subject to the compile refusal described in §3. Tasks outside the selection are assumed to be merged already.
 
