@@ -24,7 +24,7 @@ Una unidad del enjambre, o una tarea delegada, no puede terminar porque lo que l
 - Un archivo opcional de datos, `.specify/plan-rules.json`: una lista de reglas. Cada regla dice: cuando una tarea **añade** un archivo que coincide con un comodín, o **cambia** uno que coincide, debe poseer (ella o una tarea de la que depende) estos archivos; y el porqué, en una frase.
 - `aether-plan check` y `compile` leen ese archivo si existe y dan un aviso por cada regla que una tarea no cumple, con el porqué de la regla. Sin el archivo, nada cambia. Un archivo mal escrito es un error que nombra el archivo, no un aviso.
 - «Añade» significa: la ruta está en `Owns` como ruta literal y no existe en el árbol al compilar. «Cambia» significa: la ruta está en `Owns`, literal o por comodín, y existe.
-- Este repositorio estrena el archivo con sus reglas: archivo nuevo en `plugins/aether/lib/` → `docs/reference/components.md`; archivo nuevo en `plugins/aether/bin/` → `docs/reference/components.md`; cambio en `docs/decisions.md` → `docs/index.md`, `tests/docs-032.test.js` y `tests/docs-facts.test.js`.
+- Este repositorio estrena el archivo con sus reglas: archivo nuevo en `plugins/aether/lib/` → `docs/reference/components.md`; archivo nuevo en `plugins/aether/bin/` → `docs/reference/components.md`; cambio en `docs/decisions.md` → `docs/index.md`, `tests/docs-032.test.js` y `tests/docs-facts.test.js`. Esta última regla avisa por cualquier edición del archivo, no solo por una decisión nueva (solo una decisión nueva mueve el rango A1–A127 que fija `tests/docs-032.test.js`); su porqué dice «si añade una decisión» y el Lead descarta el aviso de una corrección de errata. Es un falso aviso aceptado: `Owns` no distingue una edición de otra.
 - El verbo nuevo de un bin que ya existe no se puede deducir de `Owns`. Se cubre con texto: la skill de tareas y el texto del Writer ya piden «include tests for global rules (such as a caller per verb…)»; se añade que lean `.specify/plan-rules.json` cuando existe y que el registro de lo que una tarea crea va en esa misma tarea. El Judge lo comprueba en su paso de tareas.
 
 ### P2. El aviso de pruebas también mira comodines y carpetas (#266)
@@ -33,37 +33,49 @@ Una unidad del enjambre, o una tarea delegada, no puede terminar porque lo que l
 
 ### P3. Dos veces las mismas pruebas ajenas en rojo paran la unidad (#266)
 
-- Cuando el gate de una unidad queda en rojo y **ninguna** de las pruebas que fallan es de un archivo que la unidad posee, la causa es ajena. La segunda vez seguida con el mismo conjunto de pruebas ajenas, la unidad deja de subir y espera al Lead, como ya hace con `blocked-same-cause`, con un motivo que nombra las pruebas y la ruta del parche guardado.
-- Cómo se sabe de quién es una prueba: por la ubicación que da el corredor de pruebas cuando la da (`node --test` la da); si no, buscando el nombre de la prueba en los archivos de prueba que la unidad posee. Si no se puede saber, la unidad sigue como hoy.
+- Cuando el gate de una unidad queda en rojo y **ninguna** de las pruebas que fallan es de un archivo que la unidad posee, la causa es ajena. La segunda vez seguida con el mismo conjunto de pruebas ajenas, la unidad deja de subir y espera al Lead, como ya hace con `blocked-same-cause`.
+- **Quién decide de quién es cada prueba: `plugins/aether/lib/wt-gate.js`**, que ya conoce `Owns` (`task.owns`) y el worktree. Cada hallazgo de prueba que arma lleva un campo nuevo `own`: `false` cuando el corredor da la ubicación de la prueba (`node --test` la da; la misma que lee `failureSignatures`) y esa ruta no coincide con `Owns`; `true` cuando coincide, o cuando el nombre de la prueba aparece en un archivo de prueba que `Owns` cubre; `null` cuando no se puede saber. Un hallazgo sin `own` (un fallo que no es de prueba, como un cambio fuera de `Owns`) no es ajeno.
+- **Quién cuenta las dos veces: el workflow** (`plugins/aether/workflows/run.workflow.js`), junto al uso de `gateFindingsOf` en `work()`. Una función nueva y pequeña devuelve el conjunto ordenado de nombres cuando **todos** los hallazgos del gate tienen `own === false`, y `null` en otro caso. La unidad guarda el último conjunto; si el nuevo es igual, la unidad termina en `blocked` con el motivo `blocked-foreign-tests: <pruebas>; …` y no llama al supervisor ni a `judgeFix`, que sigue siendo una función pura que no recibe `Owns` y no cambia. El prefijo `blocked-foreign-tests:` se añade a `STUCK_REASONS` (`run.workflow.js`, línea 263), así que la unidad espera al Lead con `stuckWaitSeconds`. Un gate sin conjunto ajeno borra el último conjunto guardado.
 - Una prueba propia en rojo sigue subiendo la escalera como hoy: un modelo más capaz puede arreglarla.
 
 ### P4. Un `BLOCKED` de un delegado vuelve al Lead (#294)
 
 - En una tarea delegada que edita en otro harness, un `BLOCKED` o un `NEEDS_CONTEXT` del implementador termina el intento: el resultado vuelve al Lead con la pregunta y el parche de lo hecho. No se prueba otro par ni el respaldo en Claude, que chocarían con lo mismo.
-- El Lead contesta relanzando la misma tarea con el alcance corregido, o con `fix`.
+- **El resultado que devuelve** (tres capas, las tres cambian):
+  1. `plugins/aether/lib/lane-delegate.js`: el bucle del implementador, en cuanto la llamada contesta `blocked` o `needs-context`, anota el intento en `tried` (con su `patch`, que `salvagePatch` ya guarda) y termina con `{ status: 'blocked', cause, question, reason, tried, callCount }`, en lugar de excluir el par y elegir otro. `question` es la pregunta del implementador; el bucle del revisor no cambia.
+  2. `plugins/aether/lib/delegate-run.js`: hoy todo estado distinto de `done` es `ok: false` sin parche. Un estado `blocked` pasa a ser `{ ok: false, status: 'blocked', reason: <la pregunta>, patch: <el último tried[].patch o null> }`, y el parche entra en el registro del intento. Los demás estados no cambian.
+  3. `plugins/aether/hooks/delegate.mjs`: en `runExternal`, un fin con `status: 'blocked'` no va a `runAnswering` ni a `rescueLine`. El hook entrega al Lead, como respuesta de la tarea, un texto que dice que el delegado en `<par>` contestó `BLOCKED`, la pregunta y la ruta del parche, y que ningún otro par ni Claude lo intentó. Cualquier otro fin que no entrega sigue al respaldo en Claude como hoy.
+- El Lead contesta relanzando la misma tarea con el alcance corregido, o con `fix`. Un `BLOCKED` no es un veredicto: no sube un escalón ni gasta una corrección de la escalera (supuesto 4).
 - Un fallo del par que no es una respuesta del implementador (cuota, tiempo, arranque) sigue como hoy: se prueba el par siguiente.
+- Hay que actualizar la frase de `docs/guide/delegates.md` («An external delegate fails in any other way… runs on Claude»), que hoy no distingue este caso.
 
 ### P5. El Lead sabe dónde está el parche (#266)
 
-- El motivo de una unidad que para por P3 o por `blocked-outside-owns` nombra la ruta del parche guardado. La skill del enjambre dice el camino: aplicar el parche en el worktree de la unidad, hacer el commit y entregarlo con `aether-wt deliver --widen`. No hay verbo nuevo.
+- Cuándo existe cada cosa (`run.workflow.js`, `rescue` y `close`; `worktrees.js`, `removeUnit`): mientras la unidad espera al Lead, su trabajo está en su worktree y **no hay parche todavía**; el parche `patches/<task>.patch` lo escribe `removeUnit`, que `close` llama cuando la espera termina, y esa misma llamada borra el worktree y la rama.
+- El motivo de una unidad que para por P3 (`blocked-foreign-tests:`) o por `blocked-outside-owns:` termina con una frase que dice las dos cosas en ese orden: durante la espera, el trabajo está en el worktree de la unidad (el campo `worktree` de la salida de `aether-wt watch`); si la espera termina sin entrega, queda en `<runDir>/patches/<task>.patch`.
+- La skill del enjambre (`skills/swarm/SKILL.md`, «Stuck unit») ya dice el camino de la espera: editar el archivo ajeno en el worktree de la unidad, hacer el commit y entregarlo con `aether-wt deliver --commit <sha> --reason … --widen <rutas>`. Se añade que este camino vale también para `blocked-foreign-tests:`, y, para después de la espera, `git apply <parche>` en el worktree de integración y `aether-wt adopt`, el camino que el workflow ya escribe en `blockHint`. No hay verbo nuevo.
 
 ## Qué queda fuera
 
 - Deducir solo las reglas de registro leyendo las pruebas del proyecto.
 - Un verbo que integre un parche.
 - Cambiar cuántos escalones tiene la escalera o cuándo sube una prueba propia.
+- Un archivo nuevo que entra bajo un comodín o una carpeta de `Owns`: P1 solo lo ve como «añade» si la ruta está en `Owns` como ruta literal. Los archivos creados bajo un comodín no activan ninguna regla de registro; el Writer y el Judge los cubren con el texto de P1.
 - Que la cadena de un delegado se detenga con el freno de cuota (#295).
 
 ## Supuestos del Lead
 
 1. Las reglas del proyecto viven en `.specify/plan-rules.json`, junto a `feature.json`. Reversible.
-2. Los avisos de las reglas son como los demás avisos de `check`: bloquean hasta que el Lead mete el archivo en `Owns` o escribe por qué no aplica.
+2. Los avisos de las reglas son como los demás avisos de `check` y de `compile`: salen en `warnings` con `ok: true` y no impiden compilar (`plan-compile.js`, `warnings` de la salida). Quien los lee, el Lead o el Judge en su paso de tareas, mete el archivo en `Owns` o escribe por qué no aplica; nada lo impone por código.
 3. P3 usa el mismo tiempo de espera que las demás unidades atascadas (`stuckWaitSeconds`).
+4. Un `BLOCKED` de un delegado no cuenta en la escalera de delegados: ni sube un escalón ni gasta una corrección, porque no hubo veredicto sobre un intento. El relanzamiento con el alcance corregido es el mismo escalón. Reversible.
 
 ## Cómo se comprueba
 
 - P1: un plan de prueba con una tarea que añade `lib/x.js` sin poseer el archivo de registro da el aviso con el porqué; con el archivo en `Owns`, o en una tarea de la que depende, no lo da; sin `plan-rules.json` no hay avisos nuevos; un `plan-rules.json` roto es un error que lo nombra.
+- P1, límite: una tarea que posee `lib/*.js` y crea un archivo nuevo bajo ese comodín no recibe aviso de registro.
 - P2: una tarea que posee `lib/foo-*.js` recibe el aviso de la prueba que importa `lib/foo-a.js`.
-- P3: en el workflow con agentes simulados, una unidad con una prueba ajena en rojo dos veces seguidas queda esperando con el motivo nuevo y no pasa del segundo escalón; con una prueba propia en rojo sube como hoy.
-- P4: una llamada simulada que contesta `BLOCKED` termina el intento con una sola llamada y el resultado lleva la pregunta; una llamada que falla por cuota sigue probando el par siguiente.
+- P3: en una prueba de `wt-gate`, una prueba roja de un archivo que `Owns` no cubre lleva `own: false`, una de un archivo propio `own: true`, y una sin ubicación `own: null`. En el workflow con agentes simulados, una unidad con una prueba ajena en rojo dos veces seguidas queda esperando con `blocked-foreign-tests:` y no pasa del segundo escalón; con una prueba propia en rojo, o con un conjunto ajeno que cambia entre las dos vueltas, sube como hoy.
+- P4: una llamada simulada a `lane-delegate` que contesta `BLOCKED` termina el intento con una sola llamada y devuelve `status: 'blocked'` con la pregunta y el parche; una que falla por cuota sigue probando el par siguiente. Una prueba de `delegate-run` con ese resultado comprueba `ok: false`, `status: 'blocked'`, la pregunta como `reason` y la ruta del parche. Una prueba del mod (`hooks/delegate.test.ts`) con un fin `blocked` comprueba que el hook entrega el texto con la pregunta y el parche y que **ningún** paso de Claude corre después; con un fin `failed` el respaldo en Claude corre como hoy (las pruebas de rescate existentes).
+- P5: en el workflow con agentes simulados, el motivo de una unidad que para por `blocked-foreign-tests:` o `blocked-outside-owns:` nombra el worktree y la ruta `patches/<task>.patch`, y una prueba de la skill o del texto del enjambre comprueba que dice `deliver --widen` para la espera y `git apply` para después de ella.
 - `npm run check` pasa.
