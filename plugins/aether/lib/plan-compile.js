@@ -506,6 +506,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
     plan: planPath,
     compiledAt: previous && previous.compiledAt ? previous.compiledAt : new Date().toISOString(),
     launches: previous ? (previous.launches || 1) + 1 : 1,
+    session: previous && previous.session ? previous.session : (env.CLAUDE_CODE_SESSION_ID || null),
   })
   const compileRoot = worktreeOf(path.dirname(planPath))
   const warnings = [...parsed.warnings, ...graph.warnings, ...planWarnings(parsed, compileRoot), ...docWarnings(parsed, compileRoot)]

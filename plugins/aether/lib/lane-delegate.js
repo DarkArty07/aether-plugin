@@ -459,6 +459,7 @@ async function delegateWithEnv(cwd, flags, deps) {
     plan: null,
     compiledAt: new Date(nowOf(deps)).toISOString(),
     launches: 1,
+    session: charge.session ?? null,
   })
 
   const ctx = {
