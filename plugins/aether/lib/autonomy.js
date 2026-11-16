@@ -473,10 +473,15 @@ function runsFor(mainRoot, session) {
   return { own, others }
 }
 
+function runSessions(run) {
+  const prev = Array.isArray(run && run.previousSessions) ? run.previousSessions : []
+  return new Set([run && run.session, ...prev].filter((s) => typeof s === 'string' && s !== ''))
+}
+
 function latestSessionRunStart(mainRoot, session) {
   let latest = null
   for (const { run } of runs(mainRoot)) {
-    if (run.session !== session) continue
+    if (!runSessions(run).has(session)) continue
     const started = Date.parse(run.started)
     if (!Number.isFinite(started)) return Infinity
     if (latest === null || started > latest) latest = started
@@ -800,11 +805,8 @@ function swarmSpend(mainRoot, run, { dataDir, now }) {
   const from = Date.parse(run.started)
   const until = run.ended ? Date.parse(run.ended) : Infinity
   const inWindow = (start) => Number.isFinite(start) && start >= from && start < until
-  const prevSessions = Array.isArray(run.previousSessions)
-    ? run.previousSessions.map((entry) => (typeof entry === 'string' ? entry : entry && entry.session))
-    : []
-  const runSessions = new Set([run.session, ...prevSessions].filter(Boolean))
-  const matchesSession = (launchSession) => !run.session || !launchSession || runSessions.has(launchSession)
+  const sessions = runSessions(run)
+  const matchesSession = (launchSession) => !run.session || !launchSession || sessions.has(launchSession)
   const abandoned = abandonedRuns(mainRoot, dataDir)
   const delegateWindows = delegateAttemptWindows(dataDir)
   const briefCache = new Map()
@@ -1085,7 +1087,7 @@ function launchRefusal(cwd, { session = null, dataDir = runDataDir(), now = Date
     if (!sel.ok) return null
     st = statusOfRun(sel.item.run, sel.item.paths, now, { mainRoot, dataDir: resolvedDataDir })
     if (!st.open || !st.stop) return null
-    others = runsFor(mainRoot, session).others
+    others = st.stop === 'quota' ? runsFor(mainRoot, session).others : null
   } catch (error) {
     return { stop: 'unreadable', id: null, message: `the open run's state could not be read: ${error.message}` }
   }
@@ -1145,11 +1147,11 @@ function continueRun(mainRoot, id, { session = null, now = Date.now() } = {}) {
   run.previousSessions = from ? [...prev, from] : [...prev]
   run.session = session
   const iso = new Date(now).toISOString()
+  writeJsonFile(paths.runFile, run)
   fs.appendFileSync(
     paths.diary,
     `\n## Continuación ${iso}\n\n- La corrida pasa de la sesión ${from || 'sin sesión'} a la sesión ${session}.\n`,
   )
-  writeJsonFile(paths.runFile, run)
   return { ok: true, run, from }
 }
 
@@ -1306,17 +1308,11 @@ function readSwarmState(mainRoot, swarmRunId) {
   }
 }
 
-function runMatchesSession(run, session) {
-  if (run.session === session) return true
-  if (!Array.isArray(run.previousSessions)) return false
-  return run.previousSessions.some((entry) => (typeof entry === 'string' ? entry === session : entry && entry.session === session))
-}
-
 function attributeSavedRuns(mainRoot, open, swarmRunId, now) {
   const state = readSwarmState(mainRoot, swarmRunId)
   if (!state) return []
   if (typeof state.session === 'string' && state.session) {
-    return open.filter(({ run }) => runMatchesSession(run, state.session))
+    return open.filter(({ run }) => !run.session || runSessions(run).has(state.session))
   }
   const compiledMs = typeof state.compiledAt === 'string' ? Date.parse(state.compiledAt) : NaN
   if (!Number.isFinite(compiledMs)) return []
@@ -1426,6 +1422,7 @@ module.exports = {
   check,
   list,
   openRuns,
+  runSessions,
   selectRun,
   runsFor,
   openRun,

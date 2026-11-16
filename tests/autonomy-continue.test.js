@@ -3,6 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const path = require('node:path')
 const autonomy = require('../plugins/aether/lib/autonomy.js')
 const { A, B, C, QUOTE, MIN, HOUR, T0, setupRuns } = require('./run-session-fixture.js')
 
@@ -89,4 +90,34 @@ test('R13 and R15: continue reads no transcript, preserves pauses and spend, cha
   assert.deepEqual(run.quotaPauses, [pause])
   assert.deepEqual(run.spend.map((e) => e.usd), [3.5])
   assert.equal(raw(b.run.id).includes(stranger), false)
+})
+
+test('R15: after continue, the earlier session cannot start a new run on its already-used ExitPlanMode approval', (t) => {
+  const { repo, dataDir, configDir, open } = setupRuns(t)
+  const transcript = path.join(configDir, 'projects', '-home-owner-project', `${A}.jsonl`)
+  const quoteLine = JSON.stringify({
+    type: 'user',
+    isSidechain: false,
+    origin: { kind: 'human' },
+    timestamp: new Date(T0 - 6 * MIN).toISOString(),
+    message: { role: 'user', content: QUOTE },
+  })
+  const approval = JSON.stringify({
+    type: 'assistant',
+    timestamp: new Date(T0 - 5 * MIN).toISOString(),
+    message: { role: 'assistant', content: [{ type: 'tool_use', id: 'p1', name: 'ExitPlanMode', input: {} }] },
+  })
+  const approvalResult = JSON.stringify({
+    type: 'user',
+    timestamp: new Date(T0 - 4 * MIN).toISOString(),
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'p1', is_error: false, content: 'User has approved your plan.' }] },
+  })
+  fs.writeFileSync(transcript, [quoteLine, approval, approvalResult].join('\n') + '\n')
+
+  const a = open(A, {}, T0)
+  assert.equal(a.ok, true)
+  assert.equal(autonomy.continueRun(repo.dir, a.run.id, { session: B, now: T0 + 5 * MIN }).ok, true)
+  const second = autonomy.start(repo.dir, { quote: QUOTE, session: A }, { configDir, dataDir, now: T0 + 10 * MIN })
+  assert.equal(second.ok, false)
+  assert.match(second.reason, /ExitPlanMode/)
 })
