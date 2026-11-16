@@ -8,7 +8,7 @@ const ROOT = path.join(__dirname, '..')
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 const json = (rel) => JSON.parse(read(rel))
 const quoted = (text) => [...text.matchAll(/'([a-z]+)'/g)].map((m) => m[1])
-const SOURCE = () => require('../plugins/aether/lib/harness/index.js').HARNESS_NAMES
+const SOURCE = () => require('../plugins/aether/lib/harness/index.js').ADAPTER_NAMES
 const check = (source, copy) => assert.deepEqual(copy, source)
 
 const COPIES = [

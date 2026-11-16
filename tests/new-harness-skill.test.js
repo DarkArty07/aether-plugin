@@ -46,7 +46,7 @@ test('every list the skill tells to touch exists in the tree, and every fixed li
 
 test('the one list of the harnesses is named in the skill, harness-names.js derives from it, and its five copies read harness-names.js (R23; spec 036 R23)', () => {
   const have = listedBlock().map(({ file, name }) => `${file} ${name}`)
-  assert.ok(have.includes('plugins/aether/lib/harness/index.js HARNESS_NAMES'))
+  assert.ok(have.includes('plugins/aether/lib/harness/index.js ADAPTER_NAMES'))
   assert.ok(read('plugins/aether/lib/harness-names.js').includes("require('./harness/index.js')"))
   const copies = { 'delegate-calls.js': 'HARNESSES', 'router-pick.js': 'DELEGATE_HARNESSES', 'router-quota.js': 'EXTERNAL', 'router-renewal.js': 'RENEWABLE', 'lane-delegate.js': 'ALLOWED_HARNESSES' }
   for (const [file, name] of Object.entries(copies)) {

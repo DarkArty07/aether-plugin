@@ -4,7 +4,7 @@
 // only when a call asks for it, so one whose module is missing leaves the others working.
 // Family: harness.
 
-const HARNESS_NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']
+const ADAPTER_NAMES = ['agy', 'codex', 'grok', 'cursor', 'muse']
 const FACTORY = { agy: 'createAgy', codex: 'createCodex', grok: 'createGrok', cursor: 'createCursor', muse: 'createMuse' }
 
 // Factories added by tests, or by a caller that brings its own harness, under any name.
@@ -23,7 +23,7 @@ function unregisterAdapter(name) {
 function createAdapter(name, settings, dataDir = null) {
   const options = { command: settings.command, groups: settings.groups, dataDir }
   if (registered.has(name)) return registered.get(name)(options)
-  if (!HARNESS_NAMES.includes(name)) throw new Error(`unknown harness: ${name}`)
+  if (!ADAPTER_NAMES.includes(name)) throw new Error(`unknown harness: ${name}`)
   let factory
   try {
     factory = require(`./${name}.js`)[FACTORY[name]]
@@ -34,4 +34,4 @@ function createAdapter(name, settings, dataDir = null) {
   return factory(options)
 }
 
-module.exports = { HARNESS_NAMES, createAdapter, registerAdapter, unregisterAdapter }
+module.exports = { ADAPTER_NAMES, createAdapter, registerAdapter, unregisterAdapter }

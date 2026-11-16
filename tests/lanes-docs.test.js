@@ -122,7 +122,7 @@ test("the documents say that Grok's quota is read over ACP with its UI as the fa
       'A `status` run by hand does not refresh.',
       'A line without `creditUsagePercent` is read as 0% used',
       '**Adding a harness.**',
-      '`HARNESS_NAMES` and `FACTORY` of `plugins/aether/lib/harness/index.js`',
+      '`ADAPTER_NAMES` and `FACTORY` of `plugins/aether/lib/harness/index.js`',
       "`quotaCost: 'process'`",
       'or `unknown` when it cannot read them',
     ],

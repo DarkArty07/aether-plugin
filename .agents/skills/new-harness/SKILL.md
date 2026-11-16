@@ -28,7 +28,7 @@ The owner's rule (2026-10-29, spec 022): «así como escogiste todas estas opcio
 9. **Touch every list that names the harnesses.** The fixed lists are array literals (or a `Set` of one) assigned in `plugins/aether/lib/**/*.js`, `plugins/aether/hooks/*.mjs` and `scripts/*.js`. `tests/harness-lists.test.js` fails when one of them omits the new harness without a reason. These are all of them:
 
 <!-- lists:start -->
-plugins/aether/lib/harness/index.js HARNESS_NAMES — the one list of the harnesses; `harness-names.js` filters `cursor` out of it, and HARNESSES (delegate-calls.js), DELEGATE_HARNESSES (router-pick.js), EXTERNAL (router-quota.js), RENEWABLE (router-renewal.js) and ALLOWED_HARNESSES (lane-delegate.js) copy `harness-names.js`
+plugins/aether/lib/harness/index.js ADAPTER_NAMES — the one list of the harnesses; `harness-names.js` filters `cursor` out of it, and HARNESSES (delegate-calls.js), DELEGATE_HARNESSES (router-pick.js), EXTERNAL (router-quota.js), RENEWABLE (router-renewal.js) and ALLOWED_HARNESSES (lane-delegate.js) copy `harness-names.js`
 plugins/aether/lib/lane-pick.js REFRESHABLE — Codex stays out: its reading is free and the adapter takes it, so it has no refresher
 plugins/aether/hooks/panel-view.mjs HARNESS_NAMES
 scripts/build-models-index.js HARNESSES

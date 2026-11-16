@@ -7,7 +7,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { HARNESS_NAMES } = require('./harness/index.js')
+const { ADAPTER_NAMES } = require('./harness/index.js')
 const { isObject } = require('./common.js')
 const { readingUsable } = require('./lane-order.js')
 const { commandPath, commandInstalled, laneEnv, killGroup, killMarked } = require('./lane-process.js')
@@ -115,7 +115,7 @@ function harnessNames(text) {
   const names = []
   for (const part of String(text ?? '').split(',')) {
     const name = part.trim().toLowerCase()
-    if (HARNESS_NAMES.includes(name) && !names.includes(name)) names.push(name)
+    if (ADAPTER_NAMES.includes(name) && !names.includes(name)) names.push(name)
   }
   return names
 }

@@ -26,7 +26,7 @@ const HARNESSES = ['agy', 'agy,grok', ' Grok, AGY ', 'gork', 'agy,gork,grok', ''
 const SUPERDELEGATION = [true, false, 'true', 'false', '', undefined]
 
 test('the harness names of the mod are the names of the libs', () => {
-  assert.deepEqual(view.HARNESS_NAMES, harness.HARNESS_NAMES)
+  assert.deepEqual(view.HARNESS_NAMES, harness.ADAPTER_NAMES)
 })
 
 test('the switch the panel shows is the one the delegate settings hold, for every value of superdelegation', () => {
