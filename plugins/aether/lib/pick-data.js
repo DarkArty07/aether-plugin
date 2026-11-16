@@ -6,7 +6,6 @@
 
 const { isObject } = require('./common.js')
 const laneMarks = require('./lane-marks.js')
-const { readAllMarks } = require('./router-marks.js')
 const order = require('./lane-order.js')
 const { STALE_MS } = require('./harness/grok-quota.js')
 
@@ -62,11 +61,10 @@ function groupView(label, reading, { reserve, now, command, mark = null, readAt 
   }
 }
 
-// Marks already read by the caller win. Otherwise the router side reads through readAllMarks and everyone else
-// through liveMarks. Neither path writes a mark file of its own; a lifted mark goes through the lift callback.
-function marksOf({ marks, dataDir, now, markSource }) {
+// Marks already read by the caller win. Otherwise liveMarks reads them. Neither path writes a mark file of its own;
+// a lifted mark goes through the lift callback.
+function marksOf({ marks, dataDir, now }) {
   if (Array.isArray(marks)) return marks
-  if (markSource === 'router') return readAllMarks(dataDir, now)
   return laneMarks.liveMarks(dataDir, now)
 }
 
@@ -74,13 +72,13 @@ function marksOf({ marks, dataDir, now, markSource }) {
 // objectGroups drops a group reading that is not an object (the delegate's readings). extraGroups also keeps a
 // group that only the reading names (the swarm). A liftable mark is cleared, and honorLiftResult keeps it when
 // the lift callback says the file is still there. groupError is the harness's failed reading, on every group.
-function pickData(config, name, reading, { marks, now, lift, lifeMs, extraGroups = false, objectGroups = false, groupError, honorLiftResult = false, dataDir, markSource } = {}) {
+function pickData(config, name, reading, { marks, now, lift, lifeMs, extraGroups = false, objectGroups = false, groupError, honorLiftResult = false, dataDir } = {}) {
   const settings = config.harnesses[name]
   const reserve = config.reserve
   const listed = Object.keys(settings.groups ?? {})
   const fromReading = extraGroups && isObject(reading?.groups) ? Object.keys(reading.groups) : []
   const keys = extraGroups ? [...new Set([...listed, ...fromReading])] : listed
-  const heldMarks = marksOf({ marks, dataDir, now, markSource })
+  const heldMarks = marksOf({ marks, dataDir, now })
   const groups = {}
   for (const key of keys) {
     const stored = isObject(reading?.groups) && Object.hasOwn(reading.groups, key) ? reading.groups[key] : null

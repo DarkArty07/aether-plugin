@@ -19,15 +19,14 @@ const { roleBody, claudeMdSections, WORKDIR_RULE } = require('./lane-calls.js')
 const { priceEntry, loadPrices } = require('./prices.js')
 const { choose, enabled: superdelegationEnabled } = require('./superdelegation.js')
 const pairsTable = require('./pairs.js')
-const { excludeList, latestReadings } = require('./lane-pick.js')
-const quota = require('./lane-quota.js')
-const { pickData } = require('./pick-data.js')
+const { excludeList, latestReadings, harnessViews } = require('./lane-pick.js')
 const { listProjectSkills, formatProjectSkills } = require('./skill-brief.js')
 
 const PLUGIN_BIN = path.join(__dirname, '..', 'bin')
 const SKILLS_DIR = path.join(__dirname, '..', 'skills')
 const KILL_GRACE_SECONDS = 60
 const MAX_FINDINGS = 10
+const MAX_PROJECT_SKILLS = 30
 const EXAM_DIR = '.aether/exam'
 // What the next Writer is told when its worktree already holds an earlier pair's partial. The guide quotes this line.
 const CONTINUATION_LINE = 'An earlier writer began this round. Its partial document is in the worktree. It may be incomplete or wrong. Continue from it after checking it against the intent.'
@@ -707,10 +706,18 @@ function wantsProjectSkills(seat, doc, message) {
   return seat === 'judge' && doc !== 'spec' && !/^Review the spec\b/.test(String(message || ''))
 }
 
-function seatPrompt({ seat, harness, adapter, message, workdir, feature, doc = 'plan' }) {
+// Caps the Project skills block so large repositories do not bloat every seat prompt.
+function boundedProjectSkillsBlock(skills) {
+  if (!Array.isArray(skills) || skills.length === 0) return ''
+  if (skills.length <= MAX_PROJECT_SKILLS) return formatProjectSkills(skills)
+  const omitted = skills.length - MAX_PROJECT_SKILLS
+  return `${formatProjectSkills(skills.slice(0, MAX_PROJECT_SKILLS))}\n\n(Showing ${MAX_PROJECT_SKILLS} of ${skills.length} project skills; ${omitted} more omitted.)`
+}
+
+function seatPrompt({ seat, harness, adapter, message, workdir, skillsRoot = workdir, feature, doc = 'plan' }) {
   const parts = [roleBody(seat), seatNote(seat, harness, feature, doc, message), ...claudeMdSections(workdir, os.homedir()), message]
   if (wantsProjectSkills(seat, doc, message) && !String(message || '').includes('## Project skills')) {
-    const block = formatProjectSkills(listProjectSkills(workdir))
+    const block = boundedProjectSkillsBlock(listProjectSkills(skillsRoot))
     if (block) parts.push(block)
   }
   if (adapter.schemaInPrompt === true) parts.push(answerSection(seat, doc))
@@ -1062,7 +1069,7 @@ async function runRound({ cwd, mainRoot, seat, session, feature, doc, id: givenI
     }
     const schemaFile = path.join(dir, 'schema.json')
     fs.writeFileSync(schemaFile, `${JSON.stringify(schema, null, 2)}\n`)
-    const prompt = seatPrompt({ seat, harness: external.harness, adapter, message: roundMessage, workdir: worktree, feature, doc })
+    const prompt = seatPrompt({ seat, harness: external.harness, adapter, message: roundMessage, workdir: worktree, skillsRoot: cwd, feature, doc })
     fs.writeFileSync(path.join(dir, 'prompt.md'), prompt)
     const argv = adapter.argv({ model: external.model, level: external.level, schemaFile, timeoutSeconds: external.timeoutSeconds, prompt })
     const harnessStarted = Date.now()
@@ -1223,6 +1230,7 @@ function unavailable(seat, reason, { native, tried, decision }) {
 function withProjectSkills(top, result) {
   if ((result.exitCode === 3 || result.exitCode === 4) && result.value && typeof result.value === 'object') {
     result.value.projectSkills = listProjectSkills(top)
+    result.value.projectSkillsBlock = boundedProjectSkillsBlock(result.value.projectSkills)
   }
   return result
 }
@@ -1275,31 +1283,12 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   const now = Date.now()
   const enabledNames = lanes.enabledHarnesses(env)
   const latest = await latestReadings(config, enabledNames, { dataDir, now })
-  // The readings as the adapters gave them: the lane line measures what the round used between two of them.
   const readings = {}
   const harnesses = {}
   for (const name of enabledNames) {
-    const onRead = ({ groups }) => {
-      readings[name] = groups
-    }
-    if (!Object.hasOwn(config.harnesses, name)) continue
-    const settings = config.harnesses[name]
-    const taken = quota.harnessView(name, settings, { reserve: config.reserve, now, dataDir, fresh: false, latest: latest[name] ?? null, onRead, assemble: false })
-    if (taken.installed !== true) {
-      harnesses[name] = { command: taken.command, path: taken.path, installed: false, version: null, groups: {} }
-      continue
-    }
-    const prepared = pickData(config, name, taken.reading, {
-      now, dataDir, lifeMs: quota.lifeMsOf(settings), extraGroups: taken.error === undefined, groupError: taken.error, honorLiftResult: true,
-    })
-    harnesses[name] = {
-      command: taken.command,
-      path: taken.path,
-      installed: true,
-      version: taken.version,
-      ...(taken.error ? { error: taken.error } : {}),
-      groups: prepared.groups,
-    }
+    Object.assign(harnesses, harnessViews(config, [name], {
+      dataDir, now, latest, onRead: (reading) => { readings[name] = reading },
+    }))
   }
   const chosen = chooseSeat({ config, pairs: table, seat, author, harnesses, exclude, offered: (name, model, effort) => offeredByListing(name, model, effort) })
   if (chosen.native) {
@@ -1307,7 +1296,7 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
     return withProjectSkills(top, unavailable(seat, 'no-external', chosen))
   }
   const { external, decision } = chosen
-  external.quotaBefore = readings[external.harness]?.[external.group] ?? external.quotaBefore
+  external.quotaBefore = readings[external.harness]?.groups[external.group] ?? external.quotaBefore
   const message = typeof input === 'function' ? await input() : input
   if (message.trim() === '') throw new Error('the message is empty: give it on stdin')
   return withProjectSkills(top, await runRound({
@@ -1328,4 +1317,4 @@ async function seatCommand(argv, { input = '', env = process.env, cwd: callerCwd
   }))
 }
 
-module.exports = { REFERENCE, NATIVE, EXAM_DIR, USAGE, authorModel, excludeList, chooseSeat, offeredByListing, changedPaths, allowedFor, fileInside, changedAge, judgeText, windowUsed, findingTouch, revisionBrief, seatPrompt, seatCommand }
+module.exports = { REFERENCE, NATIVE, EXAM_DIR, USAGE, MAX_PROJECT_SKILLS, boundedProjectSkillsBlock, wantsProjectSkills, authorModel, excludeList, chooseSeat, offeredByListing, changedPaths, allowedFor, fileInside, changedAge, judgeText, windowUsed, findingTouch, revisionBrief, seatPrompt, seatCommand }

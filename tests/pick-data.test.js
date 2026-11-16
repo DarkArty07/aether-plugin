@@ -69,20 +69,22 @@ function delegateDeps(readings) {
   }
 }
 
-test('pickData is the one view preparation, and the three entry points call it', () => {
+test('pickData is the one view preparation, and the three entry points go through it', () => {
   assert.equal(typeof pickData, 'function')
   const pick = readLib('pick-data.js')
   assert.match(pick, /function pickData/)
   assert.match(pick, /liveMarks/)
-  assert.match(pick, /readAllMarks/)
+  assert.doesNotMatch(pick, /markSource|readAllMarks/)
   assert.match(pick, /Family: none/)
 
   const router = readLib('router-pick.js')
   const quota = readLib('lane-quota.js')
   const seat = readLib('seats.js')
-  for (const [name, text] of [['router-pick.js', router], ['lane-quota.js', quota], ['seats.js', seat]]) {
+  for (const [name, text] of [['router-pick.js', router], ['lane-quota.js', quota]]) {
     assert.ok(text.includes('pickData'), `${name} calls pickData`)
   }
+  assert.ok(seat.includes('harnessViews'), 'seats.js uses harnessViews instead of copying the loop')
+  assert.doesNotMatch(seat, /assemble:\s*false/)
   assert.doesNotMatch(router, /liftable|groupView/)
   assert.doesNotMatch(seat, /liftable|groupView/)
   const harnessView = quota.slice(quota.indexOf('function harnessView'), quota.indexOf('async function refresh'))
