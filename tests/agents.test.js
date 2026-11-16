@@ -100,3 +100,19 @@ test('the Examiner runs on Opus at high effort, writes only its exam, and never 
   assert.ok(body.includes('**One command per test,** run from the repository root'))
   assert.ok(body.includes('`.aether/exam/exam.json`'))
 })
+
+test('the Examiner runs every test on the base tree, uses plan interfaces and sentinels, follows the plan at edges, and starts where a change can show (#283)', () => {
+  const { body } = agentFile('examiner')
+  for (const needle of [
+    'run every test',
+    'against the base tree',
+    'syntax error',
+    'helper that never finds its case',
+    'sentinel values',
+    'Do not guess them from data files',
+    'follow `plan.md` and record the difference in `notes` as an ambiguity',
+    'never from a minimum or a maximum',
+  ]) {
+    assert.ok(body.includes(needle), `examiner.md mentions ${needle}`)
+  }
+})
