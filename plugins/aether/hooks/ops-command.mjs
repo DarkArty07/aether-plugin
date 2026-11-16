@@ -139,7 +139,10 @@ const COMMANDS = {
     { checks: [word('seat-stop'), is(SEAT_ID)] },
   ],
   'aether-plan': [{ checks: [word('check'), is(TASKS)] }],
-  'aether-exam': [{ checks: [word('store'), is(FEATURE)] }],
+  'aether-exam': [
+    { checks: [word('store'), is(FEATURE)] },
+    { checks: [word('recover'), is(FEATURE)] },
+  ],
 }
 
 const matches = (form, args) => form.checks.length === args.length && form.checks.every((check, i) => check(args[i]))

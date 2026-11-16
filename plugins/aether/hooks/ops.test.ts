@@ -363,3 +363,24 @@ for (const [name, marker] of [
     expect(answered(chunks).input).toEqual({ exitCode: 0, stdout: '{"started":true}\n' })
   })
 }
+
+test('aether-exam recover and store run in the mod, while bad forms go to the model', async ($, on) => {
+  const { runs, counts } = stubs(on, { answer: { exitCode: 0, stdout: '{"feature":"specs/007-demo","tests":[]}\n' } })
+  for (const command of ['aether-exam recover specs/007-demo', 'aether-exam store specs/007-demo']) {
+    await spawn($, opsPrompt(command))
+    const { chunks } = await step($)
+    expect(answered(chunks).input).toEqual({ exitCode: 0, stdout: '{"feature":"specs/007-demo","tests":[]}\n' })
+  }
+  expect(runs.length).toBe(2)
+  expect(runs[0].argv[1].endsWith('/bin/aether-exam')).toBe(true)
+  expect(runs[0].argv.slice(2)).toEqual(['recover', 'specs/007-demo'])
+  expect(runs[1].argv.slice(2)).toEqual(['store', 'specs/007-demo'])
+  expect(counts.modelSteps).toBe(0)
+
+  for (const bad of ['aether-exam recover docs/x', 'aether-exam recover specs/007-demo --from /tmp', 'aether-exam list']) {
+    await spawn($, opsPrompt(bad))
+    await step($)
+  }
+  expect(runs.length).toBe(2)
+  expect(counts.modelSteps).toBe(3)
+})

@@ -44,11 +44,12 @@ test('every command of a design round parses to its argument vector', () => {
   assert.deepEqual(parseOpsPrompt(prompt(`aether-lane seat-stop ${ID}`)), parsed('aether-lane', ['seat-stop', ID]))
   assert.deepEqual(parseOpsPrompt(prompt(`aether-plan check ${FEATURE}/tasks.md`)), parsed('aether-plan', ['check', `${FEATURE}/tasks.md`]))
   assert.deepEqual(parseOpsPrompt(prompt(`aether-exam store ${FEATURE}`)), parsed('aether-exam', ['store', FEATURE]))
+  assert.deepEqual(parseOpsPrompt(prompt(`aether-exam recover ${FEATURE}`)), parsed('aether-exam', ['recover', FEATURE]))
 })
 
 test('a seat-start needs its payload, and no other command of the round may carry one', () => {
   assert.equal(parseOpsPrompt(prompt(START.judge)), null)
-  for (const command of [`aether-lane seat-wait ${ID} --max 540`, `aether-lane seat-stop ${ID}`, `aether-plan check ${FEATURE}/tasks.md`, `aether-exam store ${FEATURE}`]) {
+  for (const command of [`aether-lane seat-wait ${ID} --max 540`, `aether-lane seat-stop ${ID}`, `aether-plan check ${FEATURE}/tasks.md`, `aether-exam store ${FEATURE}`, `aether-exam recover ${FEATURE}`]) {
     assert.equal(parseOpsPrompt(prompt(command, { payload: MESSAGE })), null, command)
   }
 })
@@ -84,6 +85,9 @@ test('a token the form does not allow, or a form out of order, is refused', () =
     `aether-plan compile ${FEATURE}/tasks.md`,
     `aether-exam run ${FEATURE}`,
     'aether-exam store docs/x',
+    'aether-exam recover docs/x',
+    `aether-exam recover ${FEATURE} --from /tmp`,
+    'aether-exam list',
   ]
   for (const command of other) assert.equal(parseOpsPrompt(prompt(command)), null, command)
 })

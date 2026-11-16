@@ -5,6 +5,7 @@
 //                                                        checkout, which is removed once it is kept)
 // aether-exam run <specs/NNN-topic> [--ref <commit>]    runs it on a commit (default: HEAD) in a disposable
 //                                                        worktree; ok is false when a test failed twice
+// aether-exam recover <specs/NNN-topic>                 lists checkout .aether/exam/ tests and index marks
 //
 // Prints one JSON line. Exits 1 only when the command itself fails.
 
@@ -12,7 +13,7 @@ const path = require('node:path')
 const lib = path.join(__dirname, '..', 'lib')
 const exam = require(path.join(lib, 'exam.js'))
 
-const USAGE = 'usage: aether-exam store <specs/NNN-topic> [--from <dir> (default: .aether/exam/)] | run <specs/NNN-topic> [--ref <commit>]'
+const USAGE = 'usage: aether-exam store <specs/NNN-topic> [--from <dir> (default: .aether/exam/)] | run <specs/NNN-topic> [--ref <commit>] | recover <specs/NNN-topic>'
 
 function value(args, flag) {
   const i = args.indexOf(flag)
@@ -25,11 +26,15 @@ function value(args, flag) {
 function main(argv) {
   const [verb, feature, ...rest] = argv
   const cwd = process.cwd()
-  if (!['store', 'run'].includes(verb) || !feature || feature.startsWith('--')) throw new Error(USAGE)
+  if (!['store', 'run', 'recover'].includes(verb) || !feature || feature.startsWith('--')) throw new Error(USAGE)
   const normalized = feature.replace(/\/+$/, '')
   if (verb === 'store') {
     const from = value(rest, '--from')
     return exam.storeCheckout(cwd, normalized, from)
+  }
+  if (verb === 'recover') {
+    if (rest.length > 0) throw new Error(USAGE)
+    return exam.recoverCheckout(cwd, normalized)
   }
   return exam.runExam(cwd, normalized, { ref: value(rest, '--ref') ?? 'HEAD' })
 }

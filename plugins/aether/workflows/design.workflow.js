@@ -989,7 +989,11 @@ function corrector(doc, path, phase) {
 async function examine(author) {
   const round = await seatRound({ seat: 'examiner', doc: 'exam', step: '', text: examinerMessage(), schema: EXAMINER_SCHEMA, phase: 'Exam', author })
   if (round.refused) return failure('examiner', round.failed, round).end
-  if (round.failed) return failedResult('examiner', round.failed)
+  if (round.failed) {
+    const recovered = await opsTwice(`aether-exam recover ${feature}`, { phase: 'Exam', label: 'exam: recover' })
+    if (recovered.error) return failedResult('examiner', `${round.failed} (exam recover failed: ${recovered.error})`)
+    return { ...failedResult('examiner', round.failed), tests: Array.isArray(recovered.tests) ? recovered.tests : [] }
+  }
   if (round.seat !== 'native') {
     // An external Examiner's round stores the exam itself.
     return typeof round.value.stored === 'string' ? { status: 'stored', dir: round.value.stored } : failedResult('exam-store', 'the external round stored no exam')
