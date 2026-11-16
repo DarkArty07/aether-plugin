@@ -162,7 +162,12 @@ test('a delegate whose begin fails leaves handler-threw with the kind of the err
     return { ok: true }
   })
   assert.deepEqual(seen, AGENT_CALL)
-  assert.deepEqual(out, { ok: true })
+  assert.deepEqual(out, {
+    ok: true,
+    context: [
+      'Aether could not register this delegate task because begin failed; the call ran as a plain agent on opus, outside the ladder; there is no task to judge with aether-delegate, and its result carries no checks.',
+    ],
+  })
   await settle()
   assert.deepEqual(faultsOf(writes), [{ time: 1000, source: 'delegate.begin', class: 'handler-threw', kind: 'Error' }])
 })
