@@ -37,12 +37,10 @@ function wordSimilarity(whatA, whatB, config = null) {
 }
 
 // Two findings with no significant word on either side never match, whatever the threshold.
-// At the bundled 0.35 threshold, require at least 0.55 so two different findings on one file do not collide.
 function findingsMatch(whatA, whatB, config = null) {
   const repeat = repeatOf(config)
   const score = wordSimilarity(whatA, whatB, repeat)
-  const threshold = repeat.similarityThreshold === 0.35 ? 0.55 : repeat.similarityThreshold
-  return score > 0 && score >= threshold
+  return score > 0 && score >= repeat.similarityThreshold
 }
 
 function sameFile(left, right) {
@@ -138,22 +136,29 @@ function posttool(input, ctx = {}) {
   if (!repeated || repeated.length === 0) return null
 
   const canon = canonicalRepo({ repo })
-  const noticedFiles = new Set(
-    readNotices(dataDir)
-      .filter((n) => n.kind === 'repeated-finding' && n.session === session && canonicalRepo(n) === canon)
-      .map((n) => n.name),
-  )
+  const noticed = readNotices(dataDir)
+    .filter((n) => n.kind === 'repeated-finding' && n.session === session && canonicalRepo(n) === canon && typeof n.name === 'string')
+    .map((n) => {
+      const idx = n.name.indexOf(': ')
+      return idx >= 0
+        ? { file: n.name.slice(0, idx), what: n.name.slice(idx + 2) }
+        : { file: n.name, what: '' }
+    })
 
-  const lines = repeated.map((item) => {
-    const file = item.finding.split(':')[0]
-    if (!noticedFiles.has(file)) {
-      recordNotice(dataDir, { session, repo, kind: 'repeated-finding', name: file })
-    }
+  const lines = []
+  for (const item of repeated) {
+    const idx = item.finding.indexOf(': ')
+    const file = idx >= 0 ? item.finding.slice(0, idx) : item.finding
+    const what = idx >= 0 ? item.finding.slice(idx + 2) : ''
+    const already = noticed.some((prev) => sameFile(prev.file, file) && (prev.what === what || (prev.what && what && findingsMatch(prev.what, what))))
+    if (already) continue
+    noticed.push({ file, what })
+    recordNotice(dataDir, { session, repo, kind: 'repeated-finding', name: item.finding })
     const taskNoun = item.tasks.length === 1 ? 'task' : 'tasks'
-    return `The finding "${item.finding}" already came up in ${taskNoun} ${item.tasks.join(', ')}. Consider a skill for it: load aether:skills.`
-  })
+    lines.push(`The finding "${item.finding}" already came up in ${taskNoun} ${item.tasks.join(', ')}. Consider a skill for it: load aether:skills.`)
+  }
 
-  return lines.join('\n')
+  return lines.length > 0 ? lines.join('\n') : null
 }
 
 module.exports = {

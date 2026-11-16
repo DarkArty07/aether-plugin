@@ -287,3 +287,14 @@ test('requirements.txt and pyproject.toml count only declared dependencies, not 
   ].join('\n') + '\n')
   assert.deepEqual(review.detectUncoveredTopics({ ...w.opts, dataDir: w.data }).map((x) => x.id), ['machine-learning'])
 })
+
+test('reviewSkill derives the repository from the skill path even when cwd is the main checkout', (t) => {
+  const w = world(t)
+  skill(w.repo.dir, 'artificial-analysis', { where: '.claude/skills' })
+  w.repo.git('add', '.claude')
+  w.repo.git('commit', '-qm', 'tracked skill')
+  const wt = path.join(w.repo.dir, '.aether', 'worktrees', 'unit')
+  w.repo.git('worktree', 'add', '-qb', 'unit', wt)
+  const wtSkill = path.join(wt, '.claude', 'skills', 'artificial-analysis')
+  assert.deepEqual(review.reviewSkill(wtSkill, { cwd: w.repo.dir, home: w.home }), [])
+})

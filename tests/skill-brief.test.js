@@ -95,8 +95,8 @@ test('recordUse only appends one line with the time, the session, the kind, the 
   assert.equal(sb.recordUse(data, { session: 's1', kind: 'delegate', task: 't1', skills: ['a', 'b'], time: 8 }), true)
   const lines = fs.readFileSync(sb.usesFile(data), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
   assert.deepEqual(lines, [
-    { time: 7, session: 's1', kind: 'run', run: '20261107-120000-abcd', task: 'task-3', skills: ['erebus-ui'] },
-    { time: 8, session: 's1', kind: 'delegate', run: null, task: 't1', skills: ['a', 'b'] },
+    { time: 7, session: 's1', kind: 'run', run: '20261107-120000-abcd', task: 'task-3', skills: ['erebus-ui'], repo: null },
+    { time: 8, session: 's1', kind: 'delegate', run: null, task: 't1', skills: ['a', 'b'], repo: null },
   ])
 })
 
@@ -230,9 +230,9 @@ test('project skills read quoted and block frontmatter values for discovery, for
     '## Project skills', '',
     'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
     '- `game-design`: Balance the economy and combat systems',
-    '- `literal`: First line\nSecond line',
+    '- `literal`: First line Second line',
     "- `notes`: Owner's notes: useful # text",
-    '- `paragraphs`: First paragraph\nSecond paragraph',
+    '- `paragraphs`: First paragraph Second paragraph',
     '- `ui-kit`: Build "visual" components',
   ].join('\n'))
   assert.deepEqual(sb.matchDelegateSkills(dir, { prompt: 'Use ui-kit' }), ['ui-kit'])
@@ -324,4 +324,133 @@ test('the stop words are data: a word listed in the config that AETHER_SKILLS_CO
     sb.matchDelegateSkills(dir, { prompt: 'Add a jump signal to the Godot player scene', description: '', owns: [] }),
     [],
   )
+})
+
+test('project skills with real descriptions do not match unrelated briefs and do match relevant briefs', (t) => {
+  const dir = tempDir(t, 'aether-proj-real-')
+  const realSkillsDir = path.join(__dirname, '..', '.agents', 'skills')
+  for (const name of ['artificial-analysis', 'new-harness', 'pxl']) {
+    const src = path.join(realSkillsDir, name, 'SKILL.md')
+    const destDir = path.join(dir, '.agents', 'skills', name)
+    fs.mkdirSync(destDir, { recursive: true })
+    fs.copyFileSync(src, path.join(destDir, 'SKILL.md'))
+  }
+  skill(dir, 'art', { body: 1, description: 'Draw vector art assets' })
+
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, {
+      prompt: 'AETHER-TASK: t-approve\nImplement aether-delegate approve check in plugins/aether/lib/delegate-approve.js.',
+      description: 'delegate approve',
+      owns: ['plugins/aether/lib/delegate-approve.js'],
+    }),
+    [],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, {
+      prompt: 'AETHER-TASK: t-ceiling\nEnforce the dollar ceiling of a run in plugins/aether/lib/autonomy-command.js.',
+      description: 'dollar ceiling',
+      owns: ['plugins/aether/lib/autonomy-command.js'],
+    }),
+    [],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, {
+      prompt: 'AETHER-TASK: t-quota\nClear expired quota marks in plugins/aether/lib/router-marks.js.',
+      description: 'quota mark',
+      owns: ['plugins/aether/lib/router-marks.js'],
+    }),
+    [],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, {
+      prompt: 'AETHER-TASK: t-start\nStart the article parser in src/article.js.',
+      description: 'start article',
+      owns: ['src/article.js'],
+    }),
+    [],
+  )
+
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, {
+      prompt: 'Compare model intelligence, cost per task, and benchmark figures from Artificial Analysis pages.',
+      description: 'artificial analysis figures',
+      owns: ['scripts/aa-pages.js'],
+    }),
+    ['artificial-analysis'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, {
+      prompt: 'Add a new external coding CLI harness, map its tiers, cost per task, and quota.',
+      description: 'new harness',
+      owns: ['plugins/aether/lib/harness/grok.js'],
+    }),
+    ['new-harness'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, {
+      prompt: 'Edit the animation in walk.px.js and build the GIF for the landing page.',
+      description: 'pxl animation',
+      owns: ['assets/brand/gifs/walk.px.js'],
+    }),
+    ['pxl'],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, {
+      prompt: 'Map the Codex CLI models, tiers and quota.',
+      description: 'codex models',
+      owns: ['src/codex.js'],
+    }),
+    ['new-harness'],
+  )
+})
+
+test('plain multi-line frontmatter values are read completely', (t) => {
+  const dir = tempDir(t, 'aether-proj-plain-multiline-')
+  skill(dir, 'plain-multi', {
+    description: 'First line of plain\n  second line with economy and combat\n  third line',
+  })
+  const skills = sb.listProjectSkills(dir)
+  assert.deepEqual(skills, [
+    { name: 'plain-multi', description: 'First line of plain second line with economy and combat third line' },
+  ])
+  assert.deepEqual(sb.matchDelegateSkills(dir, { prompt: 'Adjust economy and combat' }), ['plain-multi'])
+})
+
+test('listProjectSkills looks in the same project roots as resolveSkill and handles symlinks once', (t) => {
+  const repo = makeRepo(t)
+  skill(repo.dir, 'shared-skill', { body: 1, description: 'From agents' })
+  const claudeDir = path.join(repo.dir, '.claude', 'skills')
+  fs.mkdirSync(claudeDir, { recursive: true })
+  fs.symlinkSync(path.join(repo.dir, '.agents', 'skills', 'shared-skill'), path.join(claudeDir, 'shared-skill'))
+  const external = tempDir(t, 'aether-ext-skill-')
+  fs.writeFileSync(path.join(external, 'SKILL.md'), '---\nname: linked-only\ndescription: Linked into claude\n---\nbody\n')
+  fs.symlinkSync(external, path.join(claudeDir, 'linked-only'))
+  repo.git('add', '.agents', '.claude')
+  repo.git('commit', '-qm', 'skills')
+
+  const sub = path.join(repo.dir, 'src', 'nested')
+  fs.mkdirSync(sub, { recursive: true })
+  assert.deepEqual(sb.listProjectSkills(sub).map((s) => s.name), ['linked-only', 'shared-skill'])
+
+  const wt = path.join(repo.dir, '.aether', 'worktrees', 'wt-skills')
+  repo.git('worktree', 'add', '-qb', 'wt-skills', wt)
+  assert.deepEqual(sb.listProjectSkills(wt).map((s) => s.name), ['linked-only', 'shared-skill'])
+})
+
+test('checkSkillFile accepts valid multi-line frontmatter and refuses invalid descriptions', (t) => {
+  const dir = tempDir(t, 'aether-check-front-')
+  const good = skill(dir, 'valid-multi', {
+    description: 'First line\n  second line with details',
+  })
+  assert.deepEqual(sb.checkSkillFile(good), [])
+
+  const tooLong = skill(dir, 'too-long', {
+    description: 'a '.repeat(300) + '\n  ' + 'b '.repeat(300),
+  })
+  const problems = sb.checkSkillFile(tooLong)
+  assert.equal(problems.length, 1)
+  assert.match(problems[0], /the description has \d+ characters \(at most 1024\)/)
+
+  const commentOnly = skill(dir, 'comment-only', { description: '# just a comment' })
+  assert.deepEqual(sb.checkSkillFile(commentOnly), ['no description'])
 })

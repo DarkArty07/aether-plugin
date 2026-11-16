@@ -139,7 +139,7 @@ test('readCreatedDeduplicated groups worktree entries by main repo and discards 
 test('loadSkillsConfig reads repeat and topics, and notices store only metadata (R2, R12, R16)', (t) => {
   const cfg = reg.loadSkillsConfig()
   assert.equal(cfg.repeat.minWordLength, 3)
-  assert.equal(cfg.repeat.similarityThreshold, 0.35)
+  assert.equal(cfg.repeat.similarityThreshold, 0.55)
   assert.ok(cfg.repeat.stopwords.includes('falta'))
   assert.deepEqual(cfg.topics.slice(0, 6).map((topic) => topic.id), [
     'machine-learning', 'google-colab', 'godot', 'containers', 'browser-automation', 'shaders',
@@ -189,7 +189,7 @@ test('loadSkillsConfig reads AETHER_SKILLS_CONFIG when no path is passed (R2)', 
   assert.equal(fromEnv.repeat.similarityThreshold, 0.5)
   assert.deepEqual(fromEnv.topics.map((topic) => topic.id), ['from-env'])
   const bundled = reg.loadSkillsConfig(reg.CONFIG_FILE)
-  assert.equal(bundled.repeat.similarityThreshold, 0.35)
+  assert.equal(bundled.repeat.similarityThreshold, 0.55)
 })
 
 test('skill paths include nested files and committed skills are detected from a vanished worktree', (t) => {
@@ -232,4 +232,54 @@ test('skillsReport resolves the repository once per distinct path, not once per 
   assert.equal(report.totals.notices, 50)
   assert.equal(report.projects[repo.dir].leadLoads, 200)
   assert.deepEqual(resolved, [repo.dir], 'one resolution for the one path, the filter included')
+})
+
+test('skills committed on another branch or in a worktree count as committed', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-skills-branch-')
+  const wt = path.join(repo.dir, '.aether', 'worktrees', 'feat')
+  repo.git('worktree', 'add', '-qb', 'feat', wt)
+  const wtSkill = path.join(wt, '.agents', 'skills', 'branch-skill')
+  put(path.join(wtSkill, 'SKILL.md'), '---\nname: branch-skill\ndescription: Branch skill\n---\nbody\n')
+  repo.git('-C', wt, 'add', '.agents/skills/branch-skill/SKILL.md')
+  repo.git('-C', wt, 'commit', '-qm', 'skill on branch')
+  const commitSec = Number.parseInt(repo.git('-C', wt, 'log', '-n', '1', '--format=%ct'), 10)
+  const afterCommitMs = (commitSec + 10) * 1000
+
+  assert.equal(reg.shouldRecordCreated(data, { repo: repo.dir, name: 'branch-skill', dir: path.join(repo.dir, '.agents', 'skills', 'branch-skill') }), false)
+
+  reg.recordCreated(data, { time: afterCommitMs, session: 's1', repo: repo.dir, name: 'branch-skill', path: path.join(repo.dir, '.agents', 'skills', 'branch-skill'), type: 'project' })
+  assert.deepEqual(reg.readCreatedDeduplicated(data), [])
+})
+
+test('created entry with no numeric time is kept rather than treated as committed before creation', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-skills-notime-')
+  const dir = path.join(repo.dir, '.agents', 'skills', 'timeless')
+  put(path.join(dir, 'SKILL.md'), '---\nname: timeless\ndescription: Timeless\n---\nbody\n')
+  repo.git('add', '.agents/skills/timeless/SKILL.md')
+  repo.git('commit', '-qm', 'commit skill')
+  reg.recordCreated(data, { session: 's1', repo: repo.dir, name: 'timeless', path: dir, type: 'project' })
+  const deduped = reg.readCreatedDeduplicated(data)
+  assert.deepEqual(deduped.map((e) => e.name), ['timeless'])
+})
+
+test('a skill committed after its creation record is kept in readCreatedDeduplicated', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-skills-after-')
+  const dir = path.join(repo.dir, '.agents', 'skills', 'later-committed')
+  put(path.join(dir, 'SKILL.md'), '---\nname: later-committed\ndescription: Later\n---\nbody\n')
+  repo.git('add', '.agents/skills/later-committed/SKILL.md')
+  repo.git('commit', '-qm', 'commit skill later')
+  const commitSec = Number.parseInt(repo.git('log', '-n', '1', '--format=%ct'), 10)
+  const beforeCommitMs = (commitSec - 10) * 1000
+  reg.recordCreated(data, { time: beforeCommitMs, session: 's1', repo: repo.dir, name: 'later-committed', path: dir, type: 'project' })
+  const deduped = reg.readCreatedDeduplicated(data)
+  assert.deepEqual(deduped.map((e) => e.name), ['later-committed'])
+})
+
+test('recordUse returns false and does not throw when uses.jsonl cannot be written', (t) => {
+  const data = tempDir(t, 'aether-skills-uses-fail-')
+  fs.mkdirSync(reg.usesFile(data), { recursive: true })
+  assert.equal(reg.recordUse(data, { session: 's1', kind: 'run', run: 'r1', task: 't1', skills: ['pxl'] }), false)
 })

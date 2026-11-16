@@ -422,8 +422,12 @@ function readCreated(dataDir) {
 
 function recordUse(dataDir, { session = null, kind = null, run = null, task = null, skills = [], time = Date.now(), repo = null } = {}) {
   const record = { time, session, kind, run, task, skills, repo }
-  appendJsonl(usesFile(dataDir), record)
-  return true
+  try {
+    appendJsonl(usesFile(dataDir), record)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function readUses(dataDir) {
@@ -516,7 +520,7 @@ function gitCommitTimes(repo, relPath) {
   const memo = resolutionMemo ? resolutionMemo.commits : null
   const key = `${repo}\0${rel}`
   if (memo && memo.has(key)) return memo.get(key)
-  const result = gitLib.git(['log', '--reverse', '--format=%ct', '--', rel], repo, { allowFail: true })
+  const result = gitLib.git(['log', '--all', '--reverse', '--format=%ct', '--', rel], repo, { allowFail: true })
   const times = (!result || result.status !== 0 || !result.stdout)
     ? []
     : result.stdout.split('\n').map((line) => Number.parseInt(line, 10)).filter((n) => Number.isFinite(n))
@@ -529,7 +533,6 @@ function alreadyInGitBefore(repo, relPath, beforeMs = null) {
     if (!repo || !relPath || typeof repo !== 'string' || typeof relPath !== 'string') return false
     if (!fs.existsSync(repo)) return false
     if (typeof beforeMs === 'number') {
-      if (!fs.existsSync(path.join(repo, relPath))) return false
       const times = gitCommitTimes(repo, relPath)
       return times.length > 0 && (times[0] + 1) * 1000 <= beforeMs
     }
@@ -591,7 +594,7 @@ function dedupeCreated(entries) {
     if (!owner && repo && rel && pathSatInWorktree(entry)) {
       next.path = path.join(repo, rel)
     }
-    if (!owner && alreadyInGitBefore(repo, rel, entry.time)) continue
+    if (!owner && typeof entry.time === 'number' && alreadyInGitBefore(repo, rel, entry.time)) continue
     kept.push(next)
   }
   return kept

@@ -41,7 +41,12 @@ test('after aether-delegate verdict the handler says the finding already came up
   const text = repeat.posttool(bash('aether-delegate verdict --task t2 --verdict fix --finding "src/a.js:7: the empty case is missing"'), ctx)
   assert.equal(text, 'The finding "src/a.js: the empty case is missing" already came up in task t1. Consider a skill for it: load aether:skills.')
   verdict(data, 's1', 't3', [['src/a.js', 1, 'the empty case is missing']])
-  assert.match(repeat.posttool(bash('node /p/bin/aether-delegate verdict --task t3 --verdict fix'), ctx), /already came up in tasks t1, t2\./)
+  assert.equal(repeat.posttool(bash('node /p/bin/aether-delegate verdict --task t3 --verdict fix'), ctx), null)
+  const pluralData = tempDir(t, 'aether-data-plural-')
+  verdict(pluralData, 's1', 't1', [['src/a.js', 3, 'the empty case is missing']])
+  verdict(pluralData, 's1', 't2', [['src/a.js', 7, 'the empty case is missing']])
+  verdict(pluralData, 's1', 't3', [['src/a.js', 1, 'the empty case is missing']])
+  assert.match(repeat.posttool(bash('node /p/bin/aether-delegate verdict --task t3 --verdict fix'), { ...ctx, dataDir: pluralData }), /already came up in tasks t1, t2\./)
   for (const command of ['ls', 'aether-delegate begin --session s1 --input x', 'aether-delegate verdict --verdict fix']) assert.equal(repeat.posttool(bash(command), ctx), null, command)
   assert.equal(repeat.posttool({ ...bash('aether-delegate verdict --task t2'), tool_name: 'Write' }, ctx), null)
   assert.equal(repeat.posttool(null, ctx), null)
@@ -86,7 +91,7 @@ test('repeatedFindings matches similar words of finding.what across sessions of 
     { env: {}, home: '/h', now: 1, dataDir: data },
   )
   assert.equal(notice, 'The finding "src/foo.js: no valida la lista vacía en el borde" already came up in task t1. Consider a skill for it: load aether:skills.')
-  assert.deepEqual(reg.readNotices(data).map((n) => [n.kind, n.name, n.session, n.repo]), [['repeated-finding', 'src/foo.js', 's2', repo.dir]])
+  assert.deepEqual(reg.readNotices(data).map((n) => [n.kind, n.name, n.session, n.repo]), [['repeated-finding', 'src/foo.js: no valida la lista vacía en el borde', 's2', repo.dir]])
 
   log.appendEntry(data, { kind: 'verdict', time: 1, session: 's9', task: 'legacy', attempt: 1, step: 'haiku', verdict: 'fix', input: { kind: 'fix', findings: [{ file: 'src/foo.js', line: 1, what: 'no valida la lista vacía en el borde' }], reason: null, fromScratch: false } })
   assert.deepEqual(repeat.repeatedFindings(data, { session: 's2', task: 't1' }).map((r) => r.tasks), [['t1']], 'a legacy entry with no repo is not compared across sessions')
@@ -198,8 +203,8 @@ test('posttool logs one repeated-finding notice per line it prints, with the pro
   )
   assert.equal(text.split('\n').length, 2, text)
   assert.deepEqual(reg.readNotices(data).map((n) => [n.kind, n.name, n.session, n.repo]), [
-    ['repeated-finding', 'src/a.js', 's1', repo.dir],
-    ['repeated-finding', 'src/a.js', 's1', repo.dir],
+    ['repeated-finding', 'src/a.js: valida lista vacía borde', 's1', repo.dir],
+    ['repeated-finding', 'src/a.js: cerrar recursos abiertos', 's1', repo.dir],
   ])
 })
 
@@ -242,15 +247,45 @@ test('a refused verdict or a verdict given again does not record repeated-findin
   assert.ok(first)
   assert.equal(reg.readNotices(data).length, 1)
 
-  // Giving the verdict again does not record another notice.
-  repeat.posttool({
+  // Giving the verdict again emits no visible notice and does not record another notice.
+  const second = repeat.posttool({
     tool_name: 'Bash', session_id: 's1', cwd: repo.dir,
     tool_input: { command: 'aether-delegate verdict --task t2 --verdict fix' },
   }, ctx)
+  assert.equal(second, null)
   assert.equal(reg.readNotices(data).length, 1)
 })
 
 test('two clearly different findings on one file do not count as repeated, while two wordings of the same finding do', () => {
   assert.equal(repeat.findingsMatch('missing error check', 'missing timeout check'), false)
   assert.equal(repeat.findingsMatch('does not check for empty input list', 'missing check when input list is empty'), true)
+})
+
+test('a new repeated finding on a file already noticed is still noticed and recorded once', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-repeat-new-on-file-')
+  const add = (session, taskId, findings) => log.appendEntry(data, {
+    kind: 'verdict', session, task: taskId, repo: repo.dir, verdict: 'fix',
+    input: { kind: 'fix', findings: findings.map(([file, what]) => ({ file, line: 1, what })) },
+  })
+  const ctx = { env: {}, home: '/h', now: 1, dataDir: data }
+  add('s1', 't1', [['src/a.js', 'missing null check on input'], ['src/a.js', 'unclosed database handle leak']])
+  add('s1', 't2', [['src/a.js', 'missing null check on input']])
+  const first = repeat.posttool({
+    tool_name: 'Bash', session_id: 's1', cwd: repo.dir,
+    tool_input: { command: 'aether-delegate verdict --task t2 --verdict fix' },
+  }, ctx)
+  assert.ok(first && first.includes('missing null check on input'))
+  assert.equal(repeat.posttool({
+    tool_name: 'Bash', session_id: 's1', cwd: repo.dir,
+    tool_input: { command: 'aether-delegate verdict --task t2 --verdict fix' },
+  }, ctx), null)
+
+  add('s1', 't3', [['src/a.js', 'unclosed database handle leak']])
+  const second = repeat.posttool({
+    tool_name: 'Bash', session_id: 's1', cwd: repo.dir,
+    tool_input: { command: 'aether-delegate verdict --task t3 --verdict fix' },
+  }, ctx)
+  assert.ok(second && second.includes('unclosed database handle leak'))
+  assert.equal(reg.readNotices(data).length, 2)
 })
