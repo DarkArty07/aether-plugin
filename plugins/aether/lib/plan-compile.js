@@ -15,6 +15,7 @@ const { parsePlan, buildGraph, renderBrief, specObjective, requirementsOf, trace
 const { applyGroups } = require('./plan-groups.js')
 const { earlierMergedUnits } = require('./plan-scope.js')
 const { planWarnings } = require('./plan-warnings.js')
+const { ruleWarnings } = require('./plan-rules.js')
 const { isGlob, matchesAny } = require('./globs.js')
 const { repoPaths, currentBranch, head } = require('./git.js')
 const { resolveSkill, loadSkills, recordUse } = require('./skill-brief.js')
@@ -274,7 +275,9 @@ function check(planArg, { cwd = process.cwd(), stdout = process.stdout, env = pr
     }
   }
   const root = worktreeOf(path.dirname(planPath))
-  const warnings = [...parsed.warnings, ...graph.warnings, ...trace.warnings, ...planWarnings(parsed, root), ...docWarnings(parsed, root)]
+  const rules = ruleWarnings(parsed, root)
+  errors.push(...rules.errors)
+  const warnings = [...parsed.warnings, ...graph.warnings, ...trace.warnings, ...planWarnings(parsed, root), ...docWarnings(parsed, root), ...rules.warnings]
   if (errors.length) fail(errors, warnings, stdout)
   // A plan with "Merges with" lines also says which tasks each unit holds.
   const groups = parsed.groups.map((g) => ({ unit: `task-${g.unit}`, tasks: g.members }))
@@ -346,8 +349,10 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
     }
   }
 
+  const compileRoot = worktreeOf(path.dirname(planPath))
+  const rules = ruleWarnings(parsed, compileRoot)
   const graph = alreadyMerged && only.length === 0 ? { waves: [], tasks: {}, errors: [], warnings: [] } : buildGraph(parsed, { only })
-  const errors = [...parsed.errors, ...graph.errors]
+  const errors = [...parsed.errors, ...graph.errors, ...rules.errors]
   if (errors.length) fail(errors, [...parsed.warnings, ...graph.warnings], stdout)
 
   const loadedSkills = new Map()
@@ -508,8 +513,7 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
     launches: previous ? (previous.launches || 1) + 1 : 1,
     session: previous && previous.session ? previous.session : (env.CLAUDE_CODE_SESSION_ID || null),
   })
-  const compileRoot = worktreeOf(path.dirname(planPath))
-  const warnings = [...parsed.warnings, ...graph.warnings, ...planWarnings(parsed, compileRoot), ...docWarnings(parsed, compileRoot)]
+  const warnings = [...parsed.warnings, ...graph.warnings, ...planWarnings(parsed, compileRoot), ...docWarnings(parsed, compileRoot), ...rules.warnings]
   if (repo.worktree === repo.mainRoot) {
     warnings.push(
       'the integration worktree is the main checkout, so the unit worktrees under .aether/worktrees/ sit inside it, and a test command that searches the whole tree also runs their unfinished tests at merge time. Prefer a separate integration worktree (git worktree add <path> -b <branch>).',
