@@ -76,6 +76,20 @@ test('the skill states the approved-plan ceiling form, the approval rule and the
   assert.match(start, /--usd/)
 })
 
+test('step 3 names the ceilings on one Topes/Ceilings line, keeps estimates out, and keeps the owner-message figure (spec 043)', () => {
+  const start = SKILL.slice(SKILL.indexOf('**Start:**'), SKILL.indexOf('**Permission prompts.**'))
+  assert.match(start, /`Topes:`/)
+  assert.match(start, /`Ceilings:`/)
+  assert.match(start, /with one hours figure/)
+  assert.match(start, /and one dollar figure/)
+  assert.match(start, /only that line is read/)
+  assert.match(start, /estimates/)
+  assert.match(start, /are not read/)
+  assert.match(start, /before the plan in a session without a terminal/)
+  assert.match(start, /after approving the plan/)
+  assert.match(start, /a `--hours` or `--usd` flag wins over the plan's figure/)
+})
+
 test('the skill keeps run-long files in .aether/autonomy/<id>/, never in .aether/tmp (R15)', () => {
   assert.match(SKILL, /\.aether\/autonomy\/<id>\/[\s\S]{0,300}\.aether\/tmp/)
 })

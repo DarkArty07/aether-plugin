@@ -391,7 +391,7 @@ test('start prints ceiling sources from the approved plan and override notices',
         type: 'tool_result',
         tool_use_id: 'p3',
         is_error: false,
-        content: 'User has approved your plan. You can now start coding.\n\n## Approved Plan:\nFase 1: 4 h. Total: 10 h y US$ 300.',
+        content: 'User has approved your plan. You can now start coding.\n\n## Approved Plan:\n- **Topes:** 4 h y luego 10 h, US$ 300.',
       }],
     },
   })
@@ -401,6 +401,6 @@ test('start prints ceiling sources from the approved plan and override notices',
   assert.deepEqual(badHours.json.started.ceilings, { hours: 8, usd: 300, source: { hours: 'default', usd: 'plan' } })
   assert.deepEqual(badHours.stderr.trim().split('\n'), [
     'hours 8 (default), usd 300 (plan)',
-    'the approved plan named more than one hours figure, so start could not read it',
+    'the approved plan named 4 h and 10 h, but start opened with the default ceilings',
   ])
 })
