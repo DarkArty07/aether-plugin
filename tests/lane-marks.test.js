@@ -264,8 +264,10 @@ const routerMarkAt = (until, extra = {}) => ({ harness: 'agy', group: 'gemini', 
 
 test('lane-marks.js never requires router-marks.js: the old path is a literal', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'lane-marks.js'), 'utf8')
-  assert.ok(!/require\(['"]\.\/router-marks/.test(source))
-  assert.ok(source.includes(path.posix.join('router', 'lanes', 'marks')))
+  const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+  assert.ok(!/require\(['"]\.\/router-marks/.test(code))
+  assert.match(code, /path\.join\(dataDir,\s*'router',\s*'lanes',\s*'marks'\)/)
+  assert.equal(marks.legacyRouterMarksDir('/tmp/d'), path.join('/tmp/d', 'router', 'lanes', 'marks'))
 })
 
 test('migrateRouterMarks moves a mark from the old router directory into the single store', (t) => {
@@ -376,4 +378,48 @@ test('a file in the old folder that cannot be read as a mark stays and is named 
   assert.notEqual(marks.liveMark(dir, 'muse', 'muse', NOW + MIN), null, 'the readable mark still moves')
   const again = marks.migrateRouterMarks(dir)
   assert.deepEqual(again.skipped.sort(), ['agy__gemini.json', 'grok__grok.json'], 'damaged files are reported again, never moved')
+})
+
+test('migrateRouterMarks keeps alsoReasons from the losing mark and concurrent reads do not self-merge or falsely skip', async (t) => {
+  const dir = tempDir(t)
+  fs.mkdirSync(marks.marksDir(dir), { recursive: true })
+  const olderWithAlso = swarmMarkAt(NOW + 30 * MIN, {
+    alsoReasons: [{ source: 'swarm', reason: 'earlier', until: NOW + 10 * MIN }],
+  })
+  fs.writeFileSync(marks.markFile(dir, 'agy', 'gemini'), JSON.stringify(olderWithAlso))
+  writeOldMark(dir, 'agy__gemini.json', routerMarkAt(NOW + 60 * MIN))
+  marks.migrateRouterMarks(dir)
+  const kept = JSON.parse(fs.readFileSync(marks.markFile(dir, 'agy', 'gemini'), 'utf8'))
+  assert.equal(kept.until, NOW + 60 * MIN)
+  assert.deepEqual(kept.alsoReasons, [
+    { source: 'swarm', reason: 'earlier', until: NOW + 10 * MIN },
+    { source: 'swarm', reason: 'dry mark', until: NOW + 30 * MIN },
+  ])
+
+  const concurrent = tempDir(t)
+  writeOldMark(concurrent, 'agy__gemini.json', routerMarkAt(NOW + 60 * MIN))
+  const { spawn } = require('node:child_process')
+  const mod = path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'lane-marks.js')
+  const runChild = () => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['-e', `console.log(JSON.stringify(require(${JSON.stringify(mod)}).migrateRouterMarks(${JSON.stringify(concurrent)})))`], { encoding: 'utf8' })
+    let out = ''
+    child.stdout.on('data', (d) => { out += d })
+    child.on('close', (code) => (code === 0 ? resolve(JSON.parse(out.trim())) : reject(new Error(`exit ${code}`))))
+  })
+  const results = await Promise.all([runChild(), runChild(), runChild()])
+  for (const r of results) assert.deepEqual(r.skipped, [], 'no false skipped')
+  assert.equal(results.reduce((n, r) => n + r.moved.length, 0), 1, 'moved once')
+  const final = JSON.parse(fs.readFileSync(marks.markFile(concurrent, 'agy', 'gemini'), 'utf8'))
+  assert.equal(final.alsoReasons, undefined, 'never merged with itself')
+})
+
+test('markDry does not stall when the old folder still holds that group\'s file', (t) => {
+  const dir = tempDir(t)
+  writeOldMark(dir, 'agy__gemini.json', swarmMarkAt(NOW + 30 * MIN))
+  const t0 = Date.now()
+  const mark = marks.markDry(dir, { harness: 'agy', group: 'gemini', reading: null, reserve: 0.1, now: NOW })
+  const elapsed = Date.now() - t0
+  assert.ok(elapsed < 1000, `markDry took ${elapsed}ms (stalled on double lock)`)
+  assert.equal(mark.until, NOW + 60 * MIN)
+  assert.equal(fs.existsSync(path.join(oldMarksDir(dir), 'agy__gemini.json')), false)
 })

@@ -45,6 +45,8 @@ function proposals() {
   const lines = readProposalLines(dataDir())
   if (lines === null) {
     process.stdout.write('no reading yet\n')
+  } else if (lines.length === 0) {
+    process.stdout.write('no proposals or frictions\n')
   } else {
     for (const line of lines) process.stdout.write(`${line}\n`)
   }

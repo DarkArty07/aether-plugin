@@ -104,20 +104,20 @@ function takeNotices(dataDir, fits = () => true) {
 }
 
 // The one line the start-up notes hold when the last reading has calibration proposals (spec 036 R21):
-// `N calibration proposals: run aether-observe proposals`, where N counts the items of kind `calibration` of
-// observe/read.json. Nothing without a reading or with none. Reads only: it never writes. Never throws, so that
-// a note never stops startup.
+// `N calibration proposal(s): run aether-observe proposals`, where N counts the calibration proposals
+// readProposalLines returns from observe/read.json. Nothing without a reading or with none. Reads only:
+// it never writes. Never throws, so that a note never stops startup.
 function proposalsNote(dataDir) {
-  let reading
+  let lines
   try {
-    reading = JSON.parse(fs.readFileSync(path.join(observeDir(dataDir), 'read.json'), 'utf8'))
+    lines = require('./observe-read.js').readProposalLines(dataDir)
   } catch {
     return ''
   }
-  const items = reading && typeof reading === 'object' && Array.isArray(reading.items) ? reading.items : []
-  const count = items.filter((item) => item && typeof item === 'object' && item.kind === 'calibration').length
+  if (!lines) return ''
+  const count = lines.filter((line) => line.startsWith('proposal ')).length
   if (count <= 0) return ''
-  return `${count} calibration proposals: run aether-observe proposals`
+  return `${count} ${count === 1 ? 'calibration proposal' : 'calibration proposals'}: run aether-observe proposals`
 }
 
 module.exports = { saveNotice, takeNotices, noticeLine, proposalsNote }

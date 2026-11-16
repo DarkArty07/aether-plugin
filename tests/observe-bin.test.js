@@ -132,6 +132,7 @@ test('proposals prints the calibration proposals and the frictions, and writes n
   const lines = r.stdout.trim().split('\n')
   assert.equal(lines.filter((line) => line.startsWith('proposal ')).length, 22)
   for (let i = 0; i < 22; i++) assert.ok(lines.some((line) => line.includes(`pair-${i}`)), `pair-${i}`)
+  assert.ok(lines.some((line) => line.startsWith('proposal cost-mismatch:pair-0: the observed cost')), 'does not repeat Proposal:')
   assert.ok(lines.some((line) => line.includes('tool-failures:Bash')), 'the tool friction is shown')
   assert.ok(lines.some((line) => line.includes('compactions')), 'the compaction friction is shown')
   assert.deepEqual(snapshotDir(dir), before, 'the verb writes nothing')
@@ -142,6 +143,22 @@ test('proposals with no reading prints no reading yet', (t) => {
   const r = bin(['proposals'], dir)
   assert.equal(r.status, 0, r.stderr)
   assert.equal(r.stdout, 'no reading yet\n')
+})
+
+test('proposals with neither proposals nor frictions prints one line saying there are none, and keeps failures and their evidence out', (t) => {
+  const dir = tempDir(t)
+  writeReading(dir, [{
+    id: 'fault:secret-source',
+    kind: 'failure',
+    type: 'fault',
+    title: 'Silent faults in secret-source',
+    evidence: ['Source secret-source recorded 3 silent faults', 'SECRET_FAULT_EVIDENCE'],
+    numbers: { count: 3 },
+  }])
+  const r = bin(['proposals'], dir)
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(r.stdout, 'no proposals or frictions\n')
+  assert.doesNotMatch(r.stdout, /fault:secret-source|Silent faults|SECRET_FAULT_EVIDENCE/)
 })
 
 test('the components page counts thirteen bins and describes aether-observe (R16)', () => {

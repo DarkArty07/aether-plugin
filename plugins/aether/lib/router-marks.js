@@ -7,7 +7,7 @@
 // read (lane-marks.js `migrateRouterMarks`).
 // Family: router.
 
-const { writeAtomic } = require('./common.js')
+const { writeAtomic, withLock } = require('./common.js')
 const laneMarks = require('./lane-marks.js')
 const { quotaRefusal } = require('./quota-refusal.js')
 
@@ -40,23 +40,29 @@ function markRefusal(dataDir, { harness, group, text, now = Date.now() }) {
   // stated reset was once wrong, and a refused call costs a failed process and no tokens. The reset is kept as stated.
   const until = now + REFUSAL_DEFAULT_MINUTES * MINUTE_MS
   const root = routerMarksRoot(dataDir)
-  const existing = laneMarks.liveMark(root, harness, group, now)
-  if (existing && existing.until >= until) return existing
-  const mark = {
-    harness,
-    group,
-    at: now,
-    until,
-    confirmed: false,
-    resetsAt: null,
-    usedPercentAbsent: false,
-    source: 'router',
-    reason: 'quota refusal',
-    statedResetMs: refusal.resetMs > 0 ? refusal.resetMs : null,
-    ...(typeof refusal.resetsAt === 'string' || refusal.resetsAt === null ? { statedResetAt: refusal.resetsAt } : {}),
-  }
-  writeAtomic(laneMarks.markFile(root, harness, group), JSON.stringify(mark, null, 2) + '\n')
-  return mark
+  try {
+    laneMarks.migrateRouterMarks(root)
+  } catch {}
+  const file = laneMarks.markFile(root, harness, group)
+  return withLock(file, () => {
+    const existing = laneMarks.readLiveMark(root, harness, group, now)
+    if (existing && existing.until >= until) return existing
+    const mark = {
+      harness,
+      group,
+      at: now,
+      until,
+      confirmed: false,
+      resetsAt: null,
+      usedPercentAbsent: false,
+      source: 'router',
+      reason: 'quota refusal',
+      statedResetMs: refusal.resetMs > 0 ? refusal.resetMs : null,
+      ...(typeof refusal.resetsAt === 'string' || refusal.resetsAt === null ? { statedResetAt: refusal.resetsAt } : {}),
+    }
+    writeAtomic(file, JSON.stringify(mark, null, 2) + '\n')
+    return mark
+  }, { waitMs: laneMarks.LOCK_WAIT_MS, staleMs: laneMarks.LOCK_STALE_MS })
 }
 
 // The live marks of the single store, sorted by harness and group. A mark the router wrote keeps its stored

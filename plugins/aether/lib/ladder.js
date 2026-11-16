@@ -39,7 +39,17 @@ function loadLadder(file = LADDER_FILE) {
   if (data.supervisorFloor === undefined) throw new Error('ladder: missing supervisorFloor')
   const supervisorFloor = data.supervisorFloor
   if (!Number.isInteger(supervisorFloor) || supervisorFloor < 1) throw new Error('ladder: supervisorFloor is not an integer >= 1')
-  if (data.law === undefined) throw new Error('ladder: missing law')
+  if (data.law === undefined) throw new Error(`ladder: missing law in ${file}`)
+  if (!data.law || typeof data.law !== 'object' || Array.isArray(data.law)) {
+    throw new Error(`ladder: law in ${file} is not an object`)
+  }
+  if (!Array.isArray(data.law.candidateEfforts) || data.law.candidateEfforts.length === 0 ||
+      !data.law.candidateEfforts.every((effort) => EFFORTS.includes(effort))) {
+    throw new Error(`ladder: law.candidateEfforts in ${file} must be a non-empty list of ${EFFORTS.join('|')}`)
+  }
+  if (!Number.isFinite(data.law.minJumpPoints) || data.law.minJumpPoints < 0) {
+    throw new Error(`ladder: law.minJumpPoints in ${file} must be a finite number >= 0`)
+  }
   return {
     law: data.law,
     repeatBlocked,
@@ -69,7 +79,7 @@ function effortFor(ladder, step) {
 function supervisorOf(ladder, step) {
   const i = rungIndex(ladder, step)
   const n = ladder.rungs.length
-  const floor = ladder.supervisorFloor ?? 1
+  const floor = ladder.supervisorFloor
   const supervisorIndex = Math.max(Math.min(i + 1, n - 1), Math.min(floor, n) - 1)
   const rung = ladder.rungs[supervisorIndex]
   return { step: rung.step, model: rung.model, effort: rung.effort }
@@ -153,7 +163,7 @@ function judgeFix(state, verdict, ladder, carry) {
   const repeats = cutOnly ? state.repeats : same ? state.repeats + 1 : 1
   const lastKeys = cutOnly ? state.lastKeys : keys
 
-  if (same && allOutside && repeats >= (ladder.repeatBlocked ?? 2)) {
+  if (same && allOutside && repeats >= ladder.repeatBlocked) {
     const files = [...new Set(real.map((finding) => finding.file))].join(', ')
     const reason =
       `the same change outside Owns came back again (${files}): a plan error, not a model error; ` +
@@ -190,7 +200,7 @@ function judge(state, verdict, ladder) {
     const key = blocked ? blockedKeyOf(verdict.findings) : null
     const count = key ? (state.blockedKey === key ? state.blockedCount + 1 : 1) : 0
     const updated = { ...state, blockedKey: key, blockedCount: count, blockedReason: blocked ? sentence : null }
-    if (key && count >= (ladder.repeatBlocked ?? 2)) {
+    if (key && count >= ladder.repeatBlocked) {
       const evidence = key === NO_RED_TEST_KEY ? 'no red test' : `the same red tests came back: ${key.split('\n').join(', ')}`
       const reason = sentence || evidence
       return { accepted: true, state: { ...updated, attempts: state.attempts + 1, status: 'blocked' }, next: { step: null, kind: 'blocked', cause: 'blocked-same-cause', reason, effort: null, carry: true } }

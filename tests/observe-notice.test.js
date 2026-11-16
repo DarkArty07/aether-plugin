@@ -98,7 +98,10 @@ test('proposalsNote names the count of calibration proposals, and nothing withou
   assert.equal(store.proposalsNote(dir), '22 calibration proposals: run aether-observe proposals')
   const single = tempDir(t)
   writeReading(single, [calibrationOf(0)])
-  assert.equal(store.proposalsNote(single), '1 calibration proposals: run aether-observe proposals')
+  assert.equal(store.proposalsNote(single), '1 calibration proposal: run aether-observe proposals')
+  const malformed = tempDir(t)
+  writeReading(malformed, [{ kind: 'calibration' }, calibrationOf(0)])
+  assert.equal(store.proposalsNote(malformed), '1 calibration proposal: run aether-observe proposals', 'counts only valid calibration items like proposals does')
 })
 
 test('a notice that does not fit stays pending without holding back a smaller later one', (t) => {

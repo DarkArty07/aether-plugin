@@ -111,8 +111,8 @@ function main(argv, { now = Date.now } = {}) {
       row.checked = figures.intelligence.on
       updates.checked = figures.intelligence.on
     }
-    // A cost of null stays null: it is the owner's decision (Muse), or the page has no cost.
-    if (typeof figures.costPerTaskUsd?.value === 'number' && typeof row.costPerTaskUsd === 'number') {
+    // A cost of null stays null only when it is the owner's decision (ownerDecision); a missing figure without one is filled from the snapshot.
+    if (typeof figures.costPerTaskUsd?.value === 'number' && (typeof row.costPerTaskUsd === 'number' || (row.costPerTaskUsd == null && !row.ownerDecision))) {
       record(row, updates, 'costPerTaskUsd', figures.costPerTaskUsd.value)
     }
     rowUpdates.set(row.id, updates)
