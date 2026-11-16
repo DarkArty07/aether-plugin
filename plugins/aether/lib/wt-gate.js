@@ -3,18 +3,141 @@
 // Gate verification for unit worktrees: edits and objective tests.
 // Family: wt.
 
+const fs = require('node:fs')
+const path = require('node:path')
+const { execFileSync } = require('node:child_process')
 const { repoPaths } = require('./git.js')
 const run = require('./run.js')
 const { loadGraph, unitBase, isWorktreeRoot, readBaseline } = require('./worktrees.js')
 const { changedFiles, checkEdits, runTests } = require('./delegate-checks.js')
 const { failureSignatures, judge } = require('./baseline.js')
+const { matchesAny } = require('./globs.js')
 const { GATE_CUT } = require('./ladder.js')
 const { recordTiming } = require('./run-timings.js')
 
 const DEFAULT_TIMEOUT_MS = 570000
+const ANSI_COLOR = /\x1b\[[0-9;]*m/g
+const MAX_TEST_BYTES = 512 * 1024
+const TEST_PATH = /(^|\/)tests?\/|\.(test|spec)\.[^/]+$/
 
 function looksLikePath(name) {
   return typeof name === 'string' && (name.includes('/') || /\.(?:js|ts|py|go)$/.test(name))
+}
+
+function normalizeFailureName(raw, worktree) {
+  let name = String(raw || '')
+  if (typeof worktree === 'string' && worktree !== '') {
+    const target = worktree.length > 1 ? worktree.replace(/[/\\]+$/, '') : worktree
+    if (target !== '' && target !== '/' && target !== '\\') {
+      name = name.replaceAll(target, '<worktree>')
+      if (target.includes('\\')) name = name.replaceAll(target.replaceAll('\\', '/'), '<worktree>')
+    }
+  }
+  return name
+    .trim()
+    .replace(/\s+# time=.*$/, '')
+    .replace(/\s*[(\[]\d+(?:\.\d+)?\s*m?s[)\]]$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function parseTapLocations(output, worktree) {
+  const locations = new Map()
+  let currentName = null
+  let inYaml = false
+  for (const rawLine of String(output || '').split(/\r?\n/)) {
+    const line = rawLine.replace(ANSI_COLOR, '')
+    const failMatch = /^\s*not ok \d+ - (.+)$/.exec(line)
+    if (failMatch) {
+      currentName = normalizeFailureName(failMatch[1], worktree)
+      inYaml = false
+      continue
+    }
+    if (!currentName) continue
+    if (/^\s*---\s*$/.test(line)) {
+      inYaml = true
+      continue
+    }
+    if (/^\s*\.\.\.\s*$/.test(line) || /^\s*(?:not )?ok \d+/.test(line)) {
+      currentName = null
+      inYaml = false
+      continue
+    }
+    if (inYaml) {
+      const locMatch = /^\s*location:\s*(.+?)\s*$/.exec(line)
+      if (locMatch) {
+        let loc = locMatch[1].trim()
+        if ((loc.startsWith("'") && loc.endsWith("'")) || (loc.startsWith('"') && loc.endsWith('"'))) {
+          loc = loc.slice(1, -1)
+        }
+        loc = loc.replace(/:\d+(?::\d+)?$/, '')
+        if (!locations.has(currentName)) locations.set(currentName, loc)
+      }
+    }
+  }
+  return locations
+}
+
+function resolveInWorktree(loc, worktree) {
+  if (!loc || !worktree) return null
+  const wt = path.resolve(worktree)
+  const resolved = path.resolve(wt, loc)
+  let rel = path.relative(wt, resolved)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    try {
+      const realWt = fs.realpathSync(wt)
+      const realLoc = fs.existsSync(resolved) ? fs.realpathSync(resolved) : resolved
+      rel = path.relative(realWt, realLoc)
+    } catch {
+      return null
+    }
+  }
+  if (!rel || rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null
+  return rel.split(path.sep).join('/')
+}
+
+function readOwnedTestContents(worktree, owns) {
+  let cached = null
+  return () => {
+    if (cached !== null) return cached
+    cached = []
+    if (!Array.isArray(owns) || owns.length === 0) return cached
+    let tracked = ''
+    try {
+      tracked = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: worktree, encoding: 'utf8' })
+    } catch {
+      return cached
+    }
+    for (const file of tracked.split(/\r?\n/)) {
+      if (!file || !TEST_PATH.test(file) || !matchesAny(file, owns) || !looksLikePath(file)) continue
+      const fullPath = path.join(worktree, file)
+      try {
+        if (fs.statSync(fullPath).size > MAX_TEST_BYTES) continue
+        cached.push(fs.readFileSync(fullPath, 'utf8'))
+      } catch {
+        // ignore unreadable files
+      }
+    }
+    return cached
+  }
+}
+
+function classifyTestOwn(name, rawLoc, worktree, owns, getOwnedContents) {
+  const list = Array.isArray(owns) ? owns : []
+  if (rawLoc !== undefined) {
+    const rel = resolveInWorktree(rawLoc, worktree)
+    if (!rel) return null
+    return matchesAny(rel, list)
+  }
+  if (looksLikePath(name)) {
+    const cleaned = name.startsWith('<worktree>/') ? name.slice('<worktree>/'.length) : name
+    const rel = resolveInWorktree(cleaned, worktree)
+    if (rel && matchesAny(rel, list)) return true
+  }
+  for (const content of getOwnedContents()) {
+    if (content.includes(name)) return true
+  }
+  return null
 }
 
 // The supervisor reads this: the last lines of the run, never the whole tail that the baseline match needs.
@@ -132,12 +255,14 @@ function evaluateGate(cwd, runId, taskId, opts = {}) {
     }
   }
 
+  const locations = parseTapLocations(testsResult.outputTail, worktree)
+  const getOwnedContents = readOwnedTestContents(worktree, task.owns)
   const fallbackFile = allSigs.find(looksLikePath) || 'npm test'
   const testFindings = rawNames.map((name) => {
-    if (looksLikePath(name)) {
-      return { file: name, what: 'la prueba falló' }
-    }
-    return { file: fallbackFile, what: `falló: ${name}` }
+    const own = classifyTestOwn(name, locations.get(name), worktree, task.owns, getOwnedContents)
+    return looksLikePath(name)
+      ? { file: name, what: 'la prueba falló', own }
+      : { file: fallbackFile, what: `falló: ${name}`, own }
   })
 
   return {

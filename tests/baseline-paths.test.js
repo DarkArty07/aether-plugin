@@ -85,5 +85,5 @@ test('wt-gate passes when a known failure carries the worktree path and fails on
   commitIn(repo, unitWt, 'src/t1/bad.js', 'boom\n', 'break')
   const gFail = gateCommand(repo.dir, args.runId, 'task-1')
   assert.equal(gFail.pass, false)
-  assert.deepEqual(gFail.findings, [{ file: 'tests/new.test.js', what: 'la prueba falló' }])
+  assert.deepEqual(gFail.findings, [{ file: 'tests/new.test.js', what: 'la prueba falló', own: null }])
 })
