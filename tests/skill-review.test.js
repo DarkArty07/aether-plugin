@@ -206,3 +206,84 @@ test('an installed skill covers a topic only with a whole word of it, so Compose
   skill(w.home, 'docker-basics', { description: 'Use for Docker containers.' })
   assert.deepEqual(review.detectUncoveredTopics({ ...w.opts, dataDir: w.data }).map((x) => x.id), [])
 })
+
+test('a tracked skill at the same path in another worktree of the same repo is not a duplicate, while two different folders are (issue 287)', (t) => {
+  const w = world(t)
+  const tracked = skill(w.repo.dir, 'artificial-analysis', { where: '.claude/skills' })
+  w.repo.git('add', '.claude')
+  w.repo.git('commit', '-qm', 'tracked skill')
+  const wt = path.join(w.repo.dir, '.aether', 'worktrees', 'unit')
+  w.repo.git('worktree', 'add', '-qb', 'unit', wt)
+  const wtSkill = path.join(wt, '.claude', 'skills', 'artificial-analysis')
+  assert.deepEqual(review.reviewSkill(wtSkill, { cwd: wt, home: w.home }), [])
+  // Two genuinely different folders with the same name are still reported.
+  skill(wt, 'artificial-analysis', { where: '.agents/skills', extra: ' (second)' })
+  const problems = review.reviewSkill(wtSkill, { cwd: wt, home: w.home })
+  assert.ok(problems.some((p) => p.startsWith('a skill with the same name exists at ') && p.endsWith(path.join('.agents', 'skills', 'artificial-analysis'))))
+  assert.ok(fs.existsSync(tracked))
+})
+
+test('skill-location and skill-unloaded notices are emitted and recorded once per skill and per session', (t) => {
+  const w = world(t)
+  const misplaced = skill(w.repo.dir, 'misplaced', { where: '.claude/skills' })
+  const file = path.join(misplaced, 'SKILL.md')
+  const first = review.posttool(write(w, file), w.ctx)
+  assert.ok(first.includes('.agents/skills/misplaced'))
+  assert.ok(first.includes('load aether:skills'))
+  const second = review.posttool(write(w, file, 'Edit'), w.ctx)
+  assert.equal(second, null)
+  assert.equal(reg.readNotices(w.data).filter((n) => n.kind === 'skill-location').length, 1)
+  assert.equal(reg.readNotices(w.data).filter((n) => n.kind === 'skill-unloaded').length, 1)
+  // Another session is notified again.
+  const other = review.posttool({ ...write(w, file), session_id: 's2' }, w.ctx)
+  assert.ok(other.includes('.agents/skills/misplaced'))
+  assert.ok(other.includes('load aether:skills'))
+})
+
+test('writing specs/NNN-topic/intent.md triggers topic search from a subdirectory and from a worktree', (t) => {
+  const w = world(t)
+  const intent = path.join(w.repo.dir, 'specs', '001-ml', 'intent.md')
+  fs.mkdirSync(path.dirname(intent), { recursive: true })
+  fs.writeFileSync(intent, '# Intent\nTrain a model with PyTorch.\n')
+  const sub = path.join(w.repo.dir, 'src', 'nested')
+  fs.mkdirSync(sub, { recursive: true })
+  const fromSub = review.posttool({ session_id: 's-sub', cwd: sub, tool_name: 'Write', tool_input: { file_path: intent } }, w.ctx)
+  assert.ok(fromSub && fromSub.includes('Machine Learning'))
+
+  const wt = path.join(w.repo.dir, '.aether', 'worktrees', 'wt-intent')
+  w.repo.git('worktree', 'add', '-qb', 'wt-intent', wt)
+  const wtIntent = path.join(wt, 'specs', '002-godot', 'intent.md')
+  fs.mkdirSync(path.dirname(wtIntent), { recursive: true })
+  fs.writeFileSync(wtIntent, '# Intent\nBuild a game in Godot.\n')
+  const fromWt = review.posttool({ session_id: 's-wt', cwd: wt, tool_name: 'Write', tool_input: { file_path: wtIntent } }, w.ctx)
+  assert.ok(fromWt && fromWt.includes('Godot Engine'))
+})
+
+test('requirements.txt and pyproject.toml count only declared dependencies, not project names, TOML keys, or arbitrary quoted strings', (t) => {
+  const w = world(t)
+  fs.writeFileSync(path.join(w.repo.dir, 'pyproject.toml'), [
+    '[project]',
+    'name = "torch"',
+    'description = "A three tier app with pytorch and playwright"',
+    'dependencies = ["requests>=2.0"]',
+    '',
+    '[tool.custom]',
+    'torch = "1.0"',
+  ].join('\n') + '\n')
+  fs.writeFileSync(path.join(w.repo.dir, 'requirements.txt'), [
+    '-r base.txt',
+    '--index-url https://pypi.org/simple',
+    '# torch==2.0',
+    'flask>=3.0',
+  ].join('\n') + '\n')
+  assert.deepEqual(review.detectUncoveredTopics({ ...w.opts, dataDir: w.data }), [])
+
+  fs.writeFileSync(path.join(w.repo.dir, 'pyproject.toml'), [
+    '[project]',
+    'name = "app"',
+    'dependencies = [',
+    '  "torch>=2.3",',
+    ']',
+  ].join('\n') + '\n')
+  assert.deepEqual(review.detectUncoveredTopics({ ...w.opts, dataDir: w.data }).map((x) => x.id), ['machine-learning'])
+})

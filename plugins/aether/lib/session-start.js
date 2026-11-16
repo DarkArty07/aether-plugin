@@ -461,6 +461,8 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
 
   let tidyLines = []
   let idleLines = []
+  let idleEntries = []
+  let idleDataDir = null
   if (source === 'startup' || source === 'clear') {
     try {
       const os = require('node:os')
@@ -479,36 +481,39 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
         const { dataDir } = require('./run.js')
         const { isSpanish } = require('./continuity-store.js')
         const { idleSkills, idleLine } = require('./skill-idle.js')
-        const { recordNotice } = require('./skill-registry.js')
         const spanish = isSpanish(env)
         const data = dataDir(env)
         const idle = idleSkills(data, { repo: mainRoot, now })
         const line = idleLine(idle.map((s) => s.name), { spanish })
         if (line) {
           idleLines = [line]
-          for (const s of idle) {
-            recordNotice(data, { time: now, session: input.session_id, repo: mainRoot, kind: 'idle-skills', name: s.name })
-          }
+          idleEntries = idle
+          idleDataDir = data
         }
       } catch {}
     }
   }
 
   let topicLines = []
+  let topicEntries = []
+  let topicDataDir = null
   if (source === 'startup' && firstSession && mainRoot !== null) {
     const runsPath = path.join(mainRoot, '.aether', 'runs')
     const autonomyPath = path.join(mainRoot, '.aether', 'autonomy')
     if (!fs.existsSync(runsPath) && !fs.existsSync(autonomyPath)) {
       try {
-        const { startupTopicNotice } = require('./skill-review.js')
+        const { detectUncoveredTopics, topicLine } = require('./skill-review.js')
         const { dataDir } = require('./run.js')
         const os = require('node:os')
         const top = workRoot ?? cwd
         const home = env.HOME || os.homedir()
         const data = dataDir(env)
-        const notice = startupTopicNotice({ cwd: top, home, dataDir: data, session: input.session_id })
+        const topics = detectUncoveredTopics({ cwd: top, home, dataDir: data, session: input.session_id })
+        const notice = topicLine(topics)
         if (notice) {
           topicLines.push(notice)
+          topicEntries = topics
+          topicDataDir = data
         }
       } catch {}
     }
@@ -571,6 +576,23 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
 
   while (noticeLines.length > 1 && buildPayload(noticeLines).length > PART_LIMIT) {
     noticeLines.pop()
+  }
+
+  if (idleLines.length > 0 && idleEntries.length > 0 && idleDataDir) {
+    try {
+      const { recordNotice } = require('./skill-registry.js')
+      for (const s of idleEntries) {
+        recordNotice(idleDataDir, { time: now, session: input.session_id, repo: mainRoot, kind: 'idle-skills', name: s.name })
+      }
+    } catch {}
+  }
+  if (topicLines.length > 0 && topicEntries.length > 0 && topicDataDir) {
+    try {
+      const { recordNotice } = require('./skill-registry.js')
+      for (const topic of topicEntries) {
+        recordNotice(topicDataDir, { time: now, session: input.session_id ?? null, repo: mainRoot, kind: 'topic-search', name: topic.id })
+      }
+    } catch {}
   }
 
   let issueNotices = []

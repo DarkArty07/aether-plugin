@@ -215,3 +215,42 @@ test('a verdict outside a repository keeps no project, so its task is not compar
   assert.deepEqual(log.readEntries(data, { task: 'p1' }).filter((e) => e.kind === 'verdict').map((e) => e.repo), [null])
   assert.deepEqual(repeat.repeatedFindings(data, { session: 's2', task: 'p2' }), [])
 })
+
+test('a refused verdict or a verdict given again does not record repeated-finding again', (t) => {
+  const repo = makeRepo(t)
+  const data = tempDir(t, 'aether-repeat-dedup-')
+  const add = (session, taskId, findings) => log.appendEntry(data, {
+    kind: 'verdict', session, task: taskId, repo: repo.dir, verdict: 'fix',
+    input: { kind: 'fix', findings: findings.map(([file, what]) => ({ file, line: 1, what })) },
+  })
+  add('s1', 't1', [['src/a.js', 'missing null check on input']])
+  add('s1', 't2', [['src/a.js', 'missing null check on input']])
+  const ctx = { env: {}, home: '/h', now: 1, dataDir: data }
+  // Refused verdict (tool_response.ok === false or is_error) records nothing.
+  assert.equal(repeat.posttool({
+    tool_name: 'Bash', session_id: 's1', cwd: repo.dir,
+    tool_input: { command: 'aether-delegate verdict --task t2 --verdict approve' },
+    tool_response: { stdout: JSON.stringify({ ok: false, error: 'checks failed' }) },
+  }, ctx), null)
+  assert.equal(reg.readNotices(data).length, 0)
+
+  // First accepted verdict records once.
+  const first = repeat.posttool({
+    tool_name: 'Bash', session_id: 's1', cwd: repo.dir,
+    tool_input: { command: 'aether-delegate verdict --task t2 --verdict fix' },
+  }, ctx)
+  assert.ok(first)
+  assert.equal(reg.readNotices(data).length, 1)
+
+  // Giving the verdict again does not record another notice.
+  repeat.posttool({
+    tool_name: 'Bash', session_id: 's1', cwd: repo.dir,
+    tool_input: { command: 'aether-delegate verdict --task t2 --verdict fix' },
+  }, ctx)
+  assert.equal(reg.readNotices(data).length, 1)
+})
+
+test('two clearly different findings on one file do not count as repeated, while two wordings of the same finding do', () => {
+  assert.equal(repeat.findingsMatch('missing error check', 'missing timeout check'), false)
+  assert.equal(repeat.findingsMatch('does not check for empty input list', 'missing check when input list is empty'), true)
+})

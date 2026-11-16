@@ -5,7 +5,7 @@
 
 const { readEntries } = require('./delegate-log.js')
 const { repoPaths } = require('./git.js')
-const { loadSkillsConfig, recordNotice } = require('./skill-registry.js')
+const { canonicalRepo, loadSkillsConfig, readNotices, recordNotice } = require('./skill-registry.js')
 
 function repeatOf(config) {
   if (config && typeof config.minWordLength === 'number' && typeof config.similarityThreshold === 'number' && Array.isArray(config.stopwords)) {
@@ -37,10 +37,12 @@ function wordSimilarity(whatA, whatB, config = null) {
 }
 
 // Two findings with no significant word on either side never match, whatever the threshold.
+// At the bundled 0.35 threshold, require at least 0.55 so two different findings on one file do not collide.
 function findingsMatch(whatA, whatB, config = null) {
   const repeat = repeatOf(config)
   const score = wordSimilarity(whatA, whatB, repeat)
-  return score > 0 && score >= repeat.similarityThreshold
+  const threshold = repeat.similarityThreshold === 0.35 ? 0.55 : repeat.similarityThreshold
+  return score > 0 && score >= threshold
 }
 
 function sameFile(left, right) {
@@ -99,13 +101,28 @@ function repeatedFindings(dataDir, { session = null, task = null, repo = null, c
   return results
 }
 
+function isRefusedVerdict(input) {
+  const resp = input?.tool_response
+  if (!resp || typeof resp !== 'object') return false
+  if (resp.is_error === true) return true
+  if (typeof resp.exitCode === 'number' && resp.exitCode !== 0) return true
+  if (typeof resp.stdout === 'string') {
+    try {
+      const parsed = JSON.parse(resp.stdout)
+      if (parsed && parsed.ok === false) return true
+    } catch {}
+  }
+  return false
+}
+
 function posttool(input, ctx = {}) {
-  if (!input || typeof input !== 'object') return null
+  if (!input || typeof input !== 'object' || input.agent_id) return null
   if (input.tool_name !== 'Bash') return null
   const command = input.tool_input?.command
   if (typeof command !== 'string') return null
 
   if (!/\baether-delegate\s+verdict\b/.test(command)) return null
+  if (isRefusedVerdict(input)) return null
   const taskMatch = command.match(/(?:^|\s)--task(?:=|\s+)(["']?)([^"'\s]+)\1/)
   if (!taskMatch) return null
   const taskId = taskMatch[2]
@@ -120,8 +137,18 @@ function posttool(input, ctx = {}) {
   const repeated = repeatedFindings(dataDir, { session, task: taskId, repo })
   if (!repeated || repeated.length === 0) return null
 
+  const canon = canonicalRepo({ repo })
+  const noticedFiles = new Set(
+    readNotices(dataDir)
+      .filter((n) => n.kind === 'repeated-finding' && n.session === session && canonicalRepo(n) === canon)
+      .map((n) => n.name),
+  )
+
   const lines = repeated.map((item) => {
-    recordNotice(dataDir, { session, repo, kind: 'repeated-finding', name: item.finding.split(':')[0] })
+    const file = item.finding.split(':')[0]
+    if (!noticedFiles.has(file)) {
+      recordNotice(dataDir, { session, repo, kind: 'repeated-finding', name: file })
+    }
     const taskNoun = item.tasks.length === 1 ? 'task' : 'tasks'
     return `The finding "${item.finding}" already came up in ${taskNoun} ${item.tasks.join(', ')}. Consider a skill for it: load aether:skills.`
   })
