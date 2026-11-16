@@ -507,8 +507,10 @@ recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, notify }, { n
   //     resumeAt, duplicate?, brakeOff?, quote?). A run that another session's crossing already paused answers
   //     `duplicate: true`, as today for a repeated crossing;
   //   - `session` known but with no run of its own (selectRun says foreign or ambiguous): { recorded: true,
-  //     paused: false, run: null }, every open run is still paused, but nothing is armed or prompted for a caller
-  //     that has no run to stop;
+  //     paused: false, run: null, reason: 'no-run' }, every open run is still paused, but nothing is armed or
+  //     prompted for a caller that has no run to stop. The `reason: 'no-run'` is what keeps the mod from
+  //     remembering the reset hour for that session (register.js brakeRecorded), so a run it opens later in the
+  //     same window is still paused;
   //   - no `session`: the result of the first open run, with today's keys.
   // In every case it adds `runs`: Array<{ run, paused, duplicate?, brakeOff? }> with the result of every open run.
   // no open run: { recorded: false, paused: false, reason: 'no-run' } (today). seven_day: unchanged (nothing paused).
@@ -581,7 +583,7 @@ test('R14: a crossing from a known session with no run of its own pauses every r
   const a = s.open(A)
   const b = s.open(B)
   const r = autonomy.recordCrossing(s.repo.dir, crossing, { now: NOW, dataDir: s.dataDir, session: C })
-  assert.deepEqual([r.recorded, r.paused, r.run], [true, false, null])
+  assert.deepEqual([r.recorded, r.paused, r.run, r.reason], [true, false, null, 'no-run'])
   assert.equal(r.runs.length, 2)
   assert.equal(r.resumeAt, undefined)
   for (const id of [a.run.id, b.run.id]) assert.equal(s.read(id).quotaPauses.length, 1)
@@ -671,7 +673,7 @@ In `tests/quota-brake.test.js`, `tests/quota-brake-settings.test.js` and `tests/
 - `node --test tests/autonomy-quota-sessions.test.js tests/quota-brake.test.js tests/quota-brake-settings.test.js tests/quota-brake-scenarios.test.js tests/autonomy-per-session.test.js` passes.
 - With one open run the results of `recordCrossing`, `brakeSettings` and `recordSaved` have exactly today's keys (`runs` appears only in `recordCrossing`, and in `recordSaved` only when more than one run was written).
 - No quota function asks for a run name, and `recordCrossing`, `brakeSettings` and `recordSaved` no longer call `findOpenRun`.
-- A crossing never answers with the run of another session: a known session with no run of its own gets `run: null`.
+- A crossing never answers with the run of another session: a known session with no run of its own gets `run: null` and `reason: 'no-run'`.
 
 ### Task 5: El aviso de inicio nombra la corrida propia y, aparte, las de otras sesiones
 
@@ -1201,7 +1203,7 @@ test('R15: continue on a run that is already the caller\'s changes nothing, and 
 **Aether:**
 - Area: mod
 - Owns: `plugins/aether/hooks/register.js`, `plugins/aether/hooks/quota-brake.test.ts`
-- Depends on: Task 4 — once a crossing pauses every open run, the second session's own crossing answers `duplicate: true` for its run, and a caller with no run answers `run: null`
+- Depends on: Task 4 — once a crossing pauses every open run, the second session's own crossing answers `duplicate: true` for its run, and a caller with no run answers `run: null` with `reason: 'no-run'`
 - Serves: R9, R14
 
 **Interfaces:**
@@ -1237,12 +1239,30 @@ test('a duplicate answer to a session that already knows the pause submits no se
 })
 
 test('an answer for a session with no run of its own arms nothing and prompts nothing', async ($, on) => {
-  const s = stubs(on, { crossing: { recorded: true, paused: false, run: null, runs: [{ run: RUN, paused: true }] } })
+  const s = stubs(on, { crossing: { recorded: true, paused: false, run: null, reason: 'no-run', runs: [{ run: RUN, paused: true }] } })
   s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
   await step($)
   expect(s.prompts).toEqual([])
   await s.clock.advance(Date.parse(RESUME) - NOW)
   expect(s.prompts).toEqual([])
+})
+
+test('an answer for a session with no run of its own does not hide the hour: a run opened later in the window is paused', async ($, on) => {
+  const settings = { ...SETTINGS, openRun: null }
+  const crossing: any = { recorded: true, paused: false, run: null, reason: 'no-run', runs: [{ run: RUN, paused: true }] }
+  const s = stubs(on, { settings, crossing })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await step($)
+  expect(s.crossingRuns()).toHaveLength(1)
+  expect(s.prompts).toEqual([])
+  settings.openRun = RUN
+  Object.assign(crossing, PAUSED)
+  delete crossing.reason
+  await s.clock.advance(60000)
+  await step($)
+  expect(s.crossingRuns()).toHaveLength(2)
+  expect(s.prompts).toHaveLength(1)
+  expect(s.prompts[0].text).toContain(`Autonomous run ${RUN} is now paused by the quota brake until ${RESUME}`)
 })
 ```
 
