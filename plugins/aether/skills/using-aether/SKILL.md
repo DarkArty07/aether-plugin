@@ -194,7 +194,7 @@ Permission such as «trabaja por horas» confirms intent and opens a run, whatev
 
 When permission is given or session start says a run is open, load the `aether:autonomous-runs` skill and follow it. A run belongs to the session that opened it.
 - `aether-autonomy status <id>`: see another session's run.
-- `aether-autonomy end <id>`: close another session's run.
+- `aether-autonomy end <id> --outcome incomplete`: close another session's run.
 - `aether-autonomy continue <id>`: continue your own after a restart that gave the session a new id.
 
 **Irreversible actions.** These eight classes need authorization; local reversible work proceeds.
@@ -215,7 +215,7 @@ Before one, run `aether-autonomy check <class>`:
 - **Exit 2:** uncovered; unless authorized in owner's words, list action, class and exact command in "Espera tu sí" and continue.
 
 **Recording the owner's authorizations,** in a run or not:
-- General words («todos los merges a main», «siempre»): `aether-autonomy grant --class <class> --quote "<their words>"`, valid in this repo until revoked.
+- General words naming an action («todos los merges a main», «siempre»): `aether-autonomy grant --class <class> --quote "<their words>"`, valid in this repo until revoked.
 - Session-only words: add `--scope session`.
 - One specific action or bare «sí»: note that single action in the diary, not the registry.
 - Withdrawal: `aether-autonomy revoke --class <class> --quote "<their words>" --all`; without `--all`, removes only this session's grants.
