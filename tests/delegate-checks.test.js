@@ -194,6 +194,29 @@ test('forkBase moves the check base forward to where the branch was built (issue
   assert.equal(checks.forkBase(repo.dir, launch), launch, 'a detached worktree keeps the base')
 })
 
+test('forkBase ignores tags and worktreeBase skips checkout back onto a commit made in a forked worktree (#278)', (t) => {
+  const repo = makeRepo(t)
+  const base = repo.git('rev-parse', 'HEAD')
+  repo.git('switch', '-q', '-c', 'feature/big')
+  commitIn(repo, repo.dir, 'docs/big.md', 'big\n', 'feature work')
+  const fork = repo.git('rev-parse', 'HEAD')
+  repo.git('switch', '-q', 'feature/x')
+
+  const wt = path.join(tempDir(t, 'aether-wt-'), 'wt')
+  repo.git('worktree', 'add', '-q', '-b', 'aether/20261115-000000-abcd/task-1', wt, fork)
+  commitIn(repo, wt, 'src/a.js', 'a\n', 'delegate commit')
+  const tip = repo.git('-C', wt, 'rev-parse', 'HEAD')
+  repo.git('-C', wt, 'tag', 'snapshot-tip', tip)
+  assert.equal(checks.forkBase(wt, base), fork, 'a tag on the unit commit does not hide it')
+
+  const detachedWt = path.join(tempDir(t, 'aether-detached-'), 'wt')
+  repo.git('worktree', 'add', '--detach', detachedWt, fork)
+  commitIn(repo, detachedWt, 'src/b.js', 'b\n', 'delegate detached commit')
+  const dTip = repo.git('-C', detachedWt, 'rev-parse', 'HEAD')
+  repo.git('-C', detachedWt, 'checkout', '-q', '--detach', dTip)
+  assert.equal(checks.worktreeBase(detachedWt, base), fork, 're-checking out a committed HEAD still starts from fork')
+})
+
 test('runTests collects failing test signatures and checkEdits includes them in reasons (issue 249)', (t) => {
   const repo = makeRepo(t)
   const fail = checks.runTests(repo.dir, 'node -e "console.log(\'not ok 1 - test_a\\nnot ok 2 - test_b\'); process.exit(1)"')

@@ -29,22 +29,48 @@ function changedFiles(worktree, base) {
 }
 
 // The commit the work in `worktree` starts from: where the worktree stood before the delegate's
-// own commits. The worktree's HEAD reflog is walked from the newest entry, skipping the entries
-// whose action made a commit (`commit:`, `commit (initial):`, ...): the first entry that is not
-// one of the delegate's own commits is the start, so work the delegate itself committed counts,
-// while the files of the branch the worktree was made from stay out (issues 143 and 178). A
-// checkout or fast-forward to a feature branch is such an entry, so it still moves the start
-// point. Falls back to `base` when the reflog cannot be read or holds only the delegate's
-// commits.
+// own commits. When `worktree` is on a named branch whose HEAD is strictly ahead of `base`, it
+// tries `forkBase(root, base)` first and returns it whenever the branch has commits of its own
+// (`fb !== headSha`), so committed work on a branch still counts even when a non-commit reflog
+// entry (such as a reset or checkout) sits above it (issue 278). Otherwise — on a detached HEAD,
+// when HEAD is at or not ahead of `base`, or when `forkBase` finds no own commits — it walks the
+// worktree's HEAD reflog from the newest entry, skipping `commit...` entries: the first entry
+// that is not one of the delegate's own commits is the start, so work the delegate itself
+// committed counts while the files of the branch the worktree was made from stay out (issues 143
+// and 178). Falls back to `base` when neither path finds a start.
 function worktreeBase(worktree, base) {
   try {
     const root = repoPaths(worktree).worktree
+    const head = git(['rev-parse', 'HEAD'], root, { allowFail: true })
+    const headSha = head.status === 0 && head.stdout ? head.stdout : null
+    const branch = git(['branch', '--show-current'], root, { allowFail: true })
+    if (branch.status === 0 && branch.stdout && headSha && typeof base === 'string' && base !== '' && headSha !== base) {
+      const ancestor = git(['merge-base', '--is-ancestor', base, headSha], root, { allowFail: true })
+      if (ancestor.status === 0) {
+        const fb = forkBase(root, base)
+        if (fb !== headSha) return fb
+      }
+    }
     const trail = git(['log', '-g', '--format=%H %gs', 'HEAD'], root, { allowFail: true })
     if (trail.status === 0 && trail.stdout) {
+      const entries = []
       for (const line of trail.stdout.split('\n')) {
         const entry = /^([0-9a-f]{40})(?: (.*))?$/.exec(line.trim())
-        if (!entry) continue
-        if (!entry[2] || !entry[2].startsWith('commit')) return entry[1]
+        if (entry) entries.push({ sha: entry[1], action: entry[2] || '' })
+      }
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i]
+        if (!entry.action.startsWith('commit')) {
+          const older = entries.slice(i + 1)
+          const committedInWorktree = older.some((e) => e.action.startsWith('commit') && e.sha === entry.sha)
+          const hasEarlierStart = older.some((e) => !e.action.startsWith('commit'))
+          if (committedInWorktree && hasEarlierStart) continue
+          if (headSha && entry.sha === headSha && typeof base === 'string' && base !== '' && headSha !== base && entries.some((e) => e.sha === base)) {
+            const ancestor = git(['merge-base', '--is-ancestor', base, headSha], root, { allowFail: true })
+            if (ancestor.status === 0) return base
+          }
+          return entry.sha
+        }
       }
     }
   } catch {
@@ -70,7 +96,7 @@ function forkBase(worktree, base) {
     const head = git(['rev-parse', 'HEAD'], root, { allowFail: true })
     if (head.status !== 0 || !head.stdout) return base
     if (head.stdout === base) return base
-    const refs = git(['for-each-ref', '--format=%(objectname) %(refname)'], root, { allowFail: true })
+    const refs = git(['for-each-ref', '--format=%(objectname) %(refname)', 'refs/heads'], root, { allowFail: true })
     if (refs.status !== 0) return base
     const others = refs.stdout.split('\n').map((line) => line.trim()).filter((line) => line !== '')
       .map((line) => line.split(/\s+/))
