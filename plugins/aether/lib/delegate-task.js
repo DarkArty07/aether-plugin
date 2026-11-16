@@ -677,6 +677,9 @@ async function begin(input, deps = {}) {
     const previous = correcting && lastResult && isObject(lastResult.pair) && isText(lastResult.pair.id) ? lastResult.pair : null
     let pin = null
 
+    const briefRel = path.posix.join('briefs', `${log.fileKey(session, id)}-${launchAttempt}.md`)
+    const briefFile = path.join(r.dataDir, 'delegates', briefRel)
+
     let pick = null
     let external = null
     // A task the owner placed on a model runs on Claude in every attempt: the pair choice is not asked for it (spec 021).
@@ -699,7 +702,6 @@ async function begin(input, deps = {}) {
         }
       }
       if (pick) {
-        const briefFile = path.join(r.dataDir, 'delegates', 'briefs', `${log.fileKey(session, id)}-${launchAttempt}.md`)
         fs.mkdirSync(path.dirname(briefFile), { recursive: true })
         fs.writeFileSync(briefFile, externalPrompt)
         writeJson(path.join(r.dataDir, 'delegates', 'external', `${log.fileKey(session, id)}.json`), {
@@ -715,6 +717,10 @@ async function begin(input, deps = {}) {
         external = { id, edits, timeoutMs: EXTERNAL_LIMIT_MS, pin, pair: { harness: pick.harness, model: pick.model, effort: pick.effort } }
       }
     }
+    if (!pick) {
+      fs.mkdirSync(path.dirname(briefFile), { recursive: true })
+      fs.writeFileSync(briefFile, claudePrompt)
+    }
 
     // A read-only attempt, on an external pair or on Claude, works in the Lead's checkout (its rescue does on Claude): what
     // was already changed there is not its doing.
@@ -725,7 +731,7 @@ async function begin(input, deps = {}) {
     const launch = {
       // Stored field stays `attempt` for delegates/log.jsonl compatibility.
       kind: 'launch', time, session, task: id, step, attempt: launchAttempt, launchKind, effort, edits, owns: brief.owns, tests: brief.tests,
-      description, requested, ignored, pin, base, dirty,
+      description, requested, ignored, pin, base, dirty, repo, brief: briefRel,
     }
     if (launchKind === 'first' && authorized !== null) launch.authorized = authorized
     if (loadedSkills && loadedSkills.length > 0) launch.skills = loadedSkills.map((s) => s.name)

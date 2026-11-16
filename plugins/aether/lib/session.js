@@ -225,13 +225,16 @@ function oldStyleMarks(dataDir, { now = Date.now(), maxAgeMs = OLD_MARK_MS } = {
 // With opsInMod false it also writes the ops-off file, and with it true it removes a stale one, so a session
 // resumed with the option changed follows the option it has now. With delegate given it writes the delegate file,
 // and with it null it removes a stale one, for the same reason. The same goes for brake and its file.
-function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, delegate = null, brake = null, repo = null, claude = null } = {}) {
+// With plugin or bootstrap given, the marker also records the plugin version and the sha256 fingerprint of the Lead's bootstrap rules.
+function markSession(dataDir, sessionId, now = Date.now(), { opsInMod = true, delegate = null, brake = null, repo = null, claude = null, plugin = null, bootstrap = null } = {}) {
   const file = markerFile(dataDir, sessionId)
   const dir = path.dirname(file)
   fs.mkdirSync(dir, { recursive: true })
   const mark = repo !== null || claude !== null
     ? { session: sessionId, startedAt: now, repo, claude, lastActivity: now }
     : { session: sessionId, startedAt: now }
+  if (plugin !== null) mark.plugin = plugin
+  if (bootstrap !== null) mark.bootstrap = bootstrap
   fs.writeFileSync(file, JSON.stringify(mark) + '\n')
   const off = opsOffFile(dataDir, sessionId)
   if (opsInMod) fs.rmSync(off, { force: true })

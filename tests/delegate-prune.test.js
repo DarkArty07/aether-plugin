@@ -41,7 +41,7 @@ test('pruneDelegateLog archives the outcomes of sessions idle past the window, k
 
   assert.deepEqual(res, { pruned: ['s-old'] })
   assert.deepEqual([...new Set(log.readEntries(dataDir).map((e) => e.session))].sort(), ['s-live', 's-new'])
-  assert.equal(fs.readFileSync(outcomesFile(dataDir, 's-old'), 'utf8').trim().split('\n').length, 1)
+  assert.equal(fs.readFileSync(outcomesFile(dataDir, 's-old'), 'utf8').trim().split('\n').length, 2)
   const after = spendReport({ dataDir, session: 's-old', prices: PRICES })
   close(after.usd, price)
   assert.equal(after.harness.calls, 1)

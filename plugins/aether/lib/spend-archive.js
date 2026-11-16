@@ -85,7 +85,7 @@ function archiveSpend(dataDir, session, source, { prices = loadPrices() } = {}) 
   }, { waitMs: 10000, staleMs: 60000 })
 }
 
-// Preserves exact outcome lines before the caller removes them from the delegate log.
+// Preserves exact outcome and launch lines before the caller removes them from the delegate log.
 function archiveOutcomes(dataDir, session) {
   if (!isSessionId(session)) return { archived: false, lines: 0 }
   return withLock(path.join(dataDir, 'spend', '.' + session), () => {
@@ -99,7 +99,7 @@ function archiveOutcomes(dataDir, session) {
     const selected = text.split('\n').filter((line) => {
       try {
         const entry = JSON.parse(line)
-        return entry !== null && entry.kind === 'outcome' && entry.session === session
+        return entry !== null && (entry.kind === 'outcome' || entry.kind === 'launch') && entry.session === session
       } catch { return false }
     })
     if (!selected.length) return { archived: false, lines: 0 }

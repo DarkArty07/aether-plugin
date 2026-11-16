@@ -18,6 +18,7 @@
 // Claude Code delivers a hook's output whole only up to 10,000 characters and gives a longer one as a preview and
 // a file, so the bootstrap goes in parts whose whole output stays within PART_LIMIT.
 
+const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 const PLUGIN_ROOT = path.join(__dirname, '..')
@@ -111,6 +112,16 @@ function splitParts(text, root, limit = PART_LIMIT) {
 // The parts of the using-aether bootstrap of the plugin at root, as splitParts gives them.
 function bootstrapParts(root) {
   return splitParts(bootstrap(root), root)
+}
+
+// A sha256 hex digest of the Lead's bootstrap rules as delivered across all parts at session start.
+function bootstrapFingerprint(root) {
+  try {
+    const text = bootstrapParts(root).map((p) => p.context).join('')
+    return crypto.createHash('sha256').update(text).digest('hex')
+  } catch {
+    return null
+  }
 }
 
 // The plugin's version, read from <root>/.claude-plugin/plugin.json; '' when it cannot be read.
@@ -214,7 +225,7 @@ function pruneOldFiles(env) {
 const NOTICE_SOURCES = ['startup', 'clear', 'fork']
 
 // Marks the session; returns the reason it could not, or '' when it did.
-function mark(sessionId, env, { cwd = process.cwd(), procRoot = '/proc', from = process.ppid, now = Date.now() } = {}) {
+function mark(sessionId, env, { cwd = process.cwd(), procRoot = '/proc', from = process.ppid, now = Date.now(), root = env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT } = {}) {
   try {
     const { markSession, delegateSettingsFrom, brakeSettingsFrom, readMark, markerFile } = require('./session.js')
     const { dataDir } = require('./run.js')
@@ -240,6 +251,8 @@ function mark(sessionId, env, { cwd = process.cwd(), procRoot = '/proc', from = 
       brake: brakeSettingsFrom(env),
       repo,
       claude,
+      plugin: pluginVersion(root),
+      bootstrap: bootstrapFingerprint(root),
     })
     // Resume and compact reuse the note: keep its recorded folder when refreshing the mark, so SessionEnd
     // can still close it without git (spec 030 R3).
@@ -330,7 +343,7 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
   }
 
   // 2. Mark the session and pass superdelegation.
-  const markFailure = mark(input.session_id, env, { cwd, procRoot, from, now })
+  const markFailure = mark(input.session_id, env, { cwd, procRoot, from, now, root })
   const passed = passSuperdelegation(env)
 
   const noteInput = input.cwd ? input : { ...input, cwd }
