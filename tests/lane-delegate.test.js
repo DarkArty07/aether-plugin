@@ -729,3 +729,17 @@ test('the state of a delegate run holds the session of the call (spec 041 R7)', 
   const state = JSON.parse(fs.readFileSync(path.join(repo.dir, '.aether', 'runs', r.json.id, 'state.json'), 'utf8'))
   assert.equal(state.session, 'sess-delegate-1')
 })
+
+test('starting an editing delegate with task writes lanes/links/<laneRunId>.json with id and session', async (t) => {
+  const repo = makeRepo(t)
+  const env = agyEnv(t, { command: roleFake(t) })
+  const brief = writeBrief(repo, briefLines())
+  const result = await delegate.delegateCommand(repo.dir, { brief, model: 'haiku', effort: 'high', owns: 'src/**', tests: 'node -e "process.exit(0)"', session: 'sess-link-1', task: 'task-link-9' }, { env })
+  assert.equal(result.status, 'done')
+  const linkFile = path.join(env.AETHER_DATA_DIR, 'lanes', 'links', `${result.id}.json`)
+  assert.equal(fs.existsSync(linkFile), true)
+  const link = JSON.parse(fs.readFileSync(linkFile, 'utf8'))
+  assert.equal(link.id, 'task-link-9')
+  assert.equal(link.session, 'sess-link-1')
+  assert.equal(typeof link.writtenAt, 'number')
+})

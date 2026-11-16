@@ -14,7 +14,7 @@ const childProcess = require('node:child_process')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { isObject, isText, messageOf, pidAlive, sleep: realSleep } = require('./common.js')
+const { isObject, isText, killGroup, messageOf, pidAlive, sleep: realSleep, sleepSync } = require('./common.js')
 const { pairId, nativeModels, loadPairs } = require('./pairs.js')
 const log = require('./delegate-log.js')
 const checksLib = require('./delegate-checks.js')
@@ -225,6 +225,7 @@ async function runEdits(external, { cwd, dataDir }, delegateCommand) {
   if (isText(external.tests)) flags.tests = external.tests
   if (isText(external.session)) flags.session = external.session
   if (isText(external.pin)) flags.pair = external.pin
+  if (isText(external.id)) flags.task = external.id
   const carry = carryFile(dataDir, external)
   if (carry) flags.carry = carry
   const findings = findingsFile(dataDir, external)
@@ -386,4 +387,118 @@ async function wait({ id, session = null, dataDir, seconds, now = Date.now, slee
   }
 }
 
-module.exports = { MAX_WAIT_SECONDS, start, runTask, recordAnswer, wait }
+// ---- stop ----
+
+const STOP_POLL_MS = 50
+const START_SLACK_MS = 5000
+const CLK_TCK = 100
+
+function readProcStat(pid) {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const close = stat.lastIndexOf(')')
+    if (close === -1) return { missing: false, fields: null }
+    return { missing: false, fields: stat.slice(close + 2).split(' ') }
+  } catch (err) {
+    return { missing: err.code === 'ENOENT', fields: null }
+  }
+}
+
+function isProcRunning(pid) {
+  const { fields } = readProcStat(pid)
+  return fields !== null && fields[0] !== 'Z'
+}
+
+function bootTimeSeconds() {
+  try {
+    const line = fs.readFileSync('/proc/stat', 'utf8').split('\n').find((item) => item.startsWith('btime '))
+    if (!line) return null
+    const value = Number(line.split(/\s+/)[1])
+    return Number.isFinite(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+function procStartMs(fields) {
+  if (!fields || fields.length <= 19) return null
+  const ticks = Number(fields[19])
+  const btime = bootTimeSeconds()
+  if (!Number.isFinite(ticks) || btime === null) return null
+  return (btime + ticks / CLK_TCK) * 1000
+}
+
+// Stops the process recorded in `file` after verifying that the live process is the one that file started.
+function stopRunFile(file, { graceMs = 5000 } = {}) {
+  const read = readJson(file)
+  if (!read.found || !isObject(read.value)) return { stopped: false }
+  const { pid, startedAt } = read.value
+  if (!Number.isInteger(pid) || pid <= 0) return { stopped: false }
+  if (pid === process.pid) return { stopped: false, pid, reason: 'self' }
+
+  const proc = readProcStat(pid)
+  if (proc.missing || (proc.fields !== null && proc.fields[0] === 'Z')) return { stopped: false, pid }
+  if (proc.fields === null) return { stopped: false, pid, reason: 'unverified' }
+  const started = procStartMs(proc.fields)
+  if (started === null || typeof startedAt !== 'number' || !Number.isFinite(startedAt)) {
+    return { stopped: false, pid, reason: 'unverified' }
+  }
+  if (started > startedAt + START_SLACK_MS) {
+    return { stopped: false, pid, reason: 'unverified' }
+  }
+
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    return { stopped: false, pid }
+  }
+  const waitMs = Math.max(0, Number(graceMs) || 0)
+  const deadline = Date.now() + waitMs
+  while (isProcRunning(pid) && Date.now() < deadline) {
+    sleepSync(Math.min(STOP_POLL_MS, Math.max(0, deadline - Date.now())))
+  }
+  if (isProcRunning(pid)) {
+    killGroup(pid)
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // Already exited.
+    }
+  }
+  return { stopped: true, pid }
+}
+
+function stopTask(dataDir, { id, session = null } = {}, { graceMs = 5000 } = {}) {
+  if (!isText(id) || !ID.test(id)) return { stopped: false }
+  try {
+    return stopRunFile(runFile(dataDir, id, session), { graceMs })
+  } catch {
+    return { stopped: false }
+  }
+}
+
+function stopAll(dataDir, { sessions } = {}, { graceMs = 5000 } = {}) {
+  if (!Array.isArray(sessions) || sessions.length === 0) return { stopped: 0, skipped: [] }
+  const prefixes = sessions.filter((s) => typeof s === 'string' && s !== '').map((s) => `${s.length}-${s}--`)
+  if (prefixes.length === 0) return { stopped: 0, skipped: [] }
+  const dir = path.join(delegatesDir(dataDir), 'run')
+  let names
+  try {
+    names = fs.readdirSync(dir)
+  } catch {
+    return { stopped: 0, skipped: [] }
+  }
+  let stopped = 0
+  const skipped = []
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue
+    const key = name.slice(0, -'.json'.length)
+    if (!prefixes.some((prefix) => key.startsWith(prefix))) continue
+    const res = stopRunFile(path.join(dir, name), { graceMs })
+    if (res.stopped) stopped++
+    else if (res.reason) skipped.push({ key, reason: res.reason })
+  }
+  return { stopped, skipped }
+}
+
+module.exports = { MAX_WAIT_SECONDS, start, runTask, recordAnswer, wait, stopTask, stopAll }

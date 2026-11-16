@@ -4,7 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { tempDir } = require('./helpers.js')
+const { tempDir, makeRepo } = require('./helpers.js')
 const chain = require('../plugins/aether/lib/delegate-chain.js')
 const laneMarks = require('../plugins/aether/lib/lane-marks.js')
 const log = require('../plugins/aether/lib/delegate-log.js')
@@ -366,4 +366,89 @@ test('issue 037: a mark that cannot be written is swallowed: the outcome is stil
   assert.equal(ended.ok, false)
   assert.equal(ended.status, 'failed')
   assert.equal(timed.calls.length, 1)
+})
+
+function setupPausedRepo(t, { pause = false, costExceeded = false } = {}) {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-chain-data-')
+  const clock = { t: Date.parse('2026-10-21T12:00:00Z') }
+  const session = 's1'
+  fs.mkdirSync(path.join(dataDir, 'sessions'), { recursive: true })
+  fs.writeFileSync(path.join(dataDir, 'sessions', `${session}.json`), JSON.stringify({ agent: 'aether:lead' }) + '\n')
+  const autoId = 'auto-20261021-120000-abcd'
+  const runDir = path.join(repo.dir, '.aether', 'autonomy', autoId)
+  fs.mkdirSync(runDir, { recursive: true })
+  const runState = {
+    id: autoId,
+    session,
+    started: new Date(clock.t - 60000).toISOString(),
+    ended: null,
+    outcome: null,
+    ceilings: { hours: 4, usd: costExceeded ? 1 : 50 },
+    spend: costExceeded ? [{ source: 'manual', usd: 2, at: new Date(clock.t - 1000).toISOString() }] : [],
+    quotaPauses: pause
+      ? [{ kind: 'five_hour', percentUsed: 96, started: new Date(clock.t - 1000).toISOString(), resetsAt: new Date(clock.t + 3600000).toISOString(), resumeAt: new Date(clock.t + 3720000).toISOString(), brakeOff: false }]
+      : [],
+    brakeOff: false,
+  }
+  fs.writeFileSync(path.join(runDir, 'run.json'), JSON.stringify(runState) + '\n')
+  return { repo, dataDir, clock, runFile: path.join(runDir, 'run.json'), runState }
+}
+
+test('R17: with an active quota pause, runChain does not launch any pair and returns a relaunchable result without writing a failed outcome', async (t) => {
+  const { repo, dataDir, clock } = setupPausedRepo(t, { pause: true })
+  const calls = []
+  const runDelegate = async (input) => {
+    calls.push(input)
+    return { status: 'ok', text: 'found', detail: '', durationMs: 1000, usage: { ...NO_USAGE }, quotaSpent: [], timedOut: false, harness: input.harness, modelArg: `${input.rung.model}-${input.rung.effort}` }
+  }
+  const out = await chain.runChain(
+    { cwd: repo.dir, id: 'c-1', session: 's1', external: externalOf(ARGON, [GROK]), config: CONFIG, dataDir },
+    { runDelegate, now: () => clock.t },
+  )
+  assert.equal(calls.length, 0)
+  assert.equal(out.ok, false)
+  assert.notEqual(out.status, 'failed')
+  assert.equal(chain.isStartRefusal({ status: out.status, detail: out.detail, usage: NO_USAGE }), true)
+  assert.match(out.detail, /quota brake/i)
+  const entries = log.readEntries(dataDir, { task: 'c-1' })
+  assert.equal(entries.some((e) => e.kind === 'outcome' && e.status === 'failed'), false)
+  assert.equal(entries.some((e) => e.kind === 'verdict'), false)
+})
+
+test('R17: a quota pause recorded between the first and second candidate stops the chain before the second pair', async (t) => {
+  const { repo, dataDir, clock, runFile, runState } = setupPausedRepo(t, { pause: false })
+  const calls = []
+  const runDelegate = async (input) => {
+    calls.push(input)
+    // Pause activates right after the first pair refuses.
+    runState.quotaPauses.push({ kind: 'five_hour', percentUsed: 96, started: new Date(clock.t).toISOString(), resetsAt: new Date(clock.t + 3600000).toISOString(), resumeAt: new Date(clock.t + 3720000).toISOString(), brakeOff: false })
+    fs.writeFileSync(runFile, JSON.stringify(runState) + '\n')
+    return { status: 'unavailable', text: '', detail: 'agy unavailable', durationMs: 1000, usage: { ...NO_USAGE }, quotaSpent: [], timedOut: false, harness: input.harness, modelArg: `${input.rung.model}-${input.rung.effort}` }
+  }
+  const out = await chain.runChain(
+    { cwd: repo.dir, id: 'c-1', session: 's1', external: externalOf(ARGON, [GROK]), config: CONFIG, dataDir },
+    { runDelegate, now: () => clock.t },
+  )
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].harness, 'agy')
+  assert.equal(out.ok, false)
+  assert.notEqual(out.status, 'failed')
+  assert.equal(chain.isStartRefusal({ status: out.status, detail: out.detail, usage: NO_USAGE }), true)
+  assert.match(out.detail, /quota brake/i)
+})
+
+test('R17: a cost ceiling exceeded without a quota pause does not stop runChain', async (t) => {
+  const { repo, dataDir, clock } = setupPausedRepo(t, { pause: false, costExceeded: true })
+  const calls = []
+  const runDelegate = async (input) => {
+    calls.push(input)
+    return { status: 'ok', text: 'found', detail: '', durationMs: 1000, usage: { ...NO_USAGE }, quotaSpent: [], timedOut: false, harness: input.harness, modelArg: `${input.rung.model}-${input.rung.effort}` }
+  }
+  const out = await chain.runChain(
+    { cwd: repo.dir, id: 'c-1', session: 's1', external: externalOf(ARGON, [GROK]), config: CONFIG, dataDir },
+    { runDelegate, now: () => clock.t },
+  )
+  assert.equal(calls.length, 1)
+  assert.equal(out.ok, true)
 })

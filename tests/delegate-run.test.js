@@ -4,7 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { tempDir, makeRepo } = require('./helpers.js')
 const dr = require('../plugins/aether/lib/delegate-run.js')
 const log = require('../plugins/aether/lib/delegate-log.js')
@@ -438,4 +438,135 @@ test('answer uses the last matching launch and a null session searches across se
   log.appendEntry(dataDir, launch('s2', true))
   dr.recordAnswer({ task: 't1', attempt: 1, text: 'private', session: null, dataDir, now: () => 4 })
   assert.deepEqual(log.readEntries(dataDir).at(-1), { kind: 'ended', time: 4, session: null, task: 't1', attempt: 1 })
+})
+
+function waitForFileSync(file, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs
+  while (!fs.existsSync(file)) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${file}`)
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+  }
+}
+
+function isAlive(pid) {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+    const state = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0]
+    return state !== 'Z'
+  } catch {
+    return false
+  }
+}
+
+function spawnSleeper(t, { ignoreTerm = false, grandchildPidFile = null, readyFile = null } = {}) {
+  const script = `
+    const fs = require('node:fs');
+    const { spawn } = require('node:child_process');
+    let child = null;
+    if (${JSON.stringify(grandchildPidFile)}) {
+      child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60000)'], { detached: true, stdio: 'ignore' });
+      child.unref();
+      fs.writeFileSync(${JSON.stringify(grandchildPidFile)}, String(child.pid));
+    }
+    if (${JSON.stringify(ignoreTerm)}) {
+      process.on('SIGTERM', () => {});
+    } else {
+      process.on('SIGTERM', () => {
+        if (child) { try { process.kill(-child.pid, 'SIGKILL'); } catch {} }
+        process.exit(0);
+      });
+    }
+    if (${JSON.stringify(readyFile)}) fs.writeFileSync(${JSON.stringify(readyFile)}, 'ready');
+    setInterval(() => {}, 60000);
+  `
+  const proc = spawn(process.execPath, ['-e', script], { detached: true, stdio: 'ignore' })
+  proc.unref()
+  t.after(() => {
+    try { process.kill(-proc.pid, 'SIGKILL') } catch {}
+    if (grandchildPidFile && fs.existsSync(grandchildPidFile)) {
+      const gpid = Number(fs.readFileSync(grandchildPidFile, 'utf8'))
+      if (gpid > 0) { try { process.kill(-gpid, 'SIGKILL') } catch {} }
+    }
+  })
+  if (readyFile) waitForFileSync(readyFile)
+  return proc.pid
+}
+
+test('stopTask sends SIGTERM to a verified run process, its grandchild exits, and wait reports died', async (t) => {
+  const dataDir = tempDir(t, 'aether-stop-data-')
+  const grandFile = path.join(dataDir, 'grand.pid')
+  const readyFile = path.join(dataDir, 'ready')
+  const pid = spawnSleeper(t, { grandchildPidFile: grandFile, readyFile })
+  const grandPid = Number(fs.readFileSync(grandFile, 'utf8'))
+  const file = path.join(dataDir, 'delegates', 'run', `${log.fileKey('s1', 't1')}.json`)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ pid, startedAt: Date.now() }))
+
+  const res = dr.stopTask(dataDir, { id: 't1', session: 's1' }, { graceMs: 5000 })
+  assert.equal(res.stopped, true)
+  assert.equal(res.pid, pid)
+  assert.equal(isAlive(pid), false)
+  assert.equal(isAlive(grandPid), false)
+
+  const waited = await dr.wait({ id: 't1', session: 's1', dataDir, seconds: 1, alive: isAlive })
+  assert.deepEqual(waited, { done: true, ok: false, status: 'died', text: null })
+})
+
+test('stopTask sends SIGKILL to the process group after graceMs when SIGTERM is ignored', (t) => {
+  const dataDir = tempDir(t, 'aether-stop-kill-')
+  const readyFile = path.join(dataDir, 'ready')
+  const pid = spawnSleeper(t, { ignoreTerm: true, readyFile })
+  const file = path.join(dataDir, 'delegates', 'run', `${log.fileKey('s1', 't2')}.json`)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ pid, startedAt: Date.now() }))
+
+  const res = dr.stopTask(dataDir, { id: 't2', session: 's1' }, { graceMs: 150 })
+  assert.equal(res.stopped, true)
+  // Give the OS a moment to tear down after SIGKILL.
+  const deadline = Date.now() + 1000
+  while (isAlive(pid) && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+  assert.equal(isAlive(pid), false)
+})
+
+test('stopTask returns stopped:false for missing file, dead pid, or reused pid (unverified)', (t) => {
+  const dataDir = tempDir(t, 'aether-stop-edge-')
+  assert.deepEqual(dr.stopTask(dataDir, { id: 'missing', session: 's1' }), { stopped: false })
+
+  // Dead pid
+  const deadFile = path.join(dataDir, 'delegates', 'run', `${log.fileKey('s1', 'dead')}.json`)
+  fs.mkdirSync(path.dirname(deadFile), { recursive: true })
+  fs.writeFileSync(deadFile, JSON.stringify({ pid: 99999999, startedAt: Date.now() }))
+  assert.equal(dr.stopTask(dataDir, { id: 'dead', session: 's1' }).stopped, false)
+
+  // Reused pid: process started now, but run file claims startedAt was a day ago.
+  const readyFile = path.join(dataDir, 'ready')
+  const pid = spawnSleeper(t, { readyFile })
+  const reusedFile = path.join(dataDir, 'delegates', 'run', `${log.fileKey('s1', 'reused')}.json`)
+  fs.writeFileSync(reusedFile, JSON.stringify({ pid, startedAt: Date.now() - 24 * 3600 * 1000 }))
+  const res = dr.stopTask(dataDir, { id: 'reused', session: 's1' })
+  assert.equal(res.stopped, false)
+  assert.equal(res.reason, 'unverified')
+  assert.equal(isAlive(pid), true)
+})
+
+test('stopAll stops only runs belonging to the named sessions, and nothing when sessions is empty', (t) => {
+  const dataDir = tempDir(t, 'aether-stop-all-')
+  fs.mkdirSync(path.join(dataDir, 'delegates', 'run'), { recursive: true })
+  const pidA1 = spawnSleeper(t, { readyFile: path.join(dataDir, 'rA1') })
+  const pidA2 = spawnSleeper(t, { readyFile: path.join(dataDir, 'rA2') })
+  const pidB1 = spawnSleeper(t, { readyFile: path.join(dataDir, 'rB1') })
+  const now = Date.now()
+  fs.writeFileSync(path.join(dataDir, 'delegates', 'run', `${log.fileKey('A', 't1')}.json`), JSON.stringify({ pid: pidA1, startedAt: now }))
+  fs.writeFileSync(path.join(dataDir, 'delegates', 'run', `${log.fileKey('A', 't2')}.json`), JSON.stringify({ pid: pidA2, startedAt: now }))
+  fs.writeFileSync(path.join(dataDir, 'delegates', 'run', `${log.fileKey('B', 't1')}.json`), JSON.stringify({ pid: pidB1, startedAt: now }))
+
+  assert.deepEqual(dr.stopAll(dataDir, { sessions: [] }), { stopped: 0, skipped: [] })
+  assert.equal(isAlive(pidA1), true)
+
+  const res = dr.stopAll(dataDir, { sessions: ['A'] }, { graceMs: 1000 })
+  assert.equal(res.stopped, 2)
+  assert.deepEqual(res.skipped, [])
+  assert.equal(isAlive(pidA1), false)
+  assert.equal(isAlive(pidA2), false)
+  assert.equal(isAlive(pidB1), true)
 })

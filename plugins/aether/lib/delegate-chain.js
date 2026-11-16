@@ -11,6 +11,7 @@
 // Family: delegate.
 
 const { isObject } = require('./common.js')
+const autonomy = require('./autonomy.js')
 const delegateCalls = require('./delegate-calls.js')
 const lanes = require('./lanes.js')
 const { retryCliSeconds } = require('./delegate-limits.js')
@@ -90,6 +91,20 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
   let marked = null
   for (const candidate of queue) {
     if (harnessCalls.length >= MAX_HARNESS_CALLS) break
+    const refusal = autonomy.launchRefusal(cwd, { session, dataDir, now: now() })
+    if (refusal && refusal.stop === 'quota') {
+      return {
+        ok: false,
+        status: 'quota',
+        text: '',
+        attribution: null,
+        detail: refusal.message,
+        marked,
+        changed: [],
+        attempts: harnessCalls.map(({ harness, model, effort, status, detail }) => ({ harness, model, effort, status, detail })),
+        journaled,
+      }
+    }
     const { harness, rung } = candidate
     let maxCliSeconds = null
     if (last !== null) {

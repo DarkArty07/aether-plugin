@@ -59,7 +59,7 @@ function setup(t, { push = false, grant = false } = {}) {
     const crossing = cli(['brake-crossing', '--kind', 'five_hour', '--percent', '96', '--resets-at', new Date(Date.now() + 3600_000).toISOString(), '--threshold', '95', '--notify', 'sent'])
     assert.equal(crossing.status, 0, crossing.stdout)
   }
-  return { repo, bare, cli, autoId, runFile, pause }
+  return { repo, bare, cli, autoId, runFile, pause, dataDir }
 }
 
 // A real in-flight swarm: one unit with an uncommitted file inside Owns.
@@ -175,19 +175,53 @@ test('with no open run quota-brake prints the empty result', (t) => {
   assert.deepEqual(r.json, { saved: [], recorded: false, pushed: [] })
 })
 
-test('the usage line names quota-brake and says it does not stop workflows, delegates or lane calls', (t) => {
+test('the usage line names quota-brake and does not ask the Lead to stop delegates manually', (t) => {
   const repo = makeRepo(t)
   const r = runBin(BIN, [], repo.dir)
   assert.equal(r.status, 1)
   assert.match(r.json.error, /quota-brake \[--session <id>\] \[--run <swarmRunId>\]…/)
-  assert.match(r.json.error, /does not stop workflows, delegates or lane calls/)
+  assert.doesNotMatch(r.json.error, /stop them first/)
+  assert.doesNotMatch(r.json.error, /does not stop workflows, delegates or lane calls/)
 })
 
-test('quota-brake does not stop workflows, delegates or lane calls', () => {
-  const src = fs.readFileSync(COMMAND, 'utf8')
-  const help = src.split('\n').find((line) => line.startsWith('// It does not stop'))
-  assert.equal(help, '// It does not stop workflows, delegates or lane calls (those stay with the Lead: TaskStop, aether-lane stop).')
-  assert.equal(src.includes('TaskStop('), false)
-  assert.equal(src.includes("'aether-lane'"), false)
-  assert.equal(src.includes('"aether-lane"'), false)
+test('quota-brake stops in-flight delegate chains of the paused run session, leaves other sessions alive, and reports chains stopped 1', (t) => {
+  const { cli, pause, dataDir } = setup(t)
+  pause()
+  const { spawn } = require('node:child_process')
+  const { fileKey } = require('../plugins/aether/lib/delegate-log.js')
+  const spawnFake = (ready) => {
+    const p = spawn(process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(ready)}, 'ok'); setInterval(() => {}, 60000)`], {
+      detached: true,
+      stdio: 'ignore',
+    })
+    p.unref()
+    t.after(() => { try { process.kill(-p.pid, 'SIGKILL') } catch {} })
+    const deadline = Date.now() + 5000
+    while (!fs.existsSync(ready)) {
+      if (Date.now() > deadline) throw new Error('timed out waiting for fake delegate')
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+    }
+    return p.pid
+  }
+  const pidOwn = spawnFake(path.join(dataDir, 'own.ready'))
+  const pidOther = spawnFake(path.join(dataDir, 'other.ready'))
+  const runDir = path.join(dataDir, 'delegates', 'run')
+  fs.mkdirSync(runDir, { recursive: true })
+  fs.writeFileSync(path.join(runDir, `${fileKey(SESSION, 't-own')}.json`), JSON.stringify({ pid: pidOwn, startedAt: Date.now() }))
+  fs.writeFileSync(path.join(runDir, `${fileKey('other-sess', 't-other')}.json`), JSON.stringify({ pid: pidOther, startedAt: Date.now() }))
+
+  const r = cli(['quota-brake'])
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.ok(r.stdout.includes('chains stopped 1'), r.stdout)
+
+  const alive = (pid) => {
+    try {
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+      return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0] !== 'Z'
+    } catch {
+      return false
+    }
+  }
+  assert.equal(alive(pidOwn), false)
+  assert.equal(alive(pidOther), true)
 })

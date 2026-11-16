@@ -5,7 +5,7 @@
 // Family: none.
 
 // Supported subcommands (source reference only, not user-facing help; CLI errors print USAGE):
-// It does not stop workflows, delegates or lane calls (those stay with the Lead: TaskStop, aether-lane stop).
+// It does not stop workflows or lane calls (those stay with the Lead: TaskStop, aether-lane stop); quota-brake stops delegate chains of paused runs.
 // aether-autonomy grant  --class <class> --quote <text> [--session <id>] [--scope repo|session]
 // aether-autonomy revoke --class <class> --quote <text> [--session <id>] [--all]
 // aether-autonomy check  <class> [--session <id>]
@@ -30,11 +30,12 @@ const { spawnSync } = require('node:child_process')
 const { repoPaths } = require('./git.js')
 const { ensureExcluded, dataDir, isRunId, assertRunId, runDir, launchEndFile } = require('./run.js')
 const autonomy = require('./autonomy.js')
+const { stopAll } = require('./delegate-run.js')
 
 const WT_BIN = path.join(__dirname, '..', 'bin', 'aether-wt')
 
 const USAGE =
-  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | extend --hours N --usd N|unlimited --quote <text> [--session <id>] | spend <usd> --source <label> [--session <id>] | status [<id>] [--session <id>] | end [<id>] --outcome done|ceiling|incomplete [--session <id>] | continue <id> [--session <id>] | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quota-brake [--session <id>] [--run <swarmRunId>]… (does not stop workflows, delegates or lane calls; stop them first) | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
+  'usage: aether-autonomy grant --class <class> --quote <text> [--session <id>] [--scope repo|session] | revoke --class <class> --quote <text> [--session <id>] [--all] | check <class> [--session <id>] | list | start --quote <text> [--session <id>] [--hours N] [--usd N] | extend --hours N --usd N|unlimited --quote <text> [--session <id>] | spend <usd> --source <label> [--session <id>] | status [<id>] [--session <id>] | end [<id>] --outcome done|ceiling|incomplete [--session <id>] | continue <id> [--session <id>] | brake-settings [--session <id>] | brake-off --quote <text> [--session <id>] | brake-crossing --kind five_hour|seven_day --percent <n> --resets-at <iso> --threshold <n> --notify sent|failed [--notify-reason <text>] [--session <id>] | quota-saved --from <saved.json> | quota-brake [--session <id>] [--run <swarmRunId>]… (does not stop workflows or lane calls) | quarantine grants|run <id> | trust --author <autor> --quote <texto> [--session <id>] [--remove]'
 
 const AUTO_RUN_ID_RE = /^auto-[0-9]{8}-[0-9]{6}-[0-9a-f]+$/
 
@@ -329,6 +330,8 @@ function main(argv, { cwd = process.cwd(), env = process.env, stderr = process.s
     const ids = named.length ? namedRuns(named) : inFlightRuns(mainRoot, earliest)
     ensureExcluded(gitCommonDir)
     const data = env.AETHER_DATA_DIR || dataDir(env)
+    const sessions = [...new Set(paused.map(({ run }) => run.session).filter((s) => typeof s === 'string' && s !== ''))]
+    const chainStop = stopAll(data, { sessions })
     const settings = autonomy.brakeSettings(mainRoot, { session, dataDir: data })
     const abandoned = autonomy.abandonedRuns(mainRoot, data)
     const pushOn = settings.push === true
@@ -378,6 +381,7 @@ function main(argv, { cwd = process.cwd(), env = process.env, stderr = process.s
       }
     }
     const out = { saved, recorded, pushed }
+    if (chainStop.stopped > 0) out.chains = `chains stopped ${chainStop.stopped}`
     if (skipped.length) out.skipped = skipped
     if (pushOn && !mayPush) out.notPushed = 'push needs a grant'
     if (failures.length) out.failures = failures
