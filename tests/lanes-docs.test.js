@@ -84,7 +84,7 @@ test('R21: lanes.md says how the old options are read and what the rule asks, ke
     [
       'If `superdelegation` is not set and `lanes` is on, superdelegation counts as on',
       '`seats` is always ignored',
-      'Sonnet `high` asks 41.1 and Sonnet `xhigh` asks 49.6',
+      'Sonnet `high` asks 41.5 and Sonnet `xhigh` asks 49.9',
       'No pair is chosen or left out for being fast or slow',
       'Nobody reviews its own work',
     ],

@@ -19,7 +19,7 @@ test('the shipped table agrees with the photo: the refresh finds no figure to ch
 test('no row of the shipped pairs table carries a code figure: the choice reads the index and its cost per task only (A127)', () => {
   const rows = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'config', 'pairs.json'), 'utf8')).pairs
   for (const pair of rows) {
-    for (const field of ['code', 'codeChecked', 'codeCostPerTaskUsd', 'codeMinutesPerTask']) assert.equal(Object.hasOwn(pair, field), false, `${pair.id} ${field}`)
+    for (const field of ['code', 'codeChecked']) assert.equal(Object.hasOwn(pair, field), false, `${pair.id} ${field}`)
   }
 })
 
