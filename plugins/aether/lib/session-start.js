@@ -559,6 +559,16 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     const { dataDir } = require('./run.js')
     calibrationNote = require('./observe-notice.js').proposalsNote(dataDir(env))
   } catch { /* A note must never stop startup. */ }
+  // The new and retired models of the last daily reading (spec 043 R3): one line of the notes command, never of a part.
+  // A broken or missing reading adds nothing. Like every note here, it must never stop startup.
+  let modelLine = ''
+  let modelDir = null
+  try {
+    const { dataDir } = require('./run.js')
+    const modelWatch = require('./model-watch.js')
+    modelDir = dataDir(env)
+    modelLine = modelWatch.noticeLine(modelWatch.readResult(modelDir)) || ''
+  } catch { modelLine = ''; modelDir = null }
   // The open run's note stays the last thing of the context (tests/session-start-autonomy.test.js): the continuity notice
   // goes before it.
   const runNote = autonomyNote(cwd, input.session_id)
@@ -571,7 +581,7 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
   // The continuity notice that goes to the Lead's context (none for a project's first session), and the whole context.
   const contextOf = (lines) => {
     const contextNotice = firstSession ? '' : lines.join('\n')
-    const additionalContext = [baseContext, contextNotice, tidyLines.join('\n'), idleLines.join('\n'), topicLines.join('\n'), calibrationNote, runNote]
+    const additionalContext = [baseContext, contextNotice, tidyLines.join('\n'), idleLines.join('\n'), topicLines.join('\n'), calibrationNote, modelLine, runNote]
       .filter(Boolean)
       .join('\n\n')
     return { contextNotice, additionalContext }
@@ -588,9 +598,12 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
     return JSON.stringify(output) + '\n'
   }
 
-  // The payload holds the whole context, so its length is the one to check: the disorder, idle and topic lines go first.
-  while ((topicLines.length > 0 || idleLines.length > 0 || tidyLines.length > 0) && buildPayload(noticeLines).length > PART_LIMIT) {
-    if (topicLines.length > 0) {
+  // The payload holds the whole context, so its length is the one to check: the model notice goes first, then the
+  // disorder, idle and topic lines.
+  while ((modelLine !== '' || topicLines.length > 0 || idleLines.length > 0 || tidyLines.length > 0) && buildPayload(noticeLines).length > PART_LIMIT) {
+    if (modelLine !== '') {
+      modelLine = ''
+    } else if (topicLines.length > 0) {
       topicLines.pop()
     } else if (idleLines.length > 0) {
       idleLines.pop()
@@ -629,7 +642,15 @@ function main({ input = null, part = null, env = process.env, cwd = process.cwd(
       issueNotices = store.takeNotices(dataDir(env), (list) => buildPayload(noticeLines, list).length <= PART_LIMIT)
     } catch { /* A notice must never stop startup. */ }
   }
-  stdout.write(buildPayload(noticeLines, issueNotices))
+  const payload = buildPayload(noticeLines, issueNotices)
+  stdout.write(payload)
+  // The difference counts as shown only when the payload kept its line: a line the trim dropped stays pending for the
+  // next start. Only the notes command reaches here; the part commands return before contextOf.
+  if (modelLine !== '' && modelDir !== null) {
+    try {
+      require('./model-watch.js').markNoticed(modelDir)
+    } catch { /* A notice must never stop startup. */ }
+  }
 }
 
 module.exports = {

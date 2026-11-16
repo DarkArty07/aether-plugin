@@ -199,6 +199,16 @@ test('R32: each part slice is no longer than the 0.41.0 base, the three together
   for (const [i, part] of bootstrapParts(PLUGIN).entries()) assert.ok(part.output.length <= 9800, `part ${i + 1} prints ${part.output.length} characters`)
 })
 
+test('part 2 keeps its free characters: the notice line of task 2 lives in the notes command, not in the bootstrap', () => {
+  // The model notice (spec 043 R3) is a line of the notes command: the bootstrap, and part 2 with it, does not grow.
+  const installed = '/' + 'i'.repeat(63)
+  const parts = splitParts(source(installed), installed)
+  assert.ok(parts.length >= 2, `expected at least 2 parts, got ${parts.length}`)
+  const free = PART_LIMIT - parts[1].output.length
+  assert.ok(free >= 800, `part 2 leaves ${free} free characters of ${PART_LIMIT}`)
+  for (const [i, part] of parts.entries()) assert.ok(part.output.length <= PART_LIMIT, `part ${i + 1} prints ${part.output.length} characters`)
+})
+
 test('bootstrap splits into at most 3 order-independent parts within 25,000 total injected chars', () => {
   const parts = bootstrapParts(PLUGIN)
   assert.ok(parts.length >= 1 && parts.length <= 3, `expected 1..3 parts, got ${parts.length}`)
