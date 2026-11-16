@@ -12,7 +12,7 @@ const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const { isExecutableFile } = require('./common.js')
 const { MARKER, DEFAULT_NAME, newestLauncher, homeOf, configDirOf } = require('./first-setup.js')
-const { HARNESS_NAMES } = require('./harness/index.js')
+const { ADAPTER_NAMES } = require('./harness/index.js')
 
 const MIN_CLAUDE = '2.1.294'
 const MIN_NODE_MAJOR = 22
@@ -272,7 +272,7 @@ function harnessesCheck(found, options) {
     }
   }
   if (found.length) return check('harnesses', 'info', `other harnesses installed: ${found.map(cliOf).join(', ')}`)
-  return check('harnesses', 'info', `no other harness is installed (${HARNESS_NAMES.map(cliOf).join(', ')}): Aether runs on Claude alone`)
+  return check('harnesses', 'info', `no other harness is installed (${ADAPTER_NAMES.map(cliOf).join(', ')}): Aether runs on Claude alone`)
 }
 
 // The models of the last daily reading, per active harness (spec 043 R4): new and retired ids, when each harness was
@@ -383,7 +383,7 @@ function run({ name = DEFAULT_NAME, env = process.env, cwd = process.cwd(), exec
   const release = newestLauncher(configDir)
   const options = savedOptions(configDir)
   // The option names of the harnesses whose CLI is on the PATH.
-  const found = HARNESS_NAMES.filter((name) => findOnPath(cliOf(name), env, cwd) !== null)
+  const found = ADAPTER_NAMES.filter((name) => findOnPath(cliOf(name), env, cwd) !== null)
   const { command, check: commandCheck } = commandState(name, env, cwd)
   // The harnesses the owner enabled, for the models check; the data dir holds their last daily reading.
   const { enabledHarnesses } = require('./lanes.js')

@@ -4,9 +4,9 @@
 // Loaded without loading any adapter.
 // Family: harness.
 
-const { HARNESS_NAMES: ALL_HARNESSES } = require('./harness/index.js')
+const { ADAPTER_NAMES: ALL_HARNESSES } = require('./harness/index.js')
 
-const HARNESS_NAMES = Object.freeze(ALL_HARNESSES.filter((name) => name !== 'cursor'))
-const formatHarnessesOr = (names = HARNESS_NAMES) => `${names.slice(0, -1).join(', ')} or ${names.at(-1)}`
+const DELEGATE_HARNESS_NAMES = Object.freeze(ALL_HARNESSES.filter((name) => name !== 'cursor'))
+const formatHarnessesOr = (names = DELEGATE_HARNESS_NAMES) => `${names.slice(0, -1).join(', ')} or ${names.at(-1)}`
 
-module.exports = { HARNESS_NAMES, formatHarnessesOr }
+module.exports = { DELEGATE_HARNESS_NAMES, formatHarnessesOr }

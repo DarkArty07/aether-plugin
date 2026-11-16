@@ -21,9 +21,9 @@
 const path = require('node:path')
 const lib = (name) => require(path.join(__dirname, '..', 'lib', name))
 const run = lib('run.js')
-const { HARNESS_NAMES, formatHarnessesOr } = lib('harness-names.js')
+const { DELEGATE_HARNESS_NAMES, formatHarnessesOr } = lib('harness-names.js')
 const RENEW_NAMES = formatHarnessesOr()
-const RENEW_USAGE = `renew --harness <${HARNESS_NAMES.join('|')}>`
+const RENEW_USAGE = `renew --harness <${DELEGATE_HARNESS_NAMES.join('|')}>`
 
 const VERBS = {
   begin: { usage: 'begin --session <id> --input <file>', flags: ['session', 'input'], required: ['session', 'input'] },

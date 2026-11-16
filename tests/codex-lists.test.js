@@ -9,15 +9,17 @@ const { RENEWABLE, renewReading } = require('../plugins/aether/lib/router-renewa
 const { DELEGATE_HARNESSES } = require('../plugins/aether/lib/router-pick.js')
 const { HARNESSES } = require('../plugins/aether/lib/delegate-calls.js')
 const { ALLOWED_HARNESSES } = require('../plugins/aether/lib/lane-delegate.js')
-const { HARNESS_NAMES, formatHarnessesOr } = require('../plugins/aether/lib/harness-names.js')
+const { DELEGATE_HARNESS_NAMES, formatHarnessesOr } = require('../plugins/aether/lib/harness-names.js')
 
 const WORKERS = ['agy', 'codex', 'grok', 'muse']
-const RENEW_USAGE = `renew --harness <${HARNESS_NAMES.join('|')}>`
+const RENEW_USAGE = `renew --harness <${DELEGATE_HARNESS_NAMES.join('|')}>`
 const RENEW_NEEDS = `--harness needs ${formatHarnessesOr()}`
 
 test('the five lists of the delegates and the router name Codex in the order of the registry, and cursor in none (R3, R20)', () => {
-  assert.deepEqual(HARNESS_NAMES, WORKERS)
-  assert.equal(HARNESS_NAMES.includes('cursor'), false)
+  assert.deepEqual(DELEGATE_HARNESS_NAMES, WORKERS)
+  assert.equal(DELEGATE_HARNESS_NAMES.includes('cursor'), false)
+  assert.equal(Object.isFrozen(DELEGATE_HARNESS_NAMES), true)
+  assert.equal(require('../plugins/aether/lib/harness-names.js').HARNESS_NAMES, undefined)
   for (const list of [EXTERNAL, RENEWABLE, DELEGATE_HARNESSES, HARNESSES, ALLOWED_HARNESSES]) assert.deepEqual(list, WORKERS)
 })
 

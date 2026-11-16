@@ -9,10 +9,10 @@ const { pickData } = require('./pick-data.js')
 const { choose } = require('./superdelegation.js')
 const { lifeMs, staleHarnesses, MUSE_WAIT_MS } = require('./router-quota.js')
 const { waitForReading } = require('./router-renewal.js')
-const { HARNESS_NAMES } = require('./harness-names.js')
+const { DELEGATE_HARNESS_NAMES } = require('./harness-names.js')
 
 // The harnesses that can run a delegate (lib/delegate-calls.js): cursor cannot.
-const DELEGATE_HARNESSES = [...HARNESS_NAMES]
+const DELEGATE_HARNESSES = [...DELEGATE_HARNESS_NAMES]
 
 // The view of the quota groups of one harness that choose reads, from the reading the router has of it (null when the
 // harness keeps none, which leaves its groups unknown and usable, as in the swarm). The preparation, including which

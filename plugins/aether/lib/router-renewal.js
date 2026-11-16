@@ -11,12 +11,12 @@ const { pidAlive, sleep } = require('./common.js')
 const { createAdapter: defaultCreateAdapter } = require('./harness/index.js')
 const { readGroups: defaultReadGroups } = require('./lane-readings.js')
 const { readingFile } = require('./router-quota.js')
-const { HARNESS_NAMES, formatHarnessesOr } = require('./harness-names.js')
+const { DELEGATE_HARNESS_NAMES, formatHarnessesOr } = require('./harness-names.js')
 
 // A renewal lasts at most grok's 10 s over ACP and 20 s through its UI, agy's 60 s, or muse's 90 s over one exec
 // call: past this a lock belongs to a process that died.
 const RENEWAL_LIFE_MS = 120000
-const RENEWABLE = [...HARNESS_NAMES]
+const RENEWABLE = [...DELEGATE_HARNESS_NAMES]
 // How many times a decision tries to take the lock, when it finds a left-over lock or loses a race for it.
 const TAKE_ATTEMPTS = 3
 

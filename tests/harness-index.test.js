@@ -9,8 +9,27 @@ const harnesses = require('../plugins/aether/lib/harness/index.js')
 
 const SETTINGS = { command: '/opt/x', groups: { g: 'G' } }
 
-test('the known harnesses are agy, codex, grok, cursor and muse, in that order', () => {
-  assert.deepEqual(harnesses.HARNESS_NAMES, ['agy', 'codex', 'grok', 'cursor', 'muse'])
+test('the known adapters are agy, codex, grok, cursor and muse, in that order', () => {
+  assert.deepEqual(harnesses.ADAPTER_NAMES, ['agy', 'codex', 'grok', 'cursor', 'muse'])
+  assert.equal(harnesses.HARNESS_NAMES, undefined)
+})
+
+test('no file of lib/ uses the old HARNESS_NAMES name without its ADAPTER_ or DELEGATE_ prefix', () => {
+  const dir = path.join(__dirname, '..', 'plugins', 'aether', 'lib')
+  const found = []
+  const walk = (entry) => {
+    for (const child of fs.readdirSync(entry, { withFileTypes: true })) {
+      const full = path.join(entry, child.name)
+      if (child.isDirectory()) walk(full)
+      else if (child.isFile() && full.endsWith('.js')) {
+        for (const line of fs.readFileSync(full, 'utf8').split('\n')) {
+          if (/(?<!ADAPTER_)(?<!DELEGATE_)HARNESS_NAMES/.test(line)) found.push(`${path.relative(dir, full)}: ${line.trim()}`)
+        }
+      }
+    }
+  }
+  walk(dir)
+  assert.deepEqual(found, [])
 })
 
 test('createAdapter builds muse from its module, and uses the factory registered under muse when there is one', () => {
