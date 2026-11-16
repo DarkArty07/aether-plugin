@@ -4,10 +4,13 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { PLUGIN, makeRepo, tempDir, runBin, useDataDir } = require('./helpers.js')
+const { PLUGIN, makeRepo, tempDir, runBin, useDataDir, writePlan } = require('./helpers.js')
+const { task, plan } = require('./plan-fixtures.js')
 const { A, B, C, QUOTE, OFF_QUOTE, human } = require('./run-session-fixture.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-autonomy')
+const PLAN_BIN = path.join(PLUGIN, 'bin', 'aether-plan')
+const WT_BIN = path.join(PLUGIN, 'bin', 'aether-wt')
 
 // A project and a config directory with a transcript per session; cli(as, args) runs the bin as that session.
 function setup(t) {
@@ -26,7 +29,7 @@ function setup(t) {
     assert.equal(r.status, 0, r.stdout + r.stderr)
     return r.json.started.id
   }
-  return { repo, cli, start }
+  return { repo, config, cli, start }
 }
 
 test('R1, R2: two sessions start a run each; a second start by the same session is refused with the text of today', (t) => {
@@ -127,4 +130,71 @@ test('bad run id is a usage error and continue handles unchanged and missing ses
   const noSession = runBin(BIN, ['continue', a], repo.dir, { CLAUDE_CODE_SESSION_ID: '' })
   assert.equal(noSession.status, 1)
   assert.match(noSession.json.error, /session id/i)
+})
+
+test('a run id or positional argument after index 0 is a usage error and closes no run', (t) => {
+  const { cli, start } = setup(t)
+  const a = start(A)
+  const b = start(B)
+  const usage = cli(A, ['nope']).json.error
+  for (const [who, args] of [
+    [A, ['end', '--outcome', 'incomplete', b]],
+    [A, ['status', '--session', A, b]],
+    [A, ['status', b, 'extra']],
+    [A, ['end', b, 'extra', '--outcome', 'incomplete']],
+    [C, ['continue', '--session', C, a]],
+    [C, ['continue', a, 'extra']],
+  ]) {
+    const r = cli(who, args)
+    assert.equal(r.status, 1, args.join(' '))
+    assert.equal(r.json.error, usage, args.join(' '))
+  }
+  assert.equal(cli(A, ['status']).json.open, true)
+  assert.equal(cli(B, ['status']).json.open, true)
+  const closed = cli(A, ['end', b, '--outcome', 'incomplete'])
+  assert.equal(closed.status, 0, closed.stdout + closed.stderr)
+  assert.equal(closed.json.ended.id, b)
+  assert.equal(cli(A, ['status']).json.open, true)
+})
+
+test('R14: quota-brake saves a swarm launched by session B after A started and records its saved units only in B', (t) => {
+  const { repo, config, cli, start } = setup(t)
+  const a = start(A)
+  const b = start(B)
+  const runFile = (id) => path.join(repo.dir, '.aether', 'autonomy', id, 'run.json')
+  const setStarted = (id, msAgo) => {
+    const state = JSON.parse(fs.readFileSync(runFile(id), 'utf8'))
+    state.started = new Date(Date.now() - msAgo).toISOString()
+    fs.writeFileSync(runFile(id), JSON.stringify(state))
+  }
+  setStarted(a, 120_000)
+  setStarted(b, 60_000)
+
+  const compiled = runBin(PLAN_BIN, ['compile', writePlan(repo.dir, plan([task(1)]))], repo.dir, {
+    CLAUDE_CONFIG_DIR: config,
+    CLAUDE_CODE_SESSION_ID: B,
+  })
+  assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr)
+  const swarmId = compiled.json.runId
+  const ensured = runBin(WT_BIN, ['ensure', swarmId, 'task-1'], repo.dir)
+  assert.equal(ensured.status, 0, ensured.stdout + ensured.stderr)
+  const wip = path.join(ensured.json.path, 'src', 't1', 'wip.js')
+  fs.mkdirSync(path.dirname(wip), { recursive: true })
+  fs.writeFileSync(wip, 'wip\n')
+
+  const resetsAt = new Date(Date.now() + 3 * 3600 * 1000).toISOString()
+  const crossing = cli(A, ['brake-crossing', '--kind', 'five_hour', '--percent', '96', '--resets-at', resetsAt, '--threshold', '95', '--notify', 'sent'])
+  assert.equal(crossing.status, 0, crossing.stdout + crossing.stderr)
+
+  const braked = cli(A, ['quota-brake'])
+  assert.equal(braked.status, 0, braked.stdout + braked.stderr)
+  assert.deepEqual(braked.json.saved, [swarmId])
+  assert.equal(braked.json.recorded, true)
+
+  const runA = JSON.parse(fs.readFileSync(runFile(a), 'utf8'))
+  const runB = JSON.parse(fs.readFileSync(runFile(b), 'utf8'))
+  const pauseA = runA.quotaPauses.at(-1)
+  const pauseB = runB.quotaPauses.at(-1)
+  assert.deepEqual(pauseA.savedUnits, [])
+  assert.ok(Array.isArray(pauseB.savedUnits) && pauseB.savedUnits.some((u) => u.swarmRun === swarmId && u.task === 'task-1'))
 })

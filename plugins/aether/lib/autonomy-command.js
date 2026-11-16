@@ -44,6 +44,17 @@ function optionalRunId(rest) {
   return rest[0]
 }
 
+// Rejects any positional argument after index 0 (after assertFlags has paired flags).
+function assertNoLatePositionals(rest) {
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i].startsWith('--')) {
+      i++
+      continue
+    }
+    if (i > 0) throw new Error(USAGE)
+  }
+}
+
 // Formats a selection refusal (exit 1) or quote verification failure (exit 2).
 function quoteFailure(res) {
   if (res.reason === 'no open run' || res.code === 'ambiguous' || res.code === 'foreign') {
@@ -228,12 +239,14 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
   }
 
   if (sub === 'status') {
+    assertNoLatePositionals(rest)
     const id = optionalRunId(rest)
     const session = getSession(rest, false, env)
     return { code: 0, out: autonomy.status(mainRoot, { session, id, dataDir: env.AETHER_DATA_DIR || dataDir(env) }) }
   }
 
   if (sub === 'end') {
+    assertNoLatePositionals(rest)
     const id = optionalRunId(rest)
     const outcome = value(rest, '--outcome')
     if (!outcome) throw new Error(USAGE)
@@ -242,6 +255,7 @@ function main(argv, { cwd = process.cwd(), env = process.env } = {}) {
   }
 
   if (sub === 'continue') {
+    assertNoLatePositionals(rest)
     const id = rest[0]
     if (id === undefined || id.startsWith('--') || !AUTO_RUN_ID_RE.test(id)) throw new Error(USAGE)
     const session = getSession(rest, false, env)
