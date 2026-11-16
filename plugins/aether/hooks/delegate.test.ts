@@ -208,11 +208,19 @@ test('a read-only delegate on Claude goes through the model, and its last answer
   expect(run.init.timeoutMs).toBeLessThanOrEqual(15000)
 })
 
-test('a begin that fails leaves the call as the Lead made it', async ($, on) => {
+test('a begin that fails keeps the model the Lead named', async ($, on) => {
   const { runs, toolCalls } = stubs(on, { verbs: { begin: [new Error('boom')] } })
   const out = await call($, 'AETHER-TASK: t1\nFix it.')
   expect([toolCalls[0].model, toolCalls[0].effort]).toEqual(['opus', 'max'])
   expect(out.result).toEqual({ context: ['earlier'] })
+  expect(runs.map((r) => r.argv[2])).toEqual(['begin'])
+})
+
+test('a skipped begin on a call with no model leaves it untouched', async ($, on) => {
+  const { runs, toolCalls } = stubs(on, { verbs: { begin: [{ skip: true }] } })
+  const out = await ($.tool as any).call({ tool: 'Agent', subagent_type: 'general-purpose', description: 'task', prompt: 'AETHER-TASK: t1\nFix it.' })
+  expect('model' in toolCalls[0]).toBe(false)
+  expect(out).toEqual({ result: { context: ['earlier'] } })
   expect(runs.map((r) => r.argv[2])).toEqual(['begin'])
 })
 
@@ -417,6 +425,28 @@ test('a blocked external end returns the question and patch path to the Lead and
   const spawned = await spawn($, toolCalls[0].prompt)
   const out = await step($, { index: 0, agentId: spawned.agentId })
   const expected = `Aether: the external delegate on muse muse-2 high answered BLOCKED; no other pair and no Claude agent tried it.\n\n${blockedText}`
+  expect(out.chunks).toEqual([
+    { kind: 'text', index: 0, text: expected },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ])
+  expect(out.result.answer).toBe(expected)
+  expect(counts.modelSteps).toBe(0)
+  expect(runs.map((r) => r.argv[2])).toEqual(['begin', 'start', 'wait'])
+})
+
+test('a blocked external end without a pair omits the pair from its header and runs no Claude step', async ($, on) => {
+  const blockedText = 'Need src/other.js in Owns.'
+  const { runs, toolCalls, counts } = stubs(on, {
+    verbs: {
+      begin: [{ ...PLAN, external: EXTERNAL }],
+      start: [{ started: true, id: 't1', pid: 1 }],
+      wait: [{ done: true, ok: false, status: 'blocked', text: blockedText }],
+    },
+  })
+  await call($, 'AETHER-TASK: t1\nAETHER-OWNS: src/**\nDo it.')
+  const spawned = await spawn($, toolCalls[0].prompt)
+  const out = await step($, { index: 0, agentId: spawned.agentId })
+  const expected = `Aether: the external delegate answered BLOCKED; no other pair and no Claude agent tried it.\n\n${blockedText}`
   expect(out.chunks).toEqual([
     { kind: 'text', index: 0, text: expected },
     { kind: 'stop', stopReason: 'end_turn', usage: null },

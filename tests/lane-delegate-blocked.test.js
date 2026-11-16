@@ -132,5 +132,6 @@ test('a pair that fails for quota still tries the next pair (#294)', (t) => {
   assert.equal(json?.status, 'blocked')
   assert.equal(json?.question, question)
   assert.equal(json?.tried?.length, 2, 'first pair failed for quota, second pair answered BLOCKED')
+  assert.equal(json.tried[0].cause, 'quota')
   assert.equal(json.tried[1].cause, 'blocked')
 })

@@ -25,7 +25,8 @@
 // ladder's step (the Lead cannot pick them), the spawn of each such delegate that has something left to do at its
 // agent, the first step of a delegate that runs on another harness (started, waited for with a heartbeat after each
 // wait, and answered with no model request), and the last step of a read-only delegate on Claude (its answer is
-// recorded for the verdict). The ladder never breaks a call: any failure in it leaves the call as the Lead made it.
+// recorded for the verdict). The ladder never breaks a call: a skipped `begin` leaves the call as the Lead made it,
+// and a failed `begin` keeps the Lead's model or falls back to `haiku` with a note for the Lead.
 //
 // It also takes one paragraph out of the description of the Agent tool in an Aether session (agent-text.mjs, issue 145):
 // on a Pro account Claude Code says there to launch no agent unless the user asks, against the Lead's rules. A plain
