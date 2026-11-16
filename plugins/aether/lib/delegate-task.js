@@ -814,11 +814,15 @@ function approveError(r, entries, launch, worktree, ignore = []) {
     // A read-only result charged with files another writer of the checkout changed (issue 100) passes when --ignore covers all of them.
     const charged = own !== null && own.kind === 'read-only' && own.empty !== true && Array.isArray(own.outside) && own.outside.length > 0
     if (charged && ignore.length > 0 && own.outside.every((file) => matchesAny(file, ignore))) return null
-    if (failedOnlyOnTests(own) && isText(worktree)) {
+    if (isText(worktree) && isObject(own) && own.kind === 'edits' && (!Array.isArray(own.outside) || own.outside.length === 0) && (failedOnlyOnTests(own) || own.empty === true)) {
       const owns = Array.isArray(launch.owns) ? launch.owns : []
       const tests = isText(launch.tests) ? checks.runTests(worktree, launch.tests) : null
       const check = checks.checkEdits({ files: checks.changedFiles(worktree, checks.worktreeBase(worktree, launch.base)), owns, tests })
-      return check.ok ? null : `checks failed: ${editsFailure(check, tests).join('; ')}`
+      if (check.ok) return null
+      if (own.empty === true && check.empty === true && own.tests !== 'fail' && Array.isArray(own.reasons) && own.reasons.length > 0) {
+        return `checks failed: ${own.reasons.join('; ')}`
+      }
+      return `checks failed: ${editsFailure(check, tests).join('; ')}`
     }
     let reasons = own && Array.isArray(own.reasons) && own.reasons.length > 0 ? own.reasons : ['the result has no passing checks']
     if (Array.isArray(own?.failures) && own.failures.length > 0) {
@@ -904,4 +908,4 @@ async function verdict(input, deps = {}) {
   }
 }
 
-module.exports = { parseBrief, begin, verdict }
+module.exports = { parseBrief, begin, verdict, ignoreOf }

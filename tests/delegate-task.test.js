@@ -578,6 +578,46 @@ test('work an editing delegate committed itself counts: inside Owns only passes'
   assert.equal(approved.ok, true, approved.error)
 })
 
+test('committed work on a branch with a non-commit reflog entry counts as changed files (#278)', async (t) => {
+  const repo = makeRepo(t)
+  const { deps } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('lane-committed', 'AETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(0)"\n')), deps)
+  const base = repo.git('rev-parse', 'HEAD')
+  const branch = 'aether/20261115-000000-abcd/task-1'
+  const wt = path.join(tempDir(t, 'aether-wt-'), 'wt')
+  repo.git('worktree', 'add', '-q', '-b', branch, wt, base)
+  // Simulate a delegate committing while detached and reattaching to the unit branch (checkout: in reflog).
+  repo.git('-C', wt, 'checkout', '-q', '--detach', base)
+  fs.mkdirSync(path.join(wt, 'src'), { recursive: true })
+  fs.writeFileSync(path.join(wt, 'src', 'a.js'), 'committed on branch\n')
+  repo.git('-C', wt, 'add', 'src/a.js')
+  repo.git('-C', wt, 'commit', '-q', '-m', 'delegate work')
+  repo.git('-C', wt, 'branch', '-f', branch, 'HEAD')
+  repo.git('-C', wt, 'checkout', '-q', branch)
+  assert.equal(repo.git('-C', wt, 'status', '--porcelain'), '')
+
+  const approved = await task.verdict({ task: 'lane-committed', verdict: 'approve', worktree: wt }, deps)
+  assert.equal(approved.ok, true, approved.error)
+
+  // Also when a stored result recorded "task changed no files" despite committed work in --worktree.
+  const { deps: deps2, dataDir: dataDir2 } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('lane-res', 'AETHER-OWNS: src/**\nAETHER-TESTS: node -e "process.exit(0)"\n')), deps2)
+  log.appendEntry(dataDir2, {
+    kind: 'result',
+    task: 'lane-res',
+    attempt: 1,
+    session: 's1',
+    time: 5000,
+    ok: true,
+    pair: { harness: 'grok', model: 'grok-4.7' },
+    branch,
+    worktree: wt,
+    checks: { kind: 'edits', ok: false, empty: true, outside: [], tests: 'pass', reasons: ['task changed no files'] },
+  })
+  const approvedWithResult = await task.verdict({ task: 'lane-res', verdict: 'approve', worktree: wt }, deps2)
+  assert.equal(approvedWithResult.ok, true, approvedWithResult.error)
+})
+
 // And a file it committed outside Owns fails the check, naming only that file.
 test('work an editing delegate committed itself counts: outside Owns fails naming only that file', async (t) => {
   const repo = makeRepo(t)
