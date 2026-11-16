@@ -316,3 +316,70 @@ for (const folder of ['.aether-exam', '.aether/exam']) {
     assert.equal(result.tests[0].status, 'pass', JSON.stringify(result.tests))
   })
 }
+
+test('inventory lists .aether/exam/ test files marked by exam.json without modifying anything', (t) => {
+  const dir = path.join(tempDir(t), '.aether', 'exam')
+  assert.deepEqual(exam.inventory(dir), [])
+
+  const files = {
+    'a.test.js': '// a\n',
+    'b.test.js': '// b\n',
+    'c.test.js': '// c\n',
+  }
+  const tests = [
+    { id: 't-a', criterion: 'C1', command: 'node --test .aether/exam/a.test.js', files: ['a.test.js'] },
+    { id: 't-b', criterion: 'C2', command: 'node --test .aether/exam/b.test.js', files: ['b.test.js'] },
+  ]
+  writeExam(dir, tests, files)
+  const before = Object.fromEntries(
+    ['exam.json', 'a.test.js', 'b.test.js', 'c.test.js'].map((name) => [name, fs.readFileSync(path.join(dir, name))])
+  )
+
+  assert.deepEqual(exam.inventory(dir), [
+    { path: 'a.test.js', inIndex: true },
+    { path: 'b.test.js', inIndex: true },
+    { path: 'c.test.js', inIndex: false },
+  ])
+  for (const [name, bytes] of Object.entries(before)) {
+    assert.deepEqual(fs.readFileSync(path.join(dir, name)), bytes, `${name} stays byte-for-byte identical`)
+  }
+})
+
+test('aether-exam recover reports checkout .aether/exam/ marks without modifying it, and checks usage', (t) => {
+  const repo = repoWithSpec(t)
+  const data = tempDir(t, 'aether-data-')
+  const env = { ...process.env, AETHER_DATA_DIR: data }
+  const runBin = (args) => spawnSync(process.execPath, [EXAM_BIN, ...args], { cwd: repo.dir, env, encoding: 'utf8' })
+
+  const absent = runBin(['recover', FEATURE])
+  assert.equal(absent.status, 0, absent.stderr)
+  assert.deepEqual(JSON.parse(absent.stdout), { feature: FEATURE, tests: [] })
+
+  const examDir = path.join(repo.dir, '.aether', 'exam')
+  writeExam(
+    examDir,
+    [
+      { id: 't-a', criterion: 'C1', command: 'node --test .aether/exam/a.test.js', files: ['a.test.js'] },
+      { id: 't-b', criterion: 'C2', command: 'node --test .aether/exam/b.test.js', files: ['b.test.js'] },
+    ],
+    { 'a.test.js': '// a\n', 'b.test.js': '// b\n', 'c.test.js': '// c\n' }
+  )
+  const examJsonBefore = fs.readFileSync(path.join(examDir, 'exam.json'))
+
+  const present = runBin(['recover', FEATURE])
+  assert.equal(present.status, 0, present.stderr)
+  assert.deepEqual(JSON.parse(present.stdout), {
+    feature: FEATURE,
+    tests: [
+      { path: 'a.test.js', inIndex: true },
+      { path: 'b.test.js', inIndex: true },
+      { path: 'c.test.js', inIndex: false },
+    ],
+  })
+  assert.deepEqual(fs.readFileSync(path.join(examDir, 'exam.json')), examJsonBefore)
+  assert.equal(fs.existsSync(path.join(data, 'exams')), false)
+
+  const extra = runBin(['recover', FEATURE, '--from', '/tmp'])
+  assert.equal(extra.status, 1)
+  assert.match(JSON.parse(extra.stdout).error, /^usage:/)
+})

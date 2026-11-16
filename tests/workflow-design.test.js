@@ -51,6 +51,7 @@ function handlers() {
       if (verb === 'seat-stop') return { stopped: true }
       if (verb === 'check') return CHECK_OK
       if (verb === 'store') return { stored: '/data/exams/007-demo' }
+      if (verb === 'recover') return { feature: rest[0], tests: [] }
       throw new Error(`unexpected ops command: ${call.command.line}`)
     },
   }
@@ -389,8 +390,9 @@ test('a short design on plan.md runs only the Judge, the Writer revises in a sea
 
 test('every ops prompt is one the mod runs without a model, and every payload goes where the mod saves it', async () => {
   const run = await go({ ...ARGS, superdelegation: 'on', harnesses: 'agy,codex' })
-  const ops = run.calls.filter((c) => c.role === 'ops')
-  assert.deepEqual([...new Set(ops.map((c) => c.command.verb))].sort(), ['check', 'seat-start', 'seat-wait', 'store'])
+  const failed = await go({ ...ARGS, superdelegation: 'on', harnesses: 'agy,codex' }, { examiner: () => null })
+  const ops = [...run.calls, ...failed.calls].filter((c) => c.role === 'ops')
+  assert.deepEqual([...new Set(ops.map((c) => c.command.verb))].sort(), ['check', 'recover', 'seat-start', 'seat-wait', 'store'])
   for (const c of ops) {
     const parsed = parseOpsPrompt(c.prompt)
     assert.ok(parsed, c.prompt)
@@ -1678,4 +1680,38 @@ test('real workflow spec and plan review messages agree with the seat skills det
     const message = nativeCalls(run).find((c) => c.label === `${doc}: judge review 1`).prompt
     assert.equal(seats.wantsProjectSkills('judge', null, message), expected, message)
   }
+})
+
+test('an Examiner that ends without a valid answer recovers checkout tests without losing them (R22, R23)', async () => {
+  const marks = [
+    { path: 'a.test.js', inIndex: true },
+    { path: 'b.test.js', inIndex: true },
+    { path: 'c.test.js', inIndex: false },
+  ]
+  const recovered = await go(ARGS, {
+    examiner: () => null,
+    ops: (call, fallback) => (call.command.verb === 'recover' ? { feature: FEATURE, tests: marks } : fallback(call)),
+  })
+  assert.equal(recovered.error, null, recovered.error && recovered.error.stack)
+  assert.equal(recovered.result.status, 'approved')
+  assert.equal(opsCalls(recovered, 'recover').length, 1)
+  assert.equal(opsCalls(recovered, 'store').length, 0)
+  assert.equal(recovered.calls.filter((c) => c.role === 'examiner').length, 2)
+  assert.equal(recovered.result.exam.status, 'failed')
+  assert.equal(recovered.result.exam.step, 'examiner')
+  assert.deepEqual(recovered.result.exam.tests, marks)
+
+  const recoverFailed = await go(ARGS, {
+    examiner: () => null,
+    ops: (call, fallback) => (call.command.verb === 'recover' ? { raw: { exitCode: 1, stdout: '{"error":"recover boom"}\n' } } : fallback(call)),
+  })
+  assert.equal(recoverFailed.error, null)
+  assert.equal(recoverFailed.result.exam.status, 'failed')
+  assert.equal(recoverFailed.result.exam.step, 'examiner')
+  assert.equal('tests' in recoverFailed.result.exam, false)
+  assert.match(recoverFailed.result.exam.reason, /recover boom/)
+
+  const ok = await go(ARGS)
+  assert.equal(opsCalls(ok, 'recover').length, 0)
+  assert.deepEqual(ok.result.exam, { status: 'stored', dir: '/data/exams/007-demo' })
 })

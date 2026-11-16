@@ -88,6 +88,45 @@ function storeCheckout(cwd, feature, from = null) {
   return store(mainRoot, feature, source, { move: from === null })
 }
 
+function collectFiles(root, prefix = '') {
+  const files = []
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+    if (entry.isDirectory()) files.push(...collectFiles(path.join(root, entry.name), rel))
+    else if (entry.isFile() && rel !== EXAM_FILE) files.push(rel)
+  }
+  return files
+}
+
+// Read-only inventory of test files under examDir, marked by whether readExam indexes them.
+function inventory(examDir) {
+  if (!fs.existsSync(examDir) || !fs.statSync(examDir).isDirectory()) return []
+  const indexed = new Set()
+  try {
+    const exam = readExam(examDir)
+    if (Array.isArray(exam?.tests)) {
+      for (const t of exam.tests) {
+        if (!Array.isArray(t?.files)) continue
+        for (const f of t.files) {
+          if (typeof f === 'string') indexed.add(f.replace(/\\/g, '/').replace(/^\.\//, ''))
+        }
+      }
+    }
+  } catch {
+    // Missing or invalid exam.json leaves all discovered files unmarked.
+  }
+  return collectFiles(examDir)
+    .sort((a, b) => a.localeCompare(b))
+    .map((file) => ({ path: file, inIndex: indexed.has(file) }))
+}
+
+// Read-only recovery of checkout .aether/exam/ tests for feature without touching disk or store.
+function recoverCheckout(cwd, feature) {
+  assertFeature(feature)
+  const { worktree } = repoPaths(cwd)
+  return { feature, tests: inventory(path.join(worktree, EXAM_DIR)) }
+}
+
 // An exam is stored, so no session still needs the Examiner's offer of this feature.
 function clearExamCarry(dataDir, mainRoot, feature) {
   const root = path.join(dataDir, 'exam-carry', repoKey(mainRoot))
@@ -173,4 +212,4 @@ function runExam(cwd, feature, { ref = 'HEAD', dataDir = run.dataDir(), timeoutS
   }
 }
 
-module.exports = { EXAM_DIR, EXAM_FILE, repoKey, examDir, examProblem, store, storeCheckout, list, runExam }
+module.exports = { EXAM_DIR, EXAM_FILE, repoKey, examDir, examProblem, store, storeCheckout, inventory, recoverCheckout, list, runExam }
