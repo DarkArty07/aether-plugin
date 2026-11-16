@@ -51,3 +51,14 @@ test('R7: finalize copies the session of state.json into the runs.jsonl record, 
   assert.equal(records.find((r) => r.runId === stamped.args.runId).session, 'sess-one')
   assert.equal(records.find((r) => r.runId === bare.args.runId).session, null)
 })
+
+test('finalize with an unreadable state.json records session: null and does not throw', (t) => {
+  const dataDir = useDataDir(t)
+  sampleUsage(dataDir)
+  const bad = finishedRun(t)
+  fs.writeFileSync(path.join(bad.args.runDir, 'state.json'), '{not-json')
+  const res = finalize(bad.repo.dir, bad.args.runId, { tests: false, now: T0 + 40 * MIN })
+  assert.equal(res.record.session, null)
+  const records = fs.readFileSync(path.join(dataDir, 'runs.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  assert.equal(records.find((r) => r.runId === bad.args.runId).session, null)
+})

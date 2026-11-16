@@ -246,6 +246,22 @@ test('abandoned then interrupted-saved is not abandoned: window opens to now and
   assert.equal(fs.existsSync(path.join(s.runDir, 'saved.json')), true)
 })
 
+test('abandonedRuns: with identical timestamps the later record wins, and a record with no readable time never displaces an earlier abandoned', (t) => {
+  const repo = makeRepo(t)
+  const dataDir = useDataDir(t)
+  const sameTime = new Date(T0).toISOString()
+
+  const id1 = '20261116-100000-aa11'
+  run.appendRecord({ runId: id1, status: 'abandoned', repo: repo.dir, sweptAt: sameTime }, dataDir)
+  run.appendRecord({ runId: id1, status: 'finalized', repo: repo.dir, finalizedAt: sameTime }, dataDir)
+  assert.equal(autonomy.abandonedRuns(repo.dir, dataDir).has(id1), false, 'later record with identical timestamp wins')
+
+  const id2 = '20261116-100000-bb22'
+  run.appendRecord({ runId: id2, status: 'abandoned', repo: repo.dir, sweptAt: sameTime }, dataDir)
+  run.appendRecord({ runId: id2, status: 'finalized', repo: repo.dir }, dataDir)
+  assert.equal(autonomy.abandonedRuns(repo.dir, dataDir).has(id2), true, 'record with no readable time never displaces earlier abandoned')
+})
+
 test('abandoned then finalized counts as finished', (t) => {
   const s = setupAbandonedScenario(t)
   const finalizedReport = report(s.repo.dir, s.runId, { dataDir: s.dataDir, tests: false, now: T0 + 27 * HOUR })

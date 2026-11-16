@@ -75,3 +75,38 @@ test('R10: a session with several runs of others lists them all', (t) => {
   const r = start(repo.dir, tempDir(t, 'aether-data-'), 's1')
   assert.ok(r.context.endsWith(`This session has no autonomous run open. ${others([[ID1, 's2'], [ID2, 's3']])}`), r.context.slice(-700))
 })
+
+test('other sessions runs in the start notice are capped at five with and N more', (t) => {
+  const repo = makeRepo(t)
+  const ids = []
+  for (let i = 1; i <= 7; i++) {
+    const id = `auto-20261009-20000${i}-aa0${i}`
+    ids.push(id)
+    writeRun(repo.dir, id, `s${i}`)
+  }
+  const r = start(repo.dir, tempDir(t, 'aether-data-'), 'caller')
+  assert.equal(r.status, 0, r.stderr)
+  for (const id of ids.slice(0, 5)) assert.ok(r.context.includes(id), id)
+  for (const id of ids.slice(5)) assert.ok(!r.context.includes(id), `capped out ${id}`)
+  assert.ok(r.context.includes('and 2 more'), r.context.slice(-500))
+})
+
+test('start notice covers unknown session label, quota-pause before others, and clear/compact sources', (t) => {
+  const repo = makeRepo(t)
+  const diary = writeRun(repo.dir, ID1, 's1')
+  const runFile = path.join(repo.dir, '.aether', 'autonomy', ID1, 'run.json')
+  const runData = JSON.parse(fs.readFileSync(runFile, 'utf8'))
+  const future = new Date(Date.now() + 3 * 3600 * 1000).toISOString()
+  runData.quotaPauses = [{ resetsAt: future, resumeAt: future, percentUsed: 96 }]
+  fs.writeFileSync(runFile, JSON.stringify(runData))
+  writeRun(repo.dir, ID2, null)
+
+  for (const source of ['startup', 'clear', 'compact']) {
+    const r = start(repo.dir, tempDir(t, 'aether-data-'), 's1', source)
+    assert.equal(r.status, 0, r.stderr)
+    assert.ok(r.context.includes(own(ID1, diary)), source)
+    assert.ok(r.context.includes('The run is paused by the quota brake:'), source)
+    assert.ok(r.context.includes(`${ID2} (session unknown)`), source)
+    assert.ok(r.context.indexOf('paused by the quota brake') < r.context.indexOf('Autonomous runs of other sessions'), source)
+  }
+})

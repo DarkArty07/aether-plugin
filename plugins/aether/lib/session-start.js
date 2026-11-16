@@ -156,10 +156,12 @@ function sweepNote(cwd, env) {
   }
 }
 
+const MAX_OTHER_RUNS = 5
+
 function autonomyNote(cwd, session = null) {
   try {
     const { repoPaths } = require('./git.js')
-    const { runsFor, runPaths, status } = require('./autonomy.js')
+    const { runsFor, runPaths, status, formatRunList } = require('./autonomy.js')
     const { mainRoot } = repoPaths(cwd)
     const { own, others } = runsFor(mainRoot, session)
     if (!own && others.length === 0) return ''
@@ -175,8 +177,8 @@ function autonomyNote(cwd, session = null) {
       parts.push('This session has no autonomous run open.')
     }
     if (others.length > 0) {
-      const list = others.map(({ run }) => `${run.id} (session ${run.session || 'unknown'})`).join(', ')
-      const continues = others.map(({ run }) => `aether-autonomy continue ${run.id}`).join(' or ')
+      const list = formatRunList(others, MAX_OTHER_RUNS)
+      const continues = others.slice(0, MAX_OTHER_RUNS).map(({ run }) => `aether-autonomy continue ${run.id}`).join(' or ')
       parts.push(`Autonomous runs of other sessions are open (information only, not yours): ${list}. If one of them is yours from a restarted session, continue it before anything else: ${continues}.`)
     }
     return parts.join(' ')

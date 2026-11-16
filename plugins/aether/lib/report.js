@@ -649,7 +649,12 @@ function superdelegationOf(env) {
 // When a swarm run was compiled, in ms: the state's compiledAt, or the graph's modification time when the state has none.
 // It starts the run's window in report(), and it places the run among an autonomous run's (lib/autonomy.js).
 function runStartOf(dir) {
-  const state = readIfThere(path.join(dir, 'state.json'))
+  let state = null
+  try {
+    state = readIfThere(path.join(dir, 'state.json'))
+  } catch {
+    state = null
+  }
   return state && state.compiledAt ? Date.parse(state.compiledAt) : fs.statSync(path.join(dir, 'graph.json')).mtimeMs
 }
 

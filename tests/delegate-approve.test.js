@@ -560,3 +560,102 @@ test('approve on an already-merged target answers merged:true with already:true'
   assert.equal(ext.json.tests, 'passed')
   assert.equal(verdicts(dataDir, 'already-merged-ext').at(-1).verdict, 'approved')
 })
+
+function gitWrapper(t, repo, scriptBody) {
+  const binDir = tempDir(t, 'aether-git-wrap-')
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim()
+  const gitPath = path.join(binDir, 'git')
+  fs.writeFileSync(gitPath, `#!/usr/bin/env bash\nREAL_GIT=${JSON.stringify(realGit)}\n${scriptBody}\n`, { mode: 0o755 })
+  return `${binDir}:${process.env.PATH}`
+}
+
+test('mergeExternal when unit tip cannot be read does not claim already unless aether-wt reports already', async (t) => {
+  const repo = makeRepo(t)
+  commitPackage(repo, true)
+  const args = compile(repo, plan([planTask(1)], { execution: ['- Test command: `true`'] }))
+  const unit = wt.ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'from unit\n', 'unit edit')
+  const branch = `aether/${args.runId}/task-1`
+  const marker = path.join(tempDir(t, 'aether-flag-'), 'called')
+  const wrappedPath = gitWrapper(t, repo, `
+if [ "$1" = "rev-parse" ] && [ "$2" = ${JSON.stringify(branch)} ] && [ ! -f ${JSON.stringify(marker)} ]; then
+  touch ${JSON.stringify(marker)}
+  exit 1
+fi
+if [ "$1" = "merge" ]; then
+  exit 0
+fi
+exec "$REAL_GIT" "$@"
+`)
+  const { dataDir, deps } = world(t, repo.dir)
+  await task.begin(call(BRIEF('ext-no-tip', OWNS)), deps)
+  log.appendEntry(dataDir, {
+    kind: 'result', task: 'ext-no-tip', attempt: 1, session: 's1', time: 5000, ok: true,
+    pair: { harness: 'grok', model: 'grok-4.7' }, branch, worktree: unit.path, checks: { ok: true },
+  })
+  const r = approve(repo, dataDir, ['--task', 'ext-no-tip'], { PATH: wrappedPath })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.merged, true)
+  assert.equal(r.json.already, undefined, JSON.stringify(r.json))
+})
+
+test('mergeExternal when unit tip cannot be read reports already when aether-wt merge reports already', async (t) => {
+  const repo = makeRepo(t)
+  commitPackage(repo, true)
+  const args = compile(repo, plan([planTask(1)], { execution: ['- Test command: `true`'] }))
+  const unit = wt.ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'from unit\n', 'unit edit')
+  wt.merge(repo.dir, args.runId, 'task-1')
+  const branch = `aether/${args.runId}/task-1`
+  const marker = path.join(tempDir(t, 'aether-flag-'), 'called')
+  const wrappedPath = gitWrapper(t, repo, `
+if [ "$1" = "rev-parse" ] && [ "$2" = ${JSON.stringify(branch)} ] && [ ! -f ${JSON.stringify(marker)} ]; then
+  touch ${JSON.stringify(marker)}
+  exit 1
+fi
+exec "$REAL_GIT" "$@"
+`)
+  const { dataDir, deps } = world(t, repo.dir)
+  await task.begin(call(BRIEF('ext-no-tip-already', OWNS)), deps)
+  log.appendEntry(dataDir, {
+    kind: 'result', task: 'ext-no-tip-already', attempt: 1, session: 's1', time: 5000, ok: true,
+    pair: { harness: 'grok', model: 'grok-4.7' }, branch, worktree: unit.path, checks: { ok: true },
+  })
+  const r = approve(repo, dataDir, ['--task', 'ext-no-tip-already'], { PATH: wrappedPath })
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.merged, true)
+  assert.equal(r.json.already, true, JSON.stringify(r.json))
+})
+
+test('both merge paths refuse when merge reports success but leaves HEAD without the delegate commit', async (t) => {
+  const repo = makeRepo(t)
+  commitPackage(repo, true)
+  const wrappedPath = gitWrapper(t, repo, `
+if [ "$1" = "merge" ]; then
+  exit 0
+fi
+exec "$REAL_GIT" "$@"
+`)
+  // 1. mergeWorktree path
+  const { dataDir, deps } = world(t, repo.dir)
+  await task.begin(call(BRIEF('wt-no-advance', OWNS)), deps)
+  const side = sideWorktree(t, repo, 'src/a.js', 'from delegate\n')
+  const r1 = approve(repo, dataDir, ['--task', 'wt-no-advance', '--worktree', side], { PATH: wrappedPath })
+  assert.equal(r1.json.approved, true)
+  assert.equal(r1.json.merged, false)
+  assert.match(r1.json.reason, /did not advance/)
+
+  // 2. mergeExternal path
+  const args = compile(repo, plan([planTask(1)], { execution: ['- Test command: `true`'] }))
+  const unit = wt.ensure(repo.dir, args.runId, 'task-1')
+  commitIn(repo, unit.path, 'src/t1/a.js', 'from unit\n', 'unit edit')
+  await task.begin(call(BRIEF('ext-no-advance', OWNS)), deps)
+  log.appendEntry(dataDir, {
+    kind: 'result', task: 'ext-no-advance', attempt: 1, session: 's1', time: 5000, ok: true,
+    pair: { harness: 'grok', model: 'grok-4.7' }, branch: `aether/${args.runId}/task-1`, worktree: unit.path, checks: { ok: true },
+  })
+  const r2 = approve(repo, dataDir, ['--task', 'ext-no-advance'], { PATH: wrappedPath })
+  assert.equal(r2.json.approved, true)
+  assert.equal(r2.json.merged, false)
+  assert.match(r2.json.reason, /did not advance/)
+})
