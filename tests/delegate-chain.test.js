@@ -408,12 +408,11 @@ test('R17: with an active quota pause, runChain does not launch any pair and ret
   )
   assert.equal(calls.length, 0)
   assert.equal(out.ok, false)
-  assert.notEqual(out.status, 'failed')
+  assert.equal(out.status, 'paused', 'a chain stopped by the quota pause ends paused, never failed or quota')
   assert.equal(chain.isStartRefusal({ status: out.status, detail: out.detail, usage: NO_USAGE }), true)
   assert.match(out.detail, /quota brake/i)
   const entries = log.readEntries(dataDir, { task: 'c-1' })
-  assert.equal(entries.some((e) => e.kind === 'outcome' && e.status === 'failed'), false)
-  assert.equal(entries.some((e) => e.kind === 'verdict'), false)
+  assert.deepEqual(entries, [], 'the pause launches nothing: no outcome to judge, no verdict')
 })
 
 test('R17: a quota pause recorded between the first and second candidate stops the chain before the second pair', async (t) => {
@@ -433,9 +432,10 @@ test('R17: a quota pause recorded between the first and second candidate stops t
   assert.equal(calls.length, 1)
   assert.equal(calls[0].harness, 'agy')
   assert.equal(out.ok, false)
-  assert.notEqual(out.status, 'failed')
+  assert.equal(out.status, 'paused', 'a pause between candidates stops the chain with the paused outcome')
   assert.equal(chain.isStartRefusal({ status: out.status, detail: out.detail, usage: NO_USAGE }), true)
   assert.match(out.detail, /quota brake/i)
+  assert.deepEqual(log.readEntries(dataDir, { task: 'c-1' }).filter((e) => e.kind === 'outcome').map((e) => [e.attempt, e.status]), [[1, 'unavailable']], 'the pause itself writes no outcome')
 })
 
 test('R17: a cost ceiling exceeded without a quota pause does not stop runChain', async (t) => {

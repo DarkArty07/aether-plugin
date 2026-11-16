@@ -165,6 +165,54 @@ test('a read-only delegate that touched the copy comes back marked with the file
   assert.deepEqual([result.ok, result.text, result.checks.ok, result.checks.outside], [false, null, false, ['src/a.js']])
 })
 
+// A run state the quota brake paused, as setupPausedRepo in tests/delegate-chain.test.js builds it: the run of this
+// session is paused until an hour from now, so launchRefusal stops the run with the pause message.
+function pauseRun(t, repo, dataDir, session = 's1') {
+  const now = Date.now()
+  fs.mkdirSync(path.join(dataDir, 'sessions'), { recursive: true })
+  fs.writeFileSync(path.join(dataDir, 'sessions', `${session}.json`), JSON.stringify({ agent: 'aether:lead' }) + '\n')
+  const runDir = path.join(repo.dir, '.aether', 'autonomy', 'auto-20261021-120000-abcd')
+  fs.mkdirSync(runDir, { recursive: true })
+  fs.writeFileSync(path.join(runDir, 'run.json'), JSON.stringify({
+    id: 'auto-20261021-120000-abcd',
+    session,
+    started: new Date(now - 60000).toISOString(),
+    ended: null,
+    outcome: null,
+    ceilings: { hours: 4, usd: 50 },
+    spend: [],
+    quotaPauses: [{ kind: 'five_hour', percentUsed: 96, started: new Date(now - 1000).toISOString(), resetsAt: new Date(now + 3600000).toISOString(), resumeAt: new Date(now + 3720000).toISOString(), brakeOff: false }],
+    brakeOff: false,
+  }) + '\n')
+}
+
+test('a read-only run stopped by the quota pause ends paused, launches no pair, and logs no failed result (spec 043 R17)', async (t) => {
+  const { repo, dataDir } = world(t, { edits: false, owns: [], tests: null })
+  pauseRun(t, repo, dataDir)
+  const result = await dr.runTask({ id: 't1', cwd: repo.dir, dataDir })
+  assert.equal(result.ok, false)
+  assert.equal(result.status, 'paused')
+  assert.match(result.reason, /quota brake/i)
+  assert.equal(result.text, null)
+  assert.deepEqual(log.readEntries(dataDir, { task: 't1' }).filter((e) => e.kind === 'result'), [], 'the pause is not a failed attempt: nothing for a verdict to judge')
+  assert.equal(log.readEntries(dataDir, { task: 't1' }).filter((e) => e.kind === 'outcome').length, 0)
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'results', 't1.json'), 'utf8')).status, 'paused')
+  assert.deepEqual(await dr.wait({ id: 't1', dataDir, seconds: 0 }), { done: true, ok: false, status: 'paused', text: null, reason: result.reason })
+})
+
+test('an editing run stopped by the quota pause ends paused and starts no lane pair (spec 043 R17)', async (t) => {
+  const { repo, dataDir } = world(t)
+  pauseRun(t, repo, dataDir)
+  let calls = 0
+  const result = await dr.runTask({ id: 't1', cwd: repo.dir, dataDir }, { delegateCommand: async () => (calls += 1, { status: 'done' }) })
+  assert.equal(calls, 0)
+  assert.equal(result.ok, false)
+  assert.equal(result.status, 'paused')
+  assert.match(result.reason, /quota brake/i)
+  assert.deepEqual(log.readEntries(dataDir, { task: 't1' }).filter((e) => e.kind === 'result'), [], 'the pause is not a failed attempt: the ladder does not climb')
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, 'delegates', 'results', 't1.json'), 'utf8')).status, 'paused')
+})
+
 test('wait: not done while the delegate lives; its result once written; died when the pid is gone without one (R12)', async (t) => {
   const dataDir = tempDir(t, 'aether-data-')
   const runFile = path.join(dataDir, 'delegates', 'run', 't1.json')

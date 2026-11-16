@@ -13,9 +13,11 @@
 // delegate is the whole delegate: `aether-delegate start` launches it, waitSteps waits for it, and a text event, a
 // heartbeat, goes out after every wait that did not end, because the engine kills an agent whose step emits nothing for
 // 600 s (Task 17 measured it). The delegate's text is the agent's answer, with no model request. A `blocked` end
-// of an external delegate is handed straight to the Lead as the answer with no rescue. Any other external failure
-// is left to the model, at the model of the plan, which is already the one of the step; the model's step that ends the
-// turn then yields one line naming the attempt that did not deliver, as a text chunk before its stop. Every later step of an
+// of an external delegate is handed straight to the Lead as the answer with no rescue, and a `paused` end (the quota
+// brake stopped the run) is answered with the pause and the relaunch, likewise with no rescue and no Claude agent.
+// Any other external failure is left to the model, at the model of the plan, which is already the one of the step;
+// the model's step that ends the turn then yields one line naming the attempt that did not deliver, as a text chunk
+// before its stop. Every later step of an
 // `external` agent and every step of an `answerOf` agent goes through the model unchanged, and the last one records
 // its end with `aether-delegate answer`: read-only answers are checked by `verdict` (R6).
 //
@@ -125,6 +127,15 @@ function blockedText(route, done) {
   return body !== '' ? `${head}\n\n${body}` : head
 }
 
+// The answer handed to the Lead when the quota brake paused the task's run: one line saying the task was paused and is
+// relaunched with the same AETHER-TASK after the reset. No Claude agent runs: rescuing on Claude during the pause would
+// spend the very windows the brake protects, and nothing is recorded, so the ladder does not climb.
+function pausedText(route, done) {
+  const reason = isText(done.reason) ? done.reason.replace(/\s+/g, ' ').trim() : ''
+  const head = `Aether: the external delegate task ${route.id} was paused by the quota brake and is relaunched with the same AETHER-TASK after the reset.`
+  return reason !== '' ? `${head} ${reason}` : head
+}
+
 // The delegate of an external harness: the whole first step of its agent. Yields a heartbeat after every wait that did
 // not end, before it waits again, and the delegate's text as the answer when it delivers; any other end is the model's,
 // which records the end of the attempt like any step on Claude (answerOf: { task, attempt }). A failed attempt leaves
@@ -144,6 +155,7 @@ async function* runExternal($, e, next, ctx, route, answerOf, seen) {
           const done = step.value
           if (done && done.ok === true && typeof done.text === 'string' && done.text.trim() !== '') delivered = done.text
           else if (done && done.status === 'blocked') delivered = blockedText(route, done)
+          else if (done && done.status === 'paused') delivered = pausedText(route, done)
           else end = endOf(done)
           break
         }

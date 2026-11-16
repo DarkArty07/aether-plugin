@@ -434,6 +434,30 @@ test('a blocked external end returns the question and patch path to the Lead and
   expect(runs.map((r) => r.argv[2])).toEqual(['begin', 'start', 'wait'])
 })
 
+test('a paused external end answers the pause and the relaunch, and runs no Claude step', async ($, on) => {
+  const reason = 'autonomous run auto-1 is paused by the quota brake (96% used; resumeAt 2026-10-21T13:02:00.000Z); it is paused, not ended; start nothing of this run and wait until it resumes.'
+  const { runs, toolCalls, counts } = stubs(on, {
+    verbs: {
+      begin: [{ ...PLAN, external: EXTERNAL_PAIR }],
+      start: [{ started: true, id: 't1', pid: 1 }],
+      wait: [{ done: true, ok: false, status: 'paused', text: null, reason }],
+    },
+  })
+  await call($, 'AETHER-TASK: t1\nAETHER-OWNS: src/**\nDo it.')
+  const spawned = await spawn($, toolCalls[0].prompt)
+  const out = await step($, { index: 0, agentId: spawned.agentId })
+  const text = out.result.answer
+  expect(text).toMatch(/paused by the quota brake/)
+  expect(text).toMatch(/same AETHER-TASK/)
+  expect(text).not.toMatch(/\n/)
+  expect(out.chunks).toEqual([
+    { kind: 'text', index: 0, text },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ])
+  expect(counts.modelSteps).toBe(0)
+  expect(runs.map((r) => r.argv[2])).toEqual(['begin', 'start', 'wait'])
+})
+
 test('a blocked external end without a pair omits the pair from its header and runs no Claude step', async ($, on) => {
   const blockedText = 'Need src/other.js in Owns.'
   const { runs, toolCalls, counts } = stubs(on, {
