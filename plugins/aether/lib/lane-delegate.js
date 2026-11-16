@@ -353,6 +353,9 @@ async function runLoop(ctx, { role, reference, exclude: initialExclude, prompt, 
         const entry = { pair: picked.id, cause: outcome.cause, patch: saved.patch, continued }
         if (carryNote) entry.carry = carryNote
         tried.push(entry)
+        if (outcome.cause === 'blocked' || outcome.cause === 'needs-context') {
+          return { status: 'blocked', cause: outcome.cause, question: outcome.detail, reason: outcome.detail, tried, callCount }
+        }
         offer = offerAfter(saved, offer, continued)
       } else {
         tried.push({ pair: picked.id, cause: outcome.cause })
@@ -500,6 +503,11 @@ async function delegateWithEnv(cwd, flags, deps) {
       callName: (callIndex) => `${TASK_ID}-${callIndex}-implement`,
     })
     if (written.result === undefined) {
+      if (written.status === 'blocked') {
+        const result = { status: 'blocked', id, run: id, cause: written.cause, question: written.question, reason: written.reason, tried: written.tried }
+        lanes.appendLog(ctx.dataDir, charge.session, { kind: 'delegate', time: nowOf(deps), session: charge.session, run: id, id, status: 'blocked', cause: written.cause, tried: written.tried })
+        return result
+      }
       const result = { status: 'no-candidate', id, run: id, cause: written.cause, reason: written.reason, tried: written.tried }
       lanes.appendLog(ctx.dataDir, charge.session, { kind: 'delegate', time: nowOf(deps), session: charge.session, run: id, id, status: 'no-candidate', cause: written.cause, tried: written.tried })
       return result
