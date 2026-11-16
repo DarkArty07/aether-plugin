@@ -1,7 +1,7 @@
 {
   "repeat": {
     "minWordLength": 3,
-    "similarityThreshold": 0.35,
+    "similarityThreshold": 0.55,
     "stopwords": [
       "falta", "cuando", "donde", "para", "como", "este", "esta", "esto", "estos", "estas",
       "con", "sin", "por", "que", "del", "las", "los", "una", "uno", "the", "and", "for",
@@ -13,6 +13,14 @@
     "with", "that", "this", "when", "from", "into", "your", "have", "will", "what", "which",
     "them", "then", "than", "also", "each", "only", "used", "uses", "using", "should", "about",
     "there", "their", "these", "those", "skill", "skills", "repository", "project",
+    "aether", "claude", "task", "tasks", "work", "working", "write", "writing", "edit", "editing",
+    "check", "checking", "make", "making", "build", "building", "read", "reading", "give", "gives",
+    "need", "needs", "says", "runs", "already", "such", "other", "more", "most", "some", "many",
+    "every", "order", "real", "list", "lists", "leave", "touch", "open", "source", "tool",
+    "page", "pages", "put", "putting", "follow", "followed", "added", "same", "role", "roles",
+    "file", "files", "line", "lines", "code", "does", "must", "could", "would", "being", "been",
+    "were", "before", "after", "under", "over", "between", "through", "here", "well", "still",
+    "even", "just", "very", "because", "until", "while", "where", "both", "without", "against",
     "para", "como", "esta", "este", "estos", "estas", "sobre", "desde", "entre", "cuando",
     "donde", "todo", "todos", "toda", "todas", "pero", "tiene", "hace", "cada", "solo",
     "también", "tambien", "porque", "hasta", "sus", "una", "uno", "unos", "unas",

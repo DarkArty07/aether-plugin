@@ -10,6 +10,7 @@ const { repoPaths } = require('./git.js')
 const { checkSkillFile } = require('./skill-brief.js')
 const {
   computedHash,
+  createdFile,
   loadSkillsConfig,
   readInstalls,
   readNotices,
@@ -21,10 +22,6 @@ const {
   canonicalRepo,
 } = require('./skill-registry.js')
 const { classifySkillPath } = require('./skill-rules.js')
-
-function createdFile(dataDir) {
-  return path.join(dataDir, 'skills', 'created.jsonl')
-}
 
 function reviewSkill(dir, { cwd, home = os.homedir() } = {}) {
   const problems = [...checkSkillFile(dir)]
@@ -53,14 +50,35 @@ function reviewSkill(dir, { cwd, home = os.homedir() } = {}) {
     return targetHash
   }
 
+  function gitWorktreeDirFor(p) {
+    let cur = path.resolve(p)
+    while (cur) {
+      if (fs.existsSync(path.join(cur, '.git'))) return cur
+      const parent = path.dirname(cur)
+      if (parent === cur) break
+      cur = parent
+    }
+    return null
+  }
+
   const workingDir = cwd || process.cwd()
   let projectRoots = []
   let inRepo = false
-  try {
-    const paths = repoPaths(workingDir)
-    projectRoots = [paths.worktree, paths.mainRoot]
+  const targetRepoDir = gitWorktreeDirFor(targetDir)
+  let targetPaths = null
+  if (targetRepoDir) {
+    try { targetPaths = repoPaths(targetRepoDir) } catch {}
+  }
+  let cwdPaths = null
+  try { cwdPaths = repoPaths(workingDir) } catch {}
+
+  if (targetPaths && (!cwdPaths || targetPaths.mainRoot === cwdPaths.mainRoot)) {
+    projectRoots = [targetPaths.worktree, targetPaths.mainRoot]
     inRepo = true
-  } catch {
+  } else if (cwdPaths) {
+    projectRoots = [cwdPaths.worktree, cwdPaths.mainRoot]
+    inRepo = Boolean(targetPaths)
+  } else {
     projectRoots = [workingDir]
   }
 

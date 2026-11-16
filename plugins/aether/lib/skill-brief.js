@@ -7,7 +7,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { git } = require('./git.js')
-const { loadSkillsConfig } = require('./skill-registry.js')
+const { loadSkillsConfig, recordUse, usesFile } = require('./skill-registry.js')
 
 const MAX_SKILLS = 3
 const MAX_SKILL_LINES = 500
@@ -157,7 +157,34 @@ function parseFrontMatter(text) {
         })
       }
     } else {
-      entries[key] = value.replace(/\s+#.*$/, '').trimEnd()
+      const parts = [value.replace(/(?:^|\s+)#.*$/, '').trimEnd()]
+      let end = i
+      while (end + 1 < lines.length) {
+        let peek = end + 1
+        let blanks = 0
+        while (peek < lines.length && lines[peek].trim() === '') {
+          blanks += 1
+          peek += 1
+        }
+        if (peek >= lines.length) break
+        const nextLine = lines[peek]
+        if (!/^[ \t]+\S/.test(nextLine)) break
+        const stripped = nextLine.trim().replace(/(?:^|\s+)#.*$/, '').trimEnd()
+        if (!stripped && blanks === 0) {
+          end = peek
+          continue
+        }
+        if (parts[parts.length - 1] === '' && blanks === 0) {
+          parts[parts.length - 1] = stripped
+        } else if (blanks > 0) {
+          parts.push('\n'.repeat(blanks) + stripped)
+        } else {
+          parts.push(' ' + stripped)
+        }
+        end = peek
+      }
+      i = end
+      entries[key] = parts.join('').trim()
     }
   }
   return entries
@@ -237,10 +264,6 @@ function loadSkills(names, options) {
   return { ok: true, skills }
 }
 
-function usesFile(dataDir) {
-  return path.join(dataDir, 'skills', 'uses.jsonl')
-}
-
 function readSkillEntry(file, dirName) {
   let text = ''
   try {
@@ -255,23 +278,32 @@ function readSkillEntry(file, dirName) {
 }
 
 function listProjectSkills(cwd) {
-  const root = cwd ? path.resolve(cwd) : process.cwd()
+  const roots = getProjectRoots(cwd)
   const byName = new Map()
-  for (const folder of ['.agents', '.claude']) {
-    const skillsDir = path.join(root, folder, 'skills')
-    let entries = []
-    try {
-      entries = fs.readdirSync(skillsDir, { withFileTypes: true })
-    } catch {
-      continue
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      const file = path.join(skillsDir, entry.name, 'SKILL.md')
-      if (!fs.existsSync(file)) continue
-      const skill = readSkillEntry(file, entry.name)
-      if (!skill || !skill.name || byName.has(skill.name)) continue
-      byName.set(skill.name, skill)
+  for (const root of roots) {
+    for (const folder of ['.agents', '.claude']) {
+      const skillsDir = path.join(root, folder, 'skills')
+      let entries = []
+      try {
+        entries = fs.readdirSync(skillsDir, { withFileTypes: true })
+      } catch {
+        continue
+      }
+      for (const entry of entries) {
+        const entryDir = path.join(skillsDir, entry.name)
+        let stat
+        try {
+          stat = fs.statSync(entryDir)
+        } catch {
+          continue
+        }
+        if (!stat.isDirectory()) continue
+        const file = path.join(entryDir, 'SKILL.md')
+        if (!fs.existsSync(file)) continue
+        const skill = readSkillEntry(file, entry.name)
+        if (!skill || !skill.name || byName.has(skill.name)) continue
+        byName.set(skill.name, skill)
+      }
     }
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
@@ -285,7 +317,8 @@ function formatProjectSkills(skills) {
     'Available project skills in this repository (use `- Skills: <name>` in tasks where one applies, at most 3 per task):',
   ]
   for (const skill of skills) {
-    lines.push(`- \`${skill.name}\`: ${skill.description}`)
+    const desc = String(skill.description || '').replace(/\s+/g, ' ').trim()
+    lines.push(`- \`${skill.name}\`: ${desc}`)
   }
   return lines.join('\n')
 }
@@ -306,15 +339,14 @@ function briefStopWords() {
   return new Set(loadSkillsConfig().stopWords.map((word) => foldToken(word)))
 }
 
-function skillMatchesBrief(skill, words, raw, stop = new Set()) {
-  const name = String(skill.name || '').toLowerCase()
+function skillMatchesBrief(skill, words, foldedRaw, stop = new Set()) {
+  const name = foldToken(skill.name || '')
   if (!name) return false
-  if (words.has(name) || raw.includes(name)) return true
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (words.has(name) || new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`).test(foldedRaw)) return true
   const parts = name
     .split('-')
-    .filter((part) => part.length >= 4)
-    .map((part) => foldToken(part))
-    .filter((part) => !stop.has(part))
+    .filter((part) => part.length >= 4 && !stop.has(part))
   if (parts.length > 0 && parts.every((part) => words.has(part))) return true
   const significant = new Set()
   for (const word of [...foldedWords(skill.name), ...foldedWords(skill.description)]) {
@@ -324,29 +356,18 @@ function skillMatchesBrief(skill, words, raw, stop = new Set()) {
   for (const word of significant) {
     if (words.has(word)) hits += 1
   }
-  return hits >= 2
+  const needed = Math.max(2, Math.min(3, Math.ceil(significant.size * 0.25)))
+  return hits >= needed
 }
 
 function matchDelegateSkills(cwd, { prompt = '', description = '', owns = [] } = {}) {
   const owned = Array.isArray(owns) ? owns.join(' ') : ''
-  const raw = `${prompt}\n${description}\n${owned}`.toLowerCase()
-  const words = new Set(foldedWords(raw))
+  const foldedRaw = foldToken(`${prompt}\n${description}\n${owned}`)
+  const words = new Set(foldedWords(foldedRaw))
   const stop = briefStopWords()
   return listProjectSkills(cwd)
-    .filter((skill) => skillMatchesBrief(skill, words, raw, stop))
+    .filter((skill) => skillMatchesBrief(skill, words, foldedRaw, stop))
     .map((skill) => skill.name)
-}
-
-function recordUse(dataDir, { session, kind, run = null, task, skills, time = Date.now() } = {}) {
-  try {
-    const file = usesFile(dataDir)
-    fs.mkdirSync(path.dirname(file), { recursive: true })
-    const entry = { time, session, kind, run, task, skills }
-    fs.appendFileSync(file, JSON.stringify(entry) + '\n')
-    return true
-  } catch {
-    return true
-  }
 }
 
 module.exports = {
