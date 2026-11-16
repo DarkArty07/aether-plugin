@@ -113,6 +113,15 @@ function rescueLine(route, end) {
   return `Aether: the external attempt${pair} did not deliver (${detail}); this task ran on Claude${claude} instead.`
 }
 
+// The answer handed to the Lead when an external delegate returns BLOCKED or NEEDS_CONTEXT: no other pair and no
+// Claude agent tried the task, followed by the delegate's text (its question and any salvaged patch path).
+function blockedText(route, done) {
+  const pair = route.pair ? ` on ${route.pair.harness} ${route.pair.model} ${route.pair.effort}` : ''
+  const head = `Aether: the external delegate${pair} answered BLOCKED; no other pair and no Claude agent tried it.`
+  const body = typeof done.text === 'string' && done.text.trim() !== '' ? done.text : isText(done.reason) ? done.reason : ''
+  return body !== '' ? `${head}\n\n${body}` : head
+}
+
 // The delegate of an external harness: the whole first step of its agent. Yields a heartbeat after every wait that did
 // not end, before it waits again, and the delegate's text as the answer when it delivers; any other end is the model's,
 // which records the end of the attempt like any step on Claude (answerOf: { task, attempt }). A failed attempt leaves
@@ -131,6 +140,7 @@ async function* runExternal($, e, next, ctx, route, answerOf, seen) {
         if (step.done) {
           const done = step.value
           if (done && done.ok === true && typeof done.text === 'string' && done.text.trim() !== '') delivered = done.text
+          else if (done && done.status === 'blocked') delivered = blockedText(route, done)
           else end = endOf(done)
           break
         }

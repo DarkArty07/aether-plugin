@@ -403,3 +403,25 @@ test('a begin that fails on a call naming model sonnet keeps sonnet and names it
   expect(fault).toBeTruthy()
   expect(JSON.parse(fault!.text).faults).toEqual([{ time: 1000, source: 'delegate.begin', class: 'handler-timeout', kind: 'Error' }])
 })
+
+test('a blocked external end returns the question and patch path to the Lead and runs no Claude step (#294)', async ($, on) => {
+  const blockedText = 'Need src/other.js in Owns to export helper().\nPatch: /tmp/task-1-attempt-1.patch'
+  const { runs, toolCalls, counts } = stubs(on, {
+    verbs: {
+      begin: [{ ...PLAN, external: EXTERNAL_PAIR }],
+      start: [{ started: true, id: 't1', pid: 1 }],
+      wait: [{ done: true, ok: false, status: 'blocked', text: blockedText, reason: 'Need src/other.js in Owns to export helper().' }],
+    },
+  })
+  await call($, 'AETHER-TASK: t1\nAETHER-OWNS: src/**\nDo it.')
+  const spawned = await spawn($, toolCalls[0].prompt)
+  const out = await step($, { index: 0, agentId: spawned.agentId })
+  const expected = `Aether: the external delegate on muse muse-2 high answered BLOCKED; no other pair and no Claude agent tried it.\n\n${blockedText}`
+  expect(out.chunks).toEqual([
+    { kind: 'text', index: 0, text: expected },
+    { kind: 'stop', stopReason: 'end_turn', usage: null },
+  ])
+  expect(out.result.answer).toBe(expected)
+  expect(counts.modelSteps).toBe(0)
+  expect(runs.map((r) => r.argv[2])).toEqual(['begin', 'start', 'wait'])
+})

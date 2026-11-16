@@ -242,6 +242,13 @@ async function runEdits(external, { cwd, dataDir }, delegateCommand) {
   }
   if (!isObject(done) || done.status !== 'done') {
     const status = isObject(done) && isText(done.status) ? done.status : 'failed'
+    if (status === 'blocked') {
+      const question = isText(done.question) ? done.question : isText(done.reason) ? done.reason : isText(done.cause) ? done.cause : 'blocked'
+      const lastTried = Array.isArray(done.tried) && done.tried.length > 0 ? done.tried[done.tried.length - 1] : null
+      const patch = isText(lastTried?.patch) ? lastTried.patch : null
+      const text = [question, ...(patch ? [`Patch: ${patch}`] : [])].join('\n')
+      return { result: { ok: false, status: 'blocked', text, checks: null, reason: reasonOf(question) }, entry: { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch, answer: null, review: null } }
+    }
     const reason = isObject(done) ? reasonOf(done.reason, done.cause) : null
     return { result: { ok: false, status, text: null, checks: null, reason }, entry: { pair: null, branch: null, worktree: null, base: null, checkBase: null, head: null, patch: null, answer: null, review: null } }
   }
