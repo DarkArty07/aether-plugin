@@ -1,6 +1,6 @@
 ---
 title: Roadmap
-description: Where Aether stands at version 0.45.0, what waits for the owner, the effort rule per task and what is deferred.
+description: Where Aether stands at version 0.46.0, what waits for the owner, the effort rule per task and what is deferred.
 order: 32
 ---
 
