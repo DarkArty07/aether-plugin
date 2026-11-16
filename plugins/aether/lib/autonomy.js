@@ -117,41 +117,82 @@ function approvedPlanText(records, latestStarted) {
 }
 
 function parsePlanNumber(raw) {
-  const n = Number(String(raw).replace(/,/g, ''))
+  let s = String(raw).trim()
+  const hasDot = s.includes('.')
+  const hasComma = s.includes(',')
+  if (hasDot && hasComma) {
+    // The last separator is the decimal one; the other groups thousands.
+    const decimal = s.lastIndexOf('.') > s.lastIndexOf(',') ? '.' : ','
+    const thousands = decimal === '.' ? ',' : '.'
+    s = s.split(thousands).join('')
+    if (decimal === ',') s = s.replace(',', '.')
+  } else if (hasComma) {
+    // A 3-digit group after `,` is thousands (`1,000`); otherwise it is a decimal (`12,5`).
+    if (/^\d{1,3}(,\d{3})+$/.test(s)) s = s.replace(/,/g, '')
+    else s = s.replace(',', '.')
+  } else if (hasDot) {
+    // A 3-digit group after `.` is thousands (`1.000`); otherwise it is a decimal (`12.5`).
+    if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '')
+  }
+  const n = Number(s)
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
 function collectUniqueNumbers(text, regex) {
   const values = new Set()
+  const raws = []
   for (const match of text.matchAll(regex)) {
     const n = parsePlanNumber(match[1])
-    if (n !== null) values.add(n)
+    if (n === null) continue
+    values.add(n)
+    const raw = match[0].trim()
+    if (!raws.includes(raw)) raws.push(raw)
   }
-  return values
+  return { values, raws }
 }
 
-function resolvePlanKind(values, kind, unreadable) {
-  if (values.size === 1) return [...values][0]
-  if (values.size > 1) unreadable.push(kind)
+function resolvePlanKind(found, kind, unreadable) {
+  if (found.values.size === 1) return [...found.values][0]
+  unreadable.push(kind)
   return null
 }
 
+// The ceilings live on the ceilings line only: one line, optionally a list
+// item and optionally bold, labelled `Topes:` or `Ceilings:`
+// (case-insensitive), with one hours figure and one dollar figure. The bold
+// may close before or after the colon (`**Topes:**`, `**Topes**:` or plain
+// `Topes:`). Figures elsewhere in the plan, such as the cost and time
+// estimates, are not read. A plan with no such line names no ceilings; a
+// line that exists but holds zero or several distinct figures of a kind
+// leaves that kind unreadable (`hasLine` tells the two apart).
 function ceilingsFromPlan(text) {
-  if (typeof text !== 'string' || !text.trim()) return { hours: null, usd: null, unreadable: [] }
-  const num = '((?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?)'
+  if (typeof text !== 'string' || !text.trim()) return { hours: null, usd: null, unreadable: [], figures: { hours: [], usd: [] }, hasLine: false }
+  const matches = text
+    .split('\n')
+    .map((row) => row.match(/^\s*(?:[-*+]|\d+[.)])?\s*(?:\*\*)?\s*(topes|ceilings)\s*(?:\*\*)?\s*:(?:\*\*)?\s*([\s\S]*)$/i))
+    .filter(Boolean)
+  if (matches.length === 0) return { hours: null, usd: null, unreadable: [], figures: { hours: [], usd: [] }, hasLine: false }
+  const line = matches.map((match) => match[2]).join('\n')
+  const num = '((?:\\d+(?:[.,]\\d+)*))'
   const hoursRe = new RegExp(`(?<![\\p{L}\\p{N}.$,])${num}\\s*(?:horas?|hours?|h)(?![\\p{L}\\p{N}])`, 'giu')
-  const usdPrefixRe = new RegExp(`(?<![\\p{L}\\p{N}])(?:US\\s*\\$|USD|\\$)\\s*${num}(?![\\p{L}\\p{N}]|\\.\\d)`, 'giu')
+  const usdPrefixRe = new RegExp(`(?<![\\p{L}\\p{N}])(?:US\\s*\\$|USD|\\$)\\s*${num}(?![\\p{L}\\p{N}]|[.,]\\d)`, 'giu')
   const usdSuffixRe = new RegExp(`(?<![\\p{L}\\p{N}.$,])${num}\\s*(?:d[oó]lares|d[oó]lar|dollars?)(?![\\p{L}\\p{N}])`, 'giu')
 
-  const hoursValues = collectUniqueNumbers(text, hoursRe)
-  const usdValues = new Set([
-    ...collectUniqueNumbers(text, usdPrefixRe),
-    ...collectUniqueNumbers(text, usdSuffixRe),
-  ])
+  const hoursFound = collectUniqueNumbers(line, hoursRe)
+  const usdFound = (() => {
+    const values = new Set()
+    const raws = []
+    for (const regex of [usdPrefixRe, usdSuffixRe]) {
+      const found = collectUniqueNumbers(line, regex)
+      for (const value of found.values) values.add(value)
+      for (const raw of found.raws) if (!raws.includes(raw)) raws.push(raw)
+    }
+    return { values, raws }
+  })()
   const unreadable = []
-  const hours = resolvePlanKind(hoursValues, 'hours', unreadable)
-  const usd = resolvePlanKind(usdValues, 'usd', unreadable)
-  return { hours, usd, unreadable }
+  const hours = resolvePlanKind(hoursFound, 'hours', unreadable)
+  const usd = resolvePlanKind(usdFound, 'usd', unreadable)
+  return { hours, usd, unreadable, figures: { hours: hoursFound.raws, usd: usdFound.raws }, hasLine: true }
 }
 
 const NEGATED_REASON = "the quote is in a negated clause of the owner's message"
@@ -595,7 +636,7 @@ function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { co
     }
   }
   const planText = approvedPlanText(records, latestStart)
-  const planCeilings = planText !== null ? ceilingsFromPlan(planText) : { hours: null, usd: null, unreadable: [] }
+  const planCeilings = planText !== null ? ceilingsFromPlan(planText) : { hours: null, usd: null, unreadable: [], figures: { hours: [], usd: [] }, hasLine: false }
   const h = ceiling(hours, planCeilings.hours, defaults.hours)
   const u = ceiling(usd, planCeilings.usd, defaults.usd)
   const notices = []
@@ -605,10 +646,23 @@ function start(mainRoot, { quote, session, hours = null, usd = null } = {}, { co
   if (u.source === 'flag' && planCeilings.usd !== null && u.value !== planCeilings.usd) {
     notices.push(`--usd ${u.value} overrides the approved plan's US$ ${planCeilings.usd}`)
   }
+  // A kind the plan's ceilings line holds no readable figure of is unreadable
+  // too (a label-only line leaves both kinds unreadable): the notice says the
+  // plan named a ceilings line that start could not read, once even when both
+  // kinds are missing.
+  let unreadableLineNoticed = false
   for (const kind of planCeilings.unreadable) {
     const source = kind === 'hours' ? h.source : u.source
     if (source === 'default') {
-      notices.push(`the approved plan named more than one ${kind} figure, so start could not read it`)
+      const named = (planCeilings.figures && planCeilings.figures[kind]) || []
+      if (named.length) {
+        notices.push(`the approved plan named ${named.join(' and ')}, but start opened with the default ceilings`)
+      } else if (planCeilings.hasLine && !unreadableLineNoticed) {
+        notices.push('the approved plan named a ceilings line that start could not read, but start opened with the default ceilings')
+        unreadableLineNoticed = true
+      } else if (!planCeilings.hasLine) {
+        notices.push(`the approved plan named no ${kind} figure, but start opened with the default ceilings`)
+      }
     }
   }
   const run = {
