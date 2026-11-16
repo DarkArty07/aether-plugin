@@ -68,7 +68,7 @@ const README = 'README.md'
 const PAGES = [
   'docs/index.md', 'docs/getting-started.md', 'docs/purpose.md', 'docs/methodology.md', 'docs/guide/options.md',
   'docs/guide/lanes.md', 'docs/guide/design-seats.md', 'docs/guide/autonomy.md', 'docs/guide/ops.md',
-  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/guide/delegates.md', 'docs/guide/audit.md', 'docs/guide/project-files-and-skills.md', 'docs/reference/components.md', 'docs/changelog.md',
+  'docs/guide/maintenance.md', 'docs/guide/troubleshooting.md', 'docs/guide/delegates.md', 'docs/guide/plan-rules.md', 'docs/guide/audit.md', 'docs/guide/project-files-and-skills.md', 'docs/reference/components.md', 'docs/changelog.md',
   'docs/contributing.md', 'docs/roadmap.md',
   'docs/what-aether-adds.md', 'docs/tutorials/install-and-start.md', 'docs/tutorials/first-request.md', 'docs/tutorials/whole-feature.md',
   'docs/tutorials/read-the-brief.md', 'docs/tutorials/work-for-hours.md', 'docs/tutorials/other-harnesses.md', 'docs/tutorials/see-the-spend.md',
@@ -846,7 +846,7 @@ test('decisions A117 to A120 are recorded with the owner quotes, the index names
     assert.ok(rowOf(id).includes(quote), `${id} quotes the owner: ${quote}`)
   }
   assert.match(decisions, /about five tool calls/)
-  assert.match(read('docs/index.md'), /A1–A127/)
+  assert.match(read('docs/index.md'), /A1–A131/)
 })
 
 test('the canonical countable rule is identical across the six places of R6, AGENTS.md says three parts, and the components page measures PostToolUse on reads (R6, R8, R12)', () => {
@@ -890,4 +890,32 @@ test('the changelog entry of 0.36.0 names the four behaviours, the two new skill
   for (const text of ['unverdicted', 'aether-delegate begin', 'ExitPlanMode', 'at the third own edit to code or tests in a turn, or the tenth read in a turn', 'aether:designing', 'aether:models', 'three part commands', 'aether-wt settle <run> <task>', 'Nothing breaks']) {
     assert.ok(entry.includes(text), text)
   }
+})
+
+test('spec 043: the plan-rules guide has title, description and order 9, and the index links it', () => {
+  assert.deepEqual(parseFrontMatter(read('docs/guide/plan-rules.md')), {
+    title: read('docs/guide/plan-rules.md').match(/^title: (.*)$/m)[1],
+    description: read('docs/guide/plan-rules.md').match(/^description: (.*)$/m)[1],
+    order: 9,
+  })
+  const linked = linksIn(read('docs/index.md')).map(({ target }) => target.split('#')[0])
+  assert.ok(linked.includes('guide/plan-rules.md'), 'docs/index.md links guide/plan-rules.md')
+  const last = Math.max(...[...read('docs/decisions.md').matchAll(/^\| A(\d+) \|/gm)].map((m) => Number(m[1])))
+  assert.ok(last >= 131, `the last decision is A${last}`)
+  assert.ok(new RegExp(`A1–A${last}\\b`).test(read('docs/index.md')), 'the index names the range to the last decision')
+})
+
+test('spec 043: the guides name what is new, and the components page keeps the aether-exam row with recover (R31)', () => {
+  assert.ok(read('docs/guide/observe.md').includes('new models'), 'observe.md names the new-models notice')
+  assert.ok(read('docs/guide/troubleshooting.md').includes('recompile offers'), 'troubleshooting.md names the recompile warning')
+  assert.ok(read('docs/guide/autonomy.md').includes('approved plan'), 'autonomy.md names the approved-plan ceilings')
+  assert.ok(read('docs/guide/delegates.md').includes('aether-lane stop') && read('docs/guide/delegates.md').includes('chain'), 'delegates.md names the brake ending the chain')
+  assert.ok(read('docs/guide/design-seats.md').includes('outside the index'), 'design-seats.md names the exam returned without an answer')
+  assert.ok(read('docs/guide/maintenance.md').includes('aether-exam recover'), 'maintenance.md names aether-exam recover')
+  const row = read('docs/reference/components.md').split('\n').find((line) => line.startsWith('| `aether-exam` |'))
+  assert.ok(row, 'components.md has the aether-exam row')
+  assert.match(row, /`store`/)
+  assert.match(row, /`run`/)
+  assert.match(row, /`recover`/)
+  assert.doesNotMatch(row, /`list`/)
 })

@@ -46,6 +46,16 @@ The top tier of a line waits for the next generation of that tier while a much c
 
 AA re-measured almost every model between 2026-10-26 and 2026-10-29: Haiku high 37.8 to 29.6, Sonnet high 46.8 to 41.1, Opus high 53.6 to 51.7. A new row is not compared with an old one without saying the date. The table of pairs was refreshed on 2026-10-30 (spec 023) and is on one scale, the one of 2026-10-29. When AA moves its scores again, refresh the whole table before adding a row: `node scripts/refresh-lanes.js --write`, then `node scripts/build-models-index.js --write`, then redo the estimated rows (Muse Spark's, with the method of A96), and then run `choose()` over the fifteen asks of Haiku, Sonnet and Opus. The pairs the rule gives move with the scale: the four steps of Codex went from Terra medium, Terra high, Sol medium and Sol max to Terra low, Terra medium, Terra high and Terra max, and the Judge and the Examiner went back to native Opus because Argon fell under their floor. Say so to the owner before the refresh is merged. Read the owner's `artificial-analysis` skill too when it is present.
 
+## A new model of a harness that is already in
+
+When the startup notice or `aether-doctor` names a new model of a harness this repository already works with, the Lead runs this procedure in this repository. Nothing below enters the lane or price tables without the owner's yes, in the owner's own words. This is a project skill: it is not part of the startup injection.
+
+1. **Read the model's Artificial Analysis pages.** `node scripts/aa-pages.js read <slug> --harness <name>`, with the model's page slug and the harness name.
+   The reading runs with no `--write` flag and leaves `pairs.json`, `prices.json` and `harness-models.json` alone, but it does update the dated snapshot `plugins/aether/config/models/aa-pages.json`: report that change, or point `--snapshot` at a draft file. Note the Intelligence Index, the cost per task and the date of the figures, as the `artificial-analysis` skill says.
+2. **Show where it would land on the ladder.** `node scripts/refresh-lanes.js` with no `--write`: it prints the recalculated order with the model in it and saves nothing. Say which rung its intelligence and cost per task would put it on, and which pairs it would move, without changing `config/ladder.json`.
+3. **Leave the pair rows and the price as a draft.** Write the new pair rows and the price as a draft in `.aether/model-drafts/<harness>-<model>.json`, outside version control, for review: the file names the figures, their date and their source page. Never write `config/pairs.json`, `config/prices.json` or `config/models/harness-models.json` at this step.
+4. **Wait for the owner's yes before touching `config/`.** Bring the owner the ladder place and the draft, and change the tables only with the owner's yes, given in the owner's own words.
+
 ## Related
 
 `artificial-analysis` (how to read the figures, the traps, the top-tier rule), `docs/models/README.md` (the index and its three rules), `docs/guide/lanes.md`, specs 008 (Muse) and 022 (Codex) as worked examples.
