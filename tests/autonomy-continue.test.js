@@ -57,3 +57,36 @@ test('R15: continue on a run that is already the caller\'s changes nothing, and 
   assert.equal(read(a.run.id).session, C)
   assert.deepEqual(read(a.run.id).previousSessions, [])
 })
+
+test('R13 and R15: continue reads no transcript, preserves pauses and spend, chains previousSessions, and a refusal leaves the diary intact', (t) => {
+  const { repo, dataDir, open, patch, read, raw } = setupRuns(t)
+  const a = open(A, { hours: 2, usd: 15 })
+  const b = open(B)
+  const pause = {
+    started: new Date(T0).toISOString(),
+    percentUsed: 96,
+    threshold: 95,
+    resetsAt: new Date(T0 + 3 * HOUR).toISOString(),
+    resumeAt: new Date(T0 + 3 * HOUR + 2 * MIN).toISOString(),
+    notify: { sent: true, reason: null },
+    savedUnits: [],
+  }
+  patch(a.run.id, (run) => { run.quotaPauses.push(pause) })
+  autonomy.spend(repo.dir, 3.5, 'seat/z', { session: A, dataDir, now: T0 + MIN })
+  const diaryBeforeRefusal = fs.readFileSync(a.diary, 'utf8')
+  assert.equal(autonomy.continueRun(repo.dir, a.run.id, { session: B }).ok, false)
+  assert.equal(fs.readFileSync(a.diary, 'utf8'), diaryBeforeRefusal)
+
+  const stranger = 'sess-with-no-transcript-and-no-mark'
+  const first = autonomy.continueRun(repo.dir, a.run.id, { session: C, now: T0 + 5 * MIN })
+  assert.deepEqual([first.ok, first.from], [true, A])
+  const second = autonomy.continueRun(repo.dir, a.run.id, { session: stranger, now: T0 + 10 * MIN })
+  assert.deepEqual([second.ok, second.from], [true, C])
+  const run = read(a.run.id)
+  assert.equal(run.session, stranger)
+  assert.deepEqual(run.previousSessions, [A, C])
+  assert.deepEqual(run.ceilings, { hours: 2, usd: 15, source: { hours: 'owner', usd: 'owner' } })
+  assert.deepEqual(run.quotaPauses, [pause])
+  assert.deepEqual(run.spend.map((e) => e.usd), [3.5])
+  assert.equal(raw(b.run.id).includes(stranger), false)
+})
