@@ -5,13 +5,14 @@
 ## Global Constraints
 
 - Node.js 22, CommonJS (`'use strict'`), no dependencies. Bins stay thin and the logic stays in `lib/`. No new bin, hook, option or product module.
-- A run belongs to the session in `run.session`. One selector, `selectRun` in `plugins/aether/lib/autonomy.js`, decides which run a call acts on; no other code reads "the" open run. The selector never writes, and its refusals change no file.
+- A run belongs to the session in `run.session`. One selector, `selectRun` in `plugins/aether/lib/autonomy.js`, decides which run a verb acts on (`start`, `status`, `spend`, `end`, `extend`, `brakeOff`, `launchRefusal`, `continueRun`); the quota functions read every open run through `openRuns` (Task 4). `openRun(mainRoot)` (the latest open run, as today) stays only for the start notice and the `quota-brake` command until Task 5 and Task 8 move them. The selector never writes, and its refusals change no file.
 - A call that names a run by id (`status <id>`, `end <id>`, `continue <id>`) is never checked for who opened it: no owner check, no transcript, no grant, no new permission (R6, R13). No limit is shared by the project's runs.
 - With one session and one run, commands, files and outputs stay exactly as today: no new key in `status`, `start` or `run.json` (a run gains `previousSessions` only after `continue`), and the message `run <id> is already open` stays word for word. A run written by the previous version (no `session`, maybe no `brakeOff`, `quotaPauses`, `quotaCrossings` or `ceilingChanges`) can still be followed and closed.
 - Every message that suggests closing or continuing the run of another session names its id: `aether-autonomy end <id> --outcome incomplete`, `aether-autonomy continue <id>`. The pause-by-quota message keeps today's text when no other run is open (R6).
 - `aether-plan check` accepts only requirement ids of the form `R<number>` (`plugins/aether/lib/plan.js:24`), so `R5b` cannot appear in a `Serves` line: Task 1 serves R5 and covers R5b in its tests (see `## Risks` in plan.md).
 - The tests of every task after Task 1 use `tests/run-session-fixture.js` (Task 1), which gives `A`, `B`, `C`, `QUOTE`, `OFF_QUOTE`, `MIN`, `HOUR`, `T0` and `setupRuns(t, { ids, repo, dataDir })`.
-- Tests run on throwaway git repositories from `tests/helpers.js`; none spends tokens or calls a model.
+- Tests run on throwaway git repositories from `tests/helpers.js`; none spends tokens or calls a model. `tests/helpers.js` removes `CLAUDE_CODE_SESSION_ID` from `process.env` (Task 2), so a test never inherits the session of the Lead or implementer that runs `npm test`: a test that needs a session passes it explicitly.
+- The mod (`plugins/aether/hooks/`) is tested by `npm run test:mod`, not by `npm test`; Task 10 is checked with it.
 
 ## Aether Execution
 
@@ -20,23 +21,25 @@
 
 ## Checklist
 
-- [ ] T001 [P] [US1] Select the run of the calling session, open one run per session, refuse launches by the caller's own run only, add `status <id>`, `end <id>` and `continue <id>` in `plugins/aether/lib/autonomy.js` → Task 1
-- [ ] T002 [P] [US7] Stamp the launching session into `state.json` and into the finalized record in `plugins/aether/lib/plan-compile.js`, `plugins/aether/lib/lane-delegate.js` and `plugins/aether/lib/report.js` → Task 2
+- [ ] T001 [P] [US1] Select the run of the calling session, open one run per session, refuse launches by the caller's own run only, add `status <id>` and `end <id>` in `plugins/aether/lib/autonomy.js` → Task 1
+- [ ] T002 [P] [US7] Stamp the launching session into `state.json` and into the finalized record in `plugins/aether/lib/plan-compile.js`, `plugins/aether/lib/lane-delegate.js` and `plugins/aether/lib/report.js`, and keep the ambient session out of the tests in `tests/helpers.js` → Task 2
 - [ ] T003 [P] [US13] Say in the Lead rules, the skill and the guides that the run is per session and how to continue it in `plugins/aether/skills/using-aether/SKILL.md`, `plugins/aether/skills/autonomous-runs/SKILL.md`, `docs/guide/autonomy.md`, `docs/es/guias/trabajar-horas.md` and `docs/reference/components.md` → Task 3
 - [ ] T004 [US8] Pause every open run at a quota crossing, report and save per run in `plugins/aether/lib/autonomy.js` → Task 4
 - [ ] T005 [P] [US9] Name the session's own run and, apart, the runs of other sessions in the start notice in `plugins/aether/lib/session-start.js` → Task 5
 - [ ] T006 [P] [US3] Stop a stuck wait by the ceiling of the swarm's own session in `plugins/aether/lib/wt-stuck.js` → Task 6
 - [ ] T007 [US7] Count in a run only the work of its sessions in `plugins/aether/lib/autonomy.js` → Task 7
 - [ ] T008 [P] [US4] Give the CLI the ids, `continue` and the session of the caller in `plugins/aether/lib/autonomy-command.js` → Task 8
+- [ ] T009 [US13] Continue the run of a restarted session with `continueRun` in `plugins/aether/lib/autonomy.js` → Task 9
+- [ ] T010 [US8] Tell the Lead of a session whose run another session's crossing already paused, in `plugins/aether/hooks/register.js` → Task 10
 
-### Task 1: Una corrida por sesión: selector, apertura, rechazos propios, `status <id>`, `end <id>` y `continue` en `lib/autonomy.js`
+### Task 1: Una corrida por sesión: selector, apertura, rechazos propios, `status <id>` y `end <id>` en `lib/autonomy.js`
 
 **Aether:**
 - Review: xhigh — a wrong selection would close, re-cap or spend on the run of another session, whose ceilings the owner approved and whose state other sessions write at the same time
 - Area: autonomy
 - Owns: `plugins/aether/lib/autonomy.js`, `tests/run-session-fixture.js`, `tests/autonomy-per-session.test.js`, `tests/autonomy.test.js`, `tests/autonomy-refusal.test.js`
 - Depends on: none
-- Serves: R1, R2, R3, R4, R5, R6, R12, R13, R15
+- Serves: R1, R2, R3, R4, R5, R6, R12, R13
 
 **Interfaces:**
 
@@ -49,9 +52,7 @@ selectRun(mainRoot, { session = null, id = null } = {}) ->
   | { ok: false, code, message, runs: Array<{ id, session }>, item? }
 // code: 'no-run' | 'unknown-id' | 'not-open' | 'ambiguous' | 'foreign'; item only for 'foreign' with exactly one open run
 runsFor(mainRoot, session) -> { own: item | null, others: Array<item> }   // own as selectRun would pick it (ok), others = the rest of the open runs
-continueRun(mainRoot, id, { session = null, now = Date.now() } = {}) ->
-  { ok: true, run, from: string | null, unchanged?: true } | { ok: false, reason }
-openRun(mainRoot, { session = null } = {}) -> run | null      // the run selectRun picks, or null
+openRun(mainRoot) -> run | null                              // unchanged: the latest open run, kept until Task 5 and Task 8 stop calling it
 start(mainRoot, { quote, session, hours, usd }, opts)         // same signature
 status(mainRoot, { now, dataDir, session = null, id = null } = {})
 spend(mainRoot, usd, source, { now, dataDir, session = null } = {})
@@ -77,8 +78,7 @@ Behavior:
 - `spend`, `end`: act only on an `ok` run; on `no-run` they throw `no open run` as today; on any other refusal they throw `Error(message)` and change no file. `end` with `id` closes that run (any session's).
 - `extend`, `brakeOff`: select with the `session` they already receive. On `no-run` they return `{ ok: false, reason: 'no open run' }` as today; on `ambiguous` or `foreign`, `{ ok: false, reason: message, code }` before the quote is read.
 - `launchRefusal(cwd, { session })`: unchanged gate (`isAetherSession`, repo, unreadable state refusal), then `selectRun` with the session; only an `ok` run can refuse, with today's time and cost messages. A `foreign`, `ambiguous` or `no-run` result returns `null`. The quota message keeps today's text word for word when no other run is open; when `others` (from `runsFor`) is not empty it ends `...and only an old run that another session left open is closed, with: aether-autonomy end <id> --outcome incomplete` with that other run's id (several joined by ` or `).
-- `continueRun(mainRoot, id, { session, now })`: refuses with `{ ok: false, reason }` for a missing session (`continue needs the session id of the caller; pass --session <id> or set CLAUDE_CODE_SESSION_ID`), a caller that already has a different open run (`session <session> already has run <own id> open; close it before continuing another`), a run that is not open (`run <id> is not open`) or does not exist (`no run <id>`). When the run is already the caller's it changes nothing and returns `{ ok: true, run, from: session, unchanged: true }`. Otherwise it sets `run.session = session`, `run.previousSessions = [...(run.previousSessions || []), <old session>]` (the old session only when there was one; `[]` for a run with no session), appends to the diary `\n## Continuación <iso>\n\n- La corrida pasa de la sesión <old or "sin sesión"> a la sesión <new>.\n`, writes `run.json` with `writeJsonFile`, and returns `{ ok: true, run, from: <old or null> }`. It reads no transcript, asks for no quote and changes no ceiling, pause or spend.
-- Keep exporting everything exported today and add `openRuns`, `selectRun`, `runsFor` and `continueRun`.
+- Keep exporting everything exported today and add `openRuns`, `selectRun` and `runsFor`. `findOpenRun` stays private: `openRun`, `brakeSettings`, `recordCrossing` and `recordSaved` still call it until Task 4; no other function does.
 
 **Tests (write first):**
 
@@ -311,56 +311,6 @@ test('R6: the quota-pause message names the run another session left open, and w
   assert.ok(message.includes(`aether-autonomy end ${b.run.id} --outcome incomplete`), message)
   assert.ok(!message.includes('aether-autonomy end --outcome incomplete'), message)
 })
-
-test('R15: continue makes the named run the run of the session that calls, and that session works it with its ceilings', (t) => {
-  const { repo, dataDir, configDir, open, read } = setupRuns(t)
-  const a = open(A, { hours: 1 })
-  const done = autonomy.continueRun(repo.dir, a.run.id, { session: B, now: T0 + 10 * MIN })
-  assert.deepEqual([done.ok, done.from], [true, A])
-  const run = read(a.run.id)
-  assert.equal(run.session, B)
-  assert.deepEqual(run.previousSessions, [A])
-  assert.equal(run.ceilings.hours, 1)
-  const diary = fs.readFileSync(a.diary, 'utf8')
-  assert.ok(diary.includes('## Continuación') && diary.includes(A) && diary.includes(B), diary)
-  assert.equal(autonomy.status(repo.dir, { session: B, dataDir, now: T0 + 20 * MIN }).id, a.run.id)
-  assert.equal(autonomy.launchRefusal(repo.dir, { session: B, dataDir, now: LATER }).stop, 'time')
-  assert.equal(autonomy.spend(repo.dir, 2, 'seat/y', { session: B, dataDir, now: LATER }).id, a.run.id)
-  assert.equal(autonomy.extend(repo.dir, { hours: 5, quote: QUOTE, session: B }, { configDir, now: LATER }).ok, true)
-  assert.equal(autonomy.end(repo.dir, 'done', { session: B, now: LATER }).outcome, 'done')
-})
-
-test('R15: continue is refused for an unknown caller, for a session that has another run, and for a run that is not open', (t) => {
-  const { repo, open, raw } = setupRuns(t)
-  const a = open(A)
-  const b = open(B)
-  const before = raw(a.run.id)
-  const unknown = autonomy.continueRun(repo.dir, a.run.id, { session: null })
-  assert.equal(unknown.ok, false)
-  assert.match(unknown.reason, /session/)
-  const busy = autonomy.continueRun(repo.dir, a.run.id, { session: B })
-  assert.equal(busy.ok, false)
-  assert.ok(busy.reason.includes(b.run.id), busy.reason)
-  autonomy.end(repo.dir, 'done', { id: b.run.id })
-  const closed = autonomy.continueRun(repo.dir, b.run.id, { session: C })
-  assert.equal(closed.ok, false)
-  assert.match(closed.reason, /is not open/)
-  assert.equal(autonomy.continueRun(repo.dir, 'auto-20200101-000000-abcd', { session: C }).ok, false)
-  assert.equal(raw(a.run.id), before)
-})
-
-test('R15: continue on a run that is already the caller\'s changes nothing, and on a run with no session it keeps no previous one', (t) => {
-  const { repo, open, patch, read, raw } = setupRuns(t)
-  const a = open(A)
-  const before = raw(a.run.id)
-  const same = autonomy.continueRun(repo.dir, a.run.id, { session: A })
-  assert.deepEqual([same.ok, same.unchanged], [true, true])
-  assert.equal(raw(a.run.id), before)
-  patch(a.run.id, (run) => { delete run.session })
-  assert.equal(autonomy.continueRun(repo.dir, a.run.id, { session: C }).ok, true)
-  assert.equal(read(a.run.id).session, C)
-  assert.deepEqual(read(a.run.id).previousSessions, [])
-})
 ```
 
 In `tests/autonomy.test.js` and `tests/autonomy-refusal.test.js`, change only what these behaviours make fail: a test that opens a second run for a different session expecting `is already open`, or that calls a verb for a session that has no run of its own while another is open. The existing `already open` test for the same session and the keys of today's outputs must pass untouched.
@@ -368,7 +318,7 @@ In `tests/autonomy.test.js` and `tests/autonomy-refusal.test.js`, change only wh
 **Acceptance:**
 
 - `node --test tests/autonomy-per-session.test.js tests/autonomy.test.js tests/autonomy-refusal.test.js` passes, and `npm test` passes for every file this task does not hand to a later task (the later tasks update `tests/quota-brake*.test.js`, `tests/aether-autonomy.test.js` and the spend tests; they must still pass here, because Task 1 does not change what they call).
-- No code outside `selectRun` reads "the" open run; `findOpenRun` is gone or private to `selectRun`.
+- `start`, `status`, `spend`, `end`, `extend`, `brakeOff` and `launchRefusal` read the open run only through `selectRun` (`findOpenRun` stays private for `openRun`, `brakeSettings`, `recordCrossing` and `recordSaved`, which Task 4 changes; Task 1 leaves their behaviour as it is).
 - With one session and one run, `start`, `status` and `run.json` have the same keys as before (the key test above) and the message `run <id> is already open` is unchanged.
 - The quota message, the `continue` clause and the `end <id>` clause are word for word as in the Interfaces.
 
@@ -376,7 +326,7 @@ In `tests/autonomy.test.js` and `tests/autonomy-refusal.test.js`, change only wh
 
 **Aether:**
 - Area: swarm-state
-- Owns: `plugins/aether/lib/plan-compile.js`, `plugins/aether/lib/lane-delegate.js`, `plugins/aether/lib/report.js`, `tests/run-session-stamp.test.js`, `tests/aether-plan.test.js`, `tests/lane-delegate.test.js`, `tests/report.test.js`, `tests/report-ladder.test.js`
+- Owns: `plugins/aether/lib/plan-compile.js`, `plugins/aether/lib/lane-delegate.js`, `plugins/aether/lib/report.js`, `tests/helpers.js`, `tests/run-session-stamp.test.js`, `tests/aether-plan.test.js`, `tests/lane-delegate.test.js`, `tests/report.test.js`, `tests/report-ladder.test.js`
 - Depends on: none
 - Serves: R7, R8
 
@@ -386,6 +336,7 @@ In `tests/autonomy.test.js` and `tests/autonomy-refusal.test.js`, change only wh
   - `plugins/aether/lib/plan-compile.js` `compile`: `session` is `previous.session` when the previous state has one, otherwise `env.CLAUDE_CODE_SESSION_ID || null`. A relaunch by another session keeps the first session; a relaunch of a run stamped `null` adopts the session of the relaunch.
   - `plugins/aether/lib/lane-delegate.js`: the state it writes next to `compiledAt` gets `session: charge.session` (`null` when the call had none).
 - `plugins/aether/lib/report.js` `finalize`: the record appended to `runs.jsonl` gets a top-level `session`: the `session` of the run's `state.json`, read before the run directory is swept, or `null` when the file has none or cannot be read. The rest of the record is unchanged, and a line written before this change still reads.
+- `tests/helpers.js`: next to the scrub of every `AETHER_*` variable, `delete process.env.CLAUDE_CODE_SESSION_ID`, with a comment that says why: `npm test` may run inside a live Lead or implementer session, and `helpers.compile`, `finishedRun` and the bins would stamp that session into every swarm; a test that needs a session passes it in the `env` of `runBin` or sets it itself.
 - No reader of `state.json` or of `runs.jsonl` changes in this task.
 
 **Tests (write first):**
@@ -422,7 +373,7 @@ test('R7, R8: a compile with no session writes null, and a later relaunch by a s
   useDataDir(t)
   const repo = makeRepo(t)
   const file = writePlan(repo.dir, plan([task(1), task(2)]))
-  const first = runBin(PLAN_BIN, ['compile', file], repo.dir, { CLAUDE_CODE_SESSION_ID: '' })
+  const first = runBin(PLAN_BIN, ['compile', file], repo.dir)
   assert.equal(first.status, 0, first.stdout + first.stderr)
   assert.equal(stateOf(first.json.runDir).session, null)
   const again = runBin(PLAN_BIN, ['compile', file, '--run', first.json.runId, '--only', 'task-2'], repo.dir, { CLAUDE_CODE_SESSION_ID: 'sess-two' })
@@ -462,11 +413,11 @@ test('the state of a delegate run holds the session of the call (spec 041 R7)', 
 })
 ```
 
-In `tests/aether-plan.test.js`, `tests/report.test.js` and `tests/report-ladder.test.js`, change only an assertion that compares the whole `state.json` or the whole finalized record by key and now fails on the new `session` key.
+In `tests/aether-plan.test.js`, `tests/report.test.js` and `tests/report-ladder.test.js`, change only an assertion that compares the whole `state.json` or the whole finalized record by key and now fails on the new `session` key. In any other test file that fails because it read the ambient `CLAUDE_CODE_SESSION_ID`, set the session explicitly in that test (the files that already pass it in the `env` of `runBin` need no change).
 
 **Acceptance:**
 
-- `node --test tests/run-session-stamp.test.js tests/aether-plan.test.js tests/lane-delegate.test.js tests/report.test.js tests/report-ladder.test.js` passes.
+- `node --test tests/run-session-stamp.test.js tests/aether-plan.test.js tests/lane-delegate.test.js tests/report.test.js tests/report-ladder.test.js tests/env-scrub.test.js` passes, and the same files pass when `CLAUDE_CODE_SESSION_ID=sess-ambient` is exported in the shell that runs them (the scrub is what holds).
 - Nothing else about `state.json` or the record changes: `compiledAt` and `launches` behave as before, and a run compiled before this change (no `session`) still reports and finalizes.
 
 ### Task 3: Decir que la corrida es por sesión en las reglas del Lead, la skill y las guías
@@ -551,9 +502,15 @@ All in `plugins/aether/lib/autonomy.js`. Each keeps today's return keys for one 
 ```text
 recordCrossing(mainRoot, { kind, percentUsed, resetsAt, threshold, notify }, { now, dataDir, session = null })
   // every open run gets today's logic: a new pause, a duplicate pause (same resetsAt), or, when that run has brakeOff,
-  // a crossing without a pause. Returns the result of the run of `session` when it has one (else the first open run),
-  // with today's keys (recorded, paused, run, resetsAt, resumeAt, duplicate?, brakeOff?, quote?) and `runs`:
-  // Array<{ run, paused, duplicate?, brakeOff? }> with the result of every open run.
+  // a crossing without a pause. It answers for the caller, chosen as selectRun chooses (never another session's run):
+  //   - `session` with a run of its own: the result of that run, with today's keys (recorded, paused, run, resetsAt,
+  //     resumeAt, duplicate?, brakeOff?, quote?). A run that another session's crossing already paused answers
+  //     `duplicate: true`, as today for a repeated crossing;
+  //   - `session` known but with no run of its own (selectRun says foreign or ambiguous): { recorded: true,
+  //     paused: false, run: null }, every open run is still paused, but nothing is armed or prompted for a caller
+  //     that has no run to stop;
+  //   - no `session`: the result of the first open run, with today's keys.
+  // In every case it adds `runs`: Array<{ run, paused, duplicate?, brakeOff? }> with the result of every open run.
   // no open run: { recorded: false, paused: false, reason: 'no-run' } (today). seven_day: unchanged (nothing paused).
 brakeSettings(mainRoot, { session = null, now, dataDir })
   // same keys as today. With a session: openRun / brakeOff / paused of that session's run (null when it has none).
@@ -619,18 +576,38 @@ test('C5: the brake-off of one run resumes that run and leaves the other paused 
   assert.deepEqual([stopOf(s, A, after), stopOf(s, B, after)], [null, null])
 })
 
-test('R14: a crossing from a session with no run, and from an unknown one, still pauses all; a repeat is a duplicate for each run', (t) => {
+test('R14: a crossing from a known session with no run of its own pauses every run and answers with no run, so nothing is armed for it', (t) => {
   const s = setupRuns(t)
   const a = s.open(A)
   const b = s.open(B)
-  const first = autonomy.recordCrossing(s.repo.dir, crossing, { now: NOW, dataDir: s.dataDir, session: C })
-  assert.equal(first.paused, true)
+  const r = autonomy.recordCrossing(s.repo.dir, crossing, { now: NOW, dataDir: s.dataDir, session: C })
+  assert.deepEqual([r.recorded, r.paused, r.run], [true, false, null])
+  assert.equal(r.runs.length, 2)
+  assert.equal(r.resumeAt, undefined)
+  for (const id of [a.run.id, b.run.id]) assert.equal(s.read(id).quotaPauses.length, 1)
+})
+
+test('R14: a crossing from an unknown session answers with the first open run; a repeat is a duplicate for each run', (t) => {
+  const s = setupRuns(t)
+  const a = s.open(A)
+  const b = s.open(B)
+  const first = autonomy.recordCrossing(s.repo.dir, crossing, { now: NOW, dataDir: s.dataDir })
+  assert.deepEqual([first.paused, first.run], [true, a.run.id])
   assert.equal(first.runs.length, 2)
-  assert.ok([a.run.id, b.run.id].includes(first.run))
   const again = autonomy.recordCrossing(s.repo.dir, crossing, { now: NOW + MIN, dataDir: s.dataDir })
   assert.equal(again.duplicate, true)
   assert.equal(again.runs.every((x) => x.duplicate === true), true)
   for (const id of [a.run.id, b.run.id]) assert.equal(s.read(id).quotaPauses.length, 1)
+})
+
+test('R9: the session whose run another session\'s crossing paused gets a duplicate answer for its own run', (t) => {
+  const s = setupRuns(t)
+  s.open(A)
+  const b = s.open(B)
+  autonomy.recordCrossing(s.repo.dir, crossing, { now: NOW, dataDir: s.dataDir, session: A })
+  const r = autonomy.recordCrossing(s.repo.dir, crossing, { now: NOW + MIN, dataDir: s.dataDir, session: B })
+  assert.deepEqual([r.run, r.paused, r.duplicate, r.resumeAt], [b.run.id, true, true, RESUME])
+  assert.equal(s.read(b.run.id).quotaPauses.length, 1)
 })
 
 test('R14: a run with its brake off records the crossing without pausing, and the other run is paused', (t) => {
@@ -693,7 +670,8 @@ In `tests/quota-brake.test.js`, `tests/quota-brake-settings.test.js` and `tests/
 
 - `node --test tests/autonomy-quota-sessions.test.js tests/quota-brake.test.js tests/quota-brake-settings.test.js tests/quota-brake-scenarios.test.js tests/autonomy-per-session.test.js` passes.
 - With one open run the results of `recordCrossing`, `brakeSettings` and `recordSaved` have exactly today's keys (`runs` appears only in `recordCrossing`, and in `recordSaved` only when more than one run was written).
-- No quota function asks for a run name.
+- No quota function asks for a run name, and `recordCrossing`, `brakeSettings` and `recordSaved` no longer call `findOpenRun`.
+- A crossing never answers with the run of another session: a known session with no run of its own gets `run: null`.
 
 ### Task 5: El aviso de inicio nombra la corrida propia y, aparte, las de otras sesiones
 
@@ -809,7 +787,7 @@ In `tests/session-start-autonomy.test.js` change nothing that still passes; a te
 
 **Aether:**
 - Area: swarm-stuck
-- Owns: `plugins/aether/lib/wt-stuck.js`, `tests/wt-stuck-sessions.test.js`, `tests/wt-stuck.test.js`
+- Owns: `plugins/aether/lib/wt-stuck.js`, `tests/wt-stuck-sessions.test.js`, `tests/wt-stuck.test.js`, `tests/aether-wt-stuck.test.js`
 - Depends on: Task 1 — `status` takes the session and marks a run of another session as `foreign`
 - Depends on: Task 2 — the swarm's session comes from its `state.json`
 - Serves: R3
@@ -868,19 +846,20 @@ test('R3: it does not stop for the ceiling of another session\'s run, nor when i
 })
 ```
 
-In `tests/wt-stuck.test.js` change nothing that still passes.
+In `tests/wt-stuck.test.js` and `tests/aether-wt-stuck.test.js` change nothing that still passes: the swarm of the latter's default-path test (a run of session `sess-test` over the ceiling) is compiled with no session (Task 2 scrubs the ambient one), so `status` runs with no session over the one open run, and it still stops.
 
 **Acceptance:**
 
-- `node --test tests/wt-stuck-sessions.test.js tests/wt-stuck.test.js` passes.
+- `node --test tests/wt-stuck-sessions.test.js tests/wt-stuck.test.js tests/aether-wt-stuck.test.js` passes.
 - The `stopped` function a caller injects still replaces the default, and a tick with no open run still says `stop: false`.
 
 ### Task 7: La cifra en dólares de una corrida cuenta solo el trabajo de sus sesiones
 
 **Aether:**
 - Area: autonomy
-- Owns: `plugins/aether/lib/autonomy.js`, `tests/autonomy-spend-sessions.test.js`, `tests/autonomy-spend-once.test.js`, `tests/autonomy-swarm-spend.test.js`, `tests/autonomy-abandoned-run.test.js`, `tests/autonomy-delegate-window.test.js`
+- Owns: `plugins/aether/lib/autonomy.js`, `tests/autonomy-spend-sessions.test.js`, `tests/autonomy-spend-once.test.js`, `tests/autonomy-swarm-spend.test.js`, `tests/autonomy-abandoned-run.test.js`, `tests/autonomy-delegate-window.test.js`, `tests/report-fixed.test.js`
 - Depends on: Task 4 — edits the same file after it
+- Depends on: Task 9 — its test continues a run with `continueRun`
 - Depends on: Task 2 — reads the `session` of `state.json` and of the finalized record
 - Serves: R7, R8
 
@@ -972,11 +951,11 @@ test('R7: after continue, the run counts the work of the sessions before it as w
 })
 ```
 
-In `tests/autonomy-spend-once.test.js`, `tests/autonomy-swarm-spend.test.js` and `tests/autonomy-abandoned-run.test.js`, change only what the filter makes fail; their runs carry one session and their swarms none, so their figures must not move.
+In `tests/autonomy-spend-once.test.js`, `tests/autonomy-swarm-spend.test.js`, `tests/autonomy-abandoned-run.test.js` and `tests/report-fixed.test.js`, change only what the filter makes fail. Their runs carry one session, and their swarms are compiled with no session because `tests/helpers.js` (Task 2) removes the ambient `CLAUDE_CODE_SESSION_ID`; a swarm with no session counts by the window as before, so their figures must not move. A test of those files that stamps a session on a swarm must stamp the session of its run.
 
 **Acceptance:**
 
-- `node --test tests/autonomy-spend-sessions.test.js tests/autonomy-spend-once.test.js tests/autonomy-swarm-spend.test.js tests/autonomy-abandoned-run.test.js tests/autonomy-per-session.test.js` passes.
+- `node --test tests/autonomy-spend-sessions.test.js tests/autonomy-spend-once.test.js tests/autonomy-swarm-spend.test.js tests/autonomy-abandoned-run.test.js tests/report-fixed.test.js tests/autonomy-per-session.test.js` passes, also with `CLAUDE_CODE_SESSION_ID=sess-ambient` exported in the shell.
 - A swarm stamped with a session counts in exactly one run of a project with two open runs; an unstamped one counts as it did.
 
 ### Task 8: `aether-autonomy` acepta ids, `continue` y la sesión de quien llama
@@ -986,6 +965,7 @@ In `tests/autonomy-spend-once.test.js`, `tests/autonomy-swarm-spend.test.js` and
 - Owns: `plugins/aether/lib/autonomy-command.js`, `tests/aether-autonomy-sessions.test.js`, `tests/aether-autonomy.test.js`, `tests/quota-brake-command.test.js`
 - Depends on: Task 1 — calls `status`, `end`, `spend`, `continueRun` with a session and an id
 - Depends on: Task 4 — `brake-crossing` and `quota-brake` use the per-run quota functions
+- Depends on: Task 9 — the `continue` verb calls `continueRun`
 - Serves: R4, R5, R6, R9, R14, R15
 
 **Interfaces:**
@@ -1124,3 +1104,149 @@ In `tests/aether-autonomy.test.js` replace the `USAGE` constant with the new str
 
 - `node --test tests/aether-autonomy-sessions.test.js tests/aether-autonomy.test.js tests/quota-brake-command.test.js` passes, and `npm test` passes for the whole tree.
 - `aether-autonomy` with one session prints the same keys as before; a bad id is a usage error (`USAGE`, exit 1).
+
+### Task 9: Continuar la corrida propia tras un reinicio: `continueRun` en `lib/autonomy.js`
+
+**Aether:**
+- Area: autonomy
+- Owns: `plugins/aether/lib/autonomy.js`, `tests/autonomy-continue.test.js`
+- Depends on: Task 1 — uses `selectRun`, `openRuns` and the fixture
+- Depends on: Task 4 — edits the same file after it
+- Serves: R15, R13
+
+**Interfaces:**
+
+In `plugins/aether/lib/autonomy.js`, exported next to the rest:
+
+```text
+continueRun(mainRoot, id, { session = null, now = Date.now() } = {}) ->
+  { ok: true, run, from: string | null, unchanged?: true } | { ok: false, reason }
+```
+
+Behavior: `continueRun` refuses with `{ ok: false, reason }` for a missing session (`continue needs the session id of the caller; pass --session <id> or set CLAUDE_CODE_SESSION_ID`), a caller that already has a different open run (`session <session> already has run <own id> open; close it before continuing another`), a run that is not open (`run <id> is not open`) or does not exist (`no run <id>`). When the run is already the caller's it changes nothing and returns `{ ok: true, run, from: session, unchanged: true }`. Otherwise it sets `run.session = session`, `run.previousSessions = [...(run.previousSessions || []), <old session>]` (the old session only when there was one; `[]` for a run with no session), appends to the diary `\n## Continuación <iso>\n\n- La corrida pasa de la sesión <old or "sin sesión"> a la sesión <new>.\n`, writes `run.json` with `writeJsonFile`, and returns `{ ok: true, run, from: <old or null> }`. It reads no transcript, asks for no quote and changes no ceiling, pause or spend.
+
+**Tests (write first):**
+
+`tests/autonomy-continue.test.js`:
+
+```js
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const autonomy = require('../plugins/aether/lib/autonomy.js')
+const { A, B, C, QUOTE, MIN, HOUR, T0, setupRuns } = require('./run-session-fixture.js')
+
+const LATER = T0 + 2 * HOUR
+
+test('R15: continue makes the named run the run of the session that calls, and that session works it with its ceilings', (t) => {
+  const { repo, dataDir, configDir, open, read } = setupRuns(t)
+  const a = open(A, { hours: 1 })
+  const done = autonomy.continueRun(repo.dir, a.run.id, { session: B, now: T0 + 10 * MIN })
+  assert.deepEqual([done.ok, done.from], [true, A])
+  const run = read(a.run.id)
+  assert.equal(run.session, B)
+  assert.deepEqual(run.previousSessions, [A])
+  assert.equal(run.ceilings.hours, 1)
+  const diary = fs.readFileSync(a.diary, 'utf8')
+  assert.ok(diary.includes('## Continuación') && diary.includes(A) && diary.includes(B), diary)
+  assert.equal(autonomy.status(repo.dir, { session: B, dataDir, now: T0 + 20 * MIN }).id, a.run.id)
+  assert.equal(autonomy.launchRefusal(repo.dir, { session: B, dataDir, now: LATER }).stop, 'time')
+  assert.equal(autonomy.spend(repo.dir, 2, 'seat/y', { session: B, dataDir, now: LATER }).id, a.run.id)
+  assert.equal(autonomy.extend(repo.dir, { hours: 5, quote: QUOTE, session: B }, { configDir, now: LATER }).ok, true)
+  assert.equal(autonomy.end(repo.dir, 'done', { session: B, now: LATER }).outcome, 'done')
+})
+
+test('R15: continue is refused for an unknown caller, for a session that has another run, and for a run that is not open', (t) => {
+  const { repo, open, raw } = setupRuns(t)
+  const a = open(A)
+  const b = open(B)
+  const before = raw(a.run.id)
+  const unknown = autonomy.continueRun(repo.dir, a.run.id, { session: null })
+  assert.equal(unknown.ok, false)
+  assert.match(unknown.reason, /session/)
+  const busy = autonomy.continueRun(repo.dir, a.run.id, { session: B })
+  assert.equal(busy.ok, false)
+  assert.ok(busy.reason.includes(b.run.id), busy.reason)
+  autonomy.end(repo.dir, 'done', { id: b.run.id })
+  const closed = autonomy.continueRun(repo.dir, b.run.id, { session: C })
+  assert.equal(closed.ok, false)
+  assert.match(closed.reason, /is not open/)
+  assert.equal(autonomy.continueRun(repo.dir, 'auto-20200101-000000-abcd', { session: C }).ok, false)
+  assert.equal(raw(a.run.id), before)
+})
+
+test('R15: continue on a run that is already the caller\'s changes nothing, and on a run with no session it keeps no previous one', (t) => {
+  const { repo, open, patch, read, raw } = setupRuns(t)
+  const a = open(A)
+  const before = raw(a.run.id)
+  const same = autonomy.continueRun(repo.dir, a.run.id, { session: A })
+  assert.deepEqual([same.ok, same.unchanged], [true, true])
+  assert.equal(raw(a.run.id), before)
+  patch(a.run.id, (run) => { delete run.session })
+  assert.equal(autonomy.continueRun(repo.dir, a.run.id, { session: C }).ok, true)
+  assert.equal(read(a.run.id).session, C)
+  assert.deepEqual(read(a.run.id).previousSessions, [])
+})
+```
+
+**Acceptance:**
+
+- `node --test tests/autonomy-continue.test.js tests/autonomy-per-session.test.js tests/autonomy.test.js` passes.
+- `continueRun` reads no transcript, asks for no quote and compares nothing with who opened the run (R13); a refusal changes no file.
+
+### Task 10: El Lead de la sesión cuya corrida pausó el cruce de otra sesión también se entera de la pausa en `hooks/register.js`
+
+**Aether:**
+- Area: mod
+- Owns: `plugins/aether/hooks/register.js`, `plugins/aether/hooks/quota-brake.test.ts`
+- Depends on: Task 4 — once a crossing pauses every open run, the second session's own crossing answers `duplicate: true` for its run, and a caller with no run answers `run: null`
+- Serves: R9, R14
+
+**Interfaces:**
+
+`brakeRecorded` in `plugins/aether/hooks/register.js` today submits the brake prompt only when `record.duplicate !== true && !wasPaused`. It submits it when `!wasPaused` alone, where `wasPaused` is what it is today: this session already knows a pause for that reset hour (from the settings it read, or from an earlier answer). The answer still arms the resume once per pause (`armResume`), and an answer with no `run` or `paused !== true` still does nothing. The text of the prompt does not change. Nothing else in the mod changes; `hooks/delegate.mjs` and the other hooks are not touched.
+
+**Tests (write first):**
+
+In `plugins/aether/hooks/quota-brake.test.ts`, replace the test `a duplicate answer arms the resume and submits no second stop` with these two, and add the third:
+
+```ts
+test('a duplicate answer to a session that had not seen the pause tells its Lead once and arms the resume', async ($, on) => {
+  const s = stubs(on, { crossing: { ...PAUSED, duplicate: true } })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await step($)
+  expect(s.prompts).toHaveLength(1)
+  expect(s.prompts[0].text).toContain(`Autonomous run ${RUN} is now paused by the quota brake until ${RESUME}`)
+  await step($)
+  expect(s.prompts).toHaveLength(1)
+  await s.clock.advance(Date.parse(RESUME) - NOW)
+  expect(s.prompts).toHaveLength(2)
+  expect(s.prompts[1].text).toContain('the five_hour window has reset')
+})
+
+test('a duplicate answer to a session that already knows the pause submits no second stop', async ($, on) => {
+  const s = stubs(on, { settings: { ...SETTINGS, paused: { run: RUN, resetsAt: RESET, resumeAt: RESUME, percentUsed: 97 } }, crossing: { ...PAUSED, duplicate: true } })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await step($)
+  expect(s.prompts).toEqual([])
+  await s.clock.advance(Date.parse(RESUME) - NOW)
+  expect(s.prompts).toHaveLength(1)
+  expect(s.prompts[0].text).toContain('the five_hour window has reset')
+})
+
+test('an answer for a session with no run of its own arms nothing and prompts nothing', async ($, on) => {
+  const s = stubs(on, { crossing: { recorded: true, paused: false, run: null, runs: [{ run: RUN, paused: true }] } })
+  s.setLimits([{ kind: 'five_hour', percentUsed: 97, resetsAt: RESET }])
+  await step($)
+  expect(s.prompts).toEqual([])
+  await s.clock.advance(Date.parse(RESUME) - NOW)
+  expect(s.prompts).toEqual([])
+})
+```
+
+**Acceptance:**
+
+- `npm run test:mod` passes (the mod is not run by `npm test`), and `npm test` still passes.
+- The first test of the file (`a five-hour crossing warns once, records the pause and wakes the Lead after the reset`) passes untouched.
