@@ -109,7 +109,7 @@ function readOwnedTestContents(worktree, owns) {
       return cached
     }
     for (const file of tracked.split(/\r?\n/)) {
-      if (!file || !TEST_PATH.test(file) || !matchesAny(file, owns) || !looksLikePath(file)) continue
+      if (!file || !TEST_PATH.test(file) || !matchesAny(file, owns)) continue
       const fullPath = path.join(worktree, file)
       try {
         if (fs.statSync(fullPath).size > MAX_TEST_BYTES) continue

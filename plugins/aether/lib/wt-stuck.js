@@ -82,14 +82,8 @@ function toSeconds(value) {
 }
 
 function readRunSession(mainRoot, runId) {
-  const file = path.join(run.runDir(mainRoot, runId), 'state.json')
-  if (!fs.existsSync(file)) return null
-  try {
-    const state = JSON.parse(fs.readFileSync(file, 'utf8'))
-    return state && typeof state.session === 'string' && state.session !== '' ? state.session : null
-  } catch {
-    return null
-  }
+  const state = autonomy.readSwarmState(mainRoot, runId)
+  return state && typeof state.session === 'string' && state.session !== '' ? state.session : null
 }
 
 function defaultStopped(mainRoot, runId) {

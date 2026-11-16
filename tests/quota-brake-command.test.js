@@ -175,11 +175,12 @@ test('with no open run quota-brake prints the empty result', (t) => {
   assert.deepEqual(r.json, { saved: [], recorded: false, pushed: [] })
 })
 
-test('the usage line names quota-brake', (t) => {
+test('the usage line names quota-brake and says it does not stop workflows, delegates or lane calls', (t) => {
   const repo = makeRepo(t)
   const r = runBin(BIN, [], repo.dir)
   assert.equal(r.status, 1)
   assert.match(r.json.error, /quota-brake \[--session <id>\] \[--run <swarmRunId>\]…/)
+  assert.match(r.json.error, /does not stop workflows, delegates or lane calls/)
 })
 
 test('quota-brake does not stop workflows, delegates or lane calls', () => {

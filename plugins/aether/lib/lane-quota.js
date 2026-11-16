@@ -57,7 +57,7 @@ function lifeMsOf(settings) {
 // reading a refresh just took, is used instead of asking the adapter. A reading that fails leaves every group of the
 // table's entry unknown, with the error, and the harness with it: it is the harness's error, not the caller's.
 // onRead({ groups, readAt }, version) is told of each reading that was taken, as the adapter gave it.
-function harnessView(name, settings, { reserve, now, dataDir = run.dataDir(), fresh = true, latest = null, onRead = null, refreshed, refreshMethod, assemble = true }) {
+function harnessView(name, settings, { reserve, now, dataDir = run.dataDir(), fresh = true, latest = null, onRead = null, refreshed, refreshMethod }) {
   const found = lanes.commandPath(settings.command)
   const base = { command: settings.command, path: found, installed: found !== null }
   if (refreshed !== undefined) Object.assign(base, { refreshed, refreshMethod: refreshMethod ?? null })
@@ -91,8 +91,6 @@ function harnessView(name, settings, { reserve, now, dataDir = run.dataDir(), fr
       // Whoever listens may fail without taking the view with it.
     }
   }
-  // A seat builds the view itself, from this same reading, so a mark is lifted once.
-  if (!assemble) return { ...base, version, reading: read, ...(readError ? { error: readError } : {}) }
   const prepared = pickData({ harnesses: { [name]: settings }, reserve }, name, read, {
     now, dataDir, lifeMs: life, extraGroups: readError === null, groupError: readError ?? undefined, honorLiftResult: true,
   })
