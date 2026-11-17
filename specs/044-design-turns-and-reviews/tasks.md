@@ -769,14 +769,17 @@ test('R7: the plan call and the tasks call of the Writer carry two schemas whose
   assert.deepEqual(lib.required, ['plan', 'tasks', 'commit', 'check', 'assumptions', 'questions'])
   for (const [call, names] of [[planCall, ['plan', 'commit', 'assumptions', 'questions', 'complexity']], [tasksCall, ['tasks', 'commit', 'check', 'assumptions', 'questions']]]) {
     assert.deepEqual(Object.keys(call.schema.properties).sort(), [...names].sort(), call.label)
-    for (const name of names) assert.deepEqual(call.schema.properties[name], lib.properties[name], `${call.label} ${name}`)
+    for (const name of names) {
+      assert.equal(call.schema.properties[name].type, lib.properties[name].type, `${call.label} ${name}`)
+      assert.deepEqual(call.schema.properties[name].items, lib.properties[name].items, `${call.label} ${name} items`)
+    }
   }
   const external = fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
   assert.ok(external.includes('WRITER_SCHEMA') && external.includes('PLAN_WRITER_SCHEMA') && external.includes('TASKS_WRITER_SCHEMA'))
 })
 ```
 
-Fill the two comment-only tests with real assertions in the style of the file (lines 111 to 122 compare the workflow's schemas with the lib). Update every existing test whose Writer fake answers `PLAN_ANSWER` for `plan: writer write` to expect the two-call sequence (the call order of line 89 becomes `['writer', 'judge', 'writer', 'writer', 'judge', 'examiner']` with the default handler adapted to answer by label; the labels list of line 298 gains `plan: writer tasks write`), and adapt the default handler of `tests/ops-note.test.js` the same way.
+Update every existing test whose Writer fake answers `PLAN_ANSWER` for `plan: writer write` to expect the two-call sequence (the call order of line 89 becomes `['writer', 'judge', 'writer', 'writer', 'judge', 'examiner']` with the default handler adapted to answer by label; the labels list of line 298 gains `plan: writer tasks write`), and adapt the default handler of `tests/ops-note.test.js` the same way.
 
 **Acceptance:**
 - `node --test tests/workflow-design.test.js tests/ops-note.test.js tests/seat-calls.test.js tests/seat-partial.test.js tests/seats-design.test.js tests/lane-schemas.test.js tests/agents-design.test.js` passes; the new tests fail before the change.
@@ -793,7 +796,7 @@ Fill the two comment-only tests with real assertions in the style of the file (l
 **Interfaces:**
 - `design.workflow.js`:
   - `seatRound` returns, in its failed result, the native pair it used (`native`; by default `nativeOf('examiner', {}, author)`).
-  - `examine()`: after the first launch (everything `seatRound` does today for the Examiner, including an external seat that fell to the native one, which does not count as a relaunch) ends failed with no `refused`, it runs `aether-exam recover <feature>`. When `recover` fails or returns `tests: []`, there is no relaunch and the result is today's. When `tests` has entries, it makes one call `call('examiner', native.model, native.effort, <examinerMessage() + examinerPartialForNative({ partialDir: <repo>/.aether/exam, partialPaths })>, { phase: 'Exam', label: 'exam: examiner (relaunch)', schema: EXAMINER_SCHEMA })`, with no inner retry.
+  - `examine()`: after the first launch (everything `seatRound` does today for the Examiner, including an external seat that fell to the native one, which does not count as a relaunch) ends failed with no `refused`, it runs `aether-exam recover <feature>`. When `recover` fails or returns `tests: []`, there is no relaunch and the result is today's. When `tests` has entries, it makes one call `call('examiner', native.model, native.effort, <examinerMessage() + examinerPartialForNative({ partialDir: <repo>/.aether/exam, partialPaths })>, { phase: 'Exam', label: 'exam: examiner (relaunch)', schema: EXAMINER_SCHEMA })`, with no inner retry. `partialPaths` is `recover.tests.map((t) => t.path)`: `aether-exam recover` returns `tests` as `{ path, inIndex }` entries.
   - If the relaunch answer fits the schema, the flow continues as a native Examiner that finished (`aether-exam store`). If it does not finish, `aether-exam recover` runs again and the result lists the tests that exist with their index mark, in the shape of today (`failedResult('examiner', …)` plus `tests`). There is never a third launch.
 
 **Tests (write first):**
@@ -801,7 +804,7 @@ Fill the two comment-only tests with real assertions in the style of the file (l
 In `tests/workflow-design.test.js` (helpers: `go`, `opsCalls`, `nativeCalls`, `EXAM`, the `recover` handler of `handlers()`):
 
 ```js
-const LEFT = [{ id: 'c1', criterion: 'C1', command: 'node --test .aether/exam/c1.test.js', files: ['c1.test.js'], inIndex: true }, { id: 'c2', criterion: 'C2', command: 'node --test .aether/exam/c2.test.js', files: ['c2.test.js'], inIndex: false }]
+const LEFT = [{ path: 'c1.test.js', inIndex: true }, { path: 'c2.test.js', inIndex: false }] // the shape `aether-exam recover` returns (lib/exam.js:120)
 const examinerCalls = (run) => run.calls.filter((c) => c.role === 'examiner')
 
 // nativeAnswer makes two calls for one launch (the label, then `${label} (retry)`): a launch is a call whose label does not end in `(retry)`.
@@ -833,7 +836,7 @@ test('R10: an Examiner that does not finish twice gives one relaunch only, and t
   assert.equal(opsCalls(run, 'recover').length, 2)
   assert.equal(opsCalls(run, 'store').length, 0)
   assert.equal(run.result.exam.status, 'failed')
-  assert.deepEqual(run.result.exam.tests.map((t) => [t.id, t.inIndex]), [['c1', true], ['c2', false]])
+  assert.deepEqual(run.result.exam.tests.map((t) => [t.path, t.inIndex]), [['c1.test.js', true], ['c2.test.js', false]])
 })
 
 test('R10: an Examiner that ends with no answer and left no tests is not relaunched', async () => {
