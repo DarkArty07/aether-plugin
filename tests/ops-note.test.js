@@ -75,7 +75,11 @@ const CHECK_OK = { ok: true, tasks: 3, waves: [['task-1', 'task-2', 'task-3']], 
 
 function handlers() {
   return {
-    writer: (call) => (call.label.startsWith('spec:') ? SPEC_ANSWER : PLAN_ANSWER),
+    writer: (call) => {
+      if (call.label.startsWith('spec:')) return SPEC_ANSWER
+      if (call.label.startsWith('plan: writer tasks')) return { tasks: `${FEATURE}/tasks.md`, commit: 'c3', check: '{"ok":true}', assumptions: [], questions: [] }
+      return { plan: `${FEATURE}/plan.md`, commit: 'c2', complexity: PLAN_ANSWER.complexity, assumptions: [], questions: [] }
+    },
     judge: () => APPROVE,
     examiner: () => EXAM,
     ops: (call) => {

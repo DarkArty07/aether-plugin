@@ -41,7 +41,11 @@ const handedBack = (seat) => ({ done: true, exitCode: 3, value: nativeSeat(seat)
 function handlers() {
   let starts = 0
   return {
-    writer: (call) => (call.label.startsWith('spec:') ? SPEC_ANSWER : PLAN_ANSWER),
+    writer: (call) => {
+      if (call.label.startsWith('spec:')) return SPEC_ANSWER
+      if (call.label.startsWith('plan: writer tasks')) return { tasks: `${FEATURE}/tasks.md`, commit: 'c3', check: '{"ok":true}', assumptions: [], questions: [] }
+      return { plan: `${FEATURE}/plan.md`, commit: 'c2', complexity: PLAN_ANSWER.complexity, assumptions: [], questions: [] }
+    },
     judge: () => APPROVE,
     examiner: () => EXAM,
     ops: (call) => {
@@ -87,7 +91,7 @@ const ruleIsInBody = (run, label, role, texts) => {
 test('one run takes the card to an approved plan with no turn of the Lead in between (E1)', async () => {
   const run = await go(ARGS)
   assert.equal(run.error, null, run.error && run.error.stack)
-  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'judge', 'examiner'])
+  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'writer', 'judge', 'examiner'])
   const r = run.result
   assert.equal(r.status, 'approved')
   assert.equal(r.skill, 'aether:designing')
@@ -118,7 +122,8 @@ test('the native agents carry the model and effort of their definitions, the Wri
   assert.deepEqual(front('writer'), ['sonnet', 'high'])
   const by = (label) => run.calls.find((c) => c.label === label).schema
   assert.deepEqual(by('spec: writer write'), schemas.SPEC_WRITER_SCHEMA)
-  assert.deepEqual(by('plan: writer write'), schemas.WRITER_SCHEMA)
+  assert.deepEqual(by('plan: writer write').required.sort(), ['assumptions', 'commit', 'plan', 'questions'])
+  assert.deepEqual(by('plan: writer tasks write').required.sort(), ['assumptions', 'check', 'commit', 'questions', 'tasks'])
   assert.deepEqual(by('spec: judge review 1'), schemas.JUDGE_SCHEMA)
   assert.deepEqual(by('exam: examiner'), schemas.EXAMINER_SCHEMA)
   const stored = opsCalls(run, 'store')
@@ -267,9 +272,77 @@ test('a plan that fails aether-plan check gets one more try with the errors, the
   assert.deepEqual([run.result.status, run.result.step], ['failed', 'plan-check'])
   assert.ok(run.result.reason.includes(error))
   const writes = nativeCalls(run).filter((c) => c.label.startsWith('plan: writer'))
-  assert.deepEqual(writes.map((c) => c.label), ['plan: writer write', 'plan: writer write (retry)'])
-  assert.ok(writes[1].prompt.includes(error))
+  assert.deepEqual(writes.map((c) => c.label), ['plan: writer write', 'plan: writer tasks write', 'plan: writer tasks write (retry)'])
+  assert.ok(writes[2].prompt.includes(error))
+  assert.equal(run.calls.filter((c) => c.label === 'plan: writer write').length, 1, 'the plan call is not repeated')
   assert.equal(run.calls.filter((c) => c.label.startsWith('plan: judge')).length, 0)
+})
+
+const PLAN_ONLY = { plan: `${FEATURE}/plan.md`, commit: 'c2', complexity: PLAN_ANSWER.complexity, assumptions: [], questions: [] }
+const TASKS_ONLY = { tasks: `${FEATURE}/tasks.md`, commit: 'c3', check: '{"ok":true}', assumptions: [], questions: [] }
+const twoStep = (call) => (call.label.startsWith('spec:') ? SPEC_ANSWER : call.label === 'plan: writer write' ? PLAN_ONLY : TASKS_ONLY)
+
+test('R7: the native Writer makes two calls for the plan, each with its own schema, and the second gets the path of plan.md', async () => {
+  const run = await go(ARGS, { writer: twoStep })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const calls = run.calls.filter((c) => c.role === 'writer' && c.label.startsWith('plan:'))
+  assert.deepEqual(calls.map((c) => c.label), ['plan: writer write', 'plan: writer tasks write'])
+  assert.deepEqual(calls[0].schema.required.sort(), ['assumptions', 'commit', 'plan', 'questions'])
+  assert.deepEqual(calls[1].schema.required.sort(), ['assumptions', 'check', 'commit', 'questions', 'tasks'])
+  assert.ok(calls[1].prompt.includes(`${FEATURE}/plan.md`))
+  assert.ok(calls[0].prompt.includes('Write only plan.md'))
+  assert.deepEqual([calls[1].model, calls[1].effort], [calls[0].model, calls[0].effort])
+  assert.deepEqual([run.result.plan, run.result.tasks], [`${FEATURE}/plan.md`, `${FEATURE}/tasks.md`])
+  assert.equal(run.result.complexity, PLAN_ONLY.complexity)
+})
+
+test('R7: an external seat that answers keeps one call, with plan and tasks together', async () => {
+  const docs = {}
+  const ops = (call, fallback) => {
+    const out = fallback(call)
+    if (call.command.verb === 'seat-start' && call.command.rest[0] === 'writer') docs[out.id] = flag(call, '--doc')
+    if (call.command.verb === 'seat-wait' && docs[call.command.rest[0]] === 'plan') {
+      return { done: true, exitCode: 0, value: { seat: 'writer', id: call.command.rest[0], harness: 'agy', model: 'gemini-4-argon', answer: 'x', result: PLAN_ANSWER, lane: '- Lane: agy gemini-4-argon-high' } }
+    }
+    return out
+  }
+  const run = await go({ ...ARGS, superdelegation: 'on' }, { ops, writer: twoStep })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(opsCalls(run, 'seat-start').filter((c) => c.command.rest[0] === 'writer' && flag(c, '--doc') === 'plan').length, 1)
+  assert.equal(run.calls.filter((c) => c.role === 'writer' && c.label.startsWith('plan:')).length, 0, 'no native Writer call for the plan')
+  assert.equal(run.calls.some((c) => c.label === 'plan: writer tasks write'), false)
+  assert.deepEqual([run.result.plan, run.result.tasks], [PLAN_ANSWER.plan, PLAN_ANSWER.tasks])
+})
+
+test('R8: a check that fails the first time repeats the second call once, with the errors, and the Judge gets both documents in one round', async () => {
+  let checks = 0
+  const run = await go(ARGS, {
+    writer: twoStep,
+    ops: (call, fallback) => (call.command.verb === 'check' && ++checks === 1 ? { ok: false, errors: ['task 2 has no Owns'], warnings: [] } : fallback(call)),
+  })
+  const tasksCalls = run.calls.filter((c) => c.label.startsWith('plan: writer tasks'))
+  assert.equal(tasksCalls.length, 2)
+  assert.ok(tasksCalls[1].prompt.includes('task 2 has no Owns'))
+  assert.equal(run.calls.filter((c) => c.label === 'plan: writer write').length, 1, 'the plan call is not repeated')
+  const reviews = run.calls.filter((c) => c.role === 'judge' && c.label.startsWith('plan:'))
+  assert.equal(reviews.length, 1)
+  assert.ok(reviews[0].prompt.includes(`${FEATURE}/plan.md`) && reviews[0].prompt.includes(`${FEATURE}/tasks.md`))
+})
+
+test('R7: the plan call and the tasks call of the Writer carry two schemas whose properties are those of the lib WRITER_SCHEMA, which does not change', async () => {
+  const run = await go(ARGS, { writer: twoStep })
+  const [planCall, tasksCall] = run.calls.filter((c) => c.role === 'writer' && c.label.startsWith('plan:'))
+  const lib = schemas.WRITER_SCHEMA
+  assert.deepEqual(lib.required, ['plan', 'tasks', 'commit', 'check', 'assumptions', 'questions'])
+  for (const [call, names] of [[planCall, ['plan', 'commit', 'assumptions', 'questions', 'complexity']], [tasksCall, ['tasks', 'commit', 'check', 'assumptions', 'questions']]]) {
+    assert.deepEqual(Object.keys(call.schema.properties).sort(), [...names].sort(), call.label)
+    for (const name of names) {
+      assert.equal(call.schema.properties[name].type, lib.properties[name].type, `${call.label} ${name}`)
+      assert.deepEqual(call.schema.properties[name].items, lib.properties[name].items, `${call.label} ${name} items`)
+    }
+  }
+  const external = fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
+  assert.ok(external.includes('WRITER_SCHEMA') && external.includes('PLAN_WRITER_SCHEMA') && external.includes('TASKS_WRITER_SCHEMA'))
 })
 
 const mapOps = (n) => (call, fallback) => (call.command.verb === 'requirements' ? { requirements: n, threshold: 15, map: n >= 15 } : fallback(call))
@@ -279,7 +352,7 @@ const planWriter = (run) => run.calls.find((c) => c.label === 'plan: writer writ
 test('R3 R5: a spec of 15 requirements runs the map step once, before the plan Writer, and the Writer message carries the map', async () => {
   const run = await go(ARGS, { ops: mapOps(15), mapper: () => ({ map: MAP_TEXT }) })
   assert.equal(run.error, null, run.error && run.error.stack)
-  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'mapper', 'writer', 'judge', 'examiner'])
+  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'mapper', 'writer', 'writer', 'judge', 'examiner'])
   assert.equal(run.calls.filter((c) => c.label === 'plan: map').length, 1)
   assert.ok(planWriter(run).prompt.includes('## Mapa del código'))
   assert.ok(planWriter(run).prompt.includes(MAP_TEXT))
@@ -288,7 +361,7 @@ test('R3 R5: a spec of 15 requirements runs the map step once, before the plan W
 
 test('R3 R5: a spec of 14 requirements has no map step and the Writer message is the one of today', async () => {
   const run = await go(ARGS, { ops: mapOps(14), mapper: () => { throw new Error('the mapper must not run') } })
-  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'judge', 'examiner'])
+  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'writer', 'judge', 'examiner'])
   const baseline = await go(ARGS)
   assert.equal(planWriter(run).prompt, planWriter(baseline).prompt)
   assert.ok(!planWriter(run).prompt.includes('Mapa del código'))
@@ -337,7 +410,7 @@ for (const [name, requirements] of [['fails', { raw: { exitCode: 1, stdout: '{}\
     const run = await go(ARGS, { ops, mapper: () => { throw new Error('the mapper must not run') } })
     assert.equal(run.error, null, run.error && run.error.stack)
     assert.equal(run.result.status, 'approved')
-    assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'judge', 'examiner'])
+    assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'writer', 'judge', 'examiner'])
     assert.equal(run.calls.filter((c) => c.label === 'plan: map').length, 0)
     assert.ok(!planWriter(run).prompt.includes('Mapa del código'))
     assert.ok(run.logs.some((line) => /plan: map: .*the plan is written without a map/.test(line)), run.logs.join('\n'))
@@ -502,8 +575,8 @@ test('the questions of an external Writer answer, a check retry and a correction
     return out
   }
   const writer = (call, fallback) => {
-    if (call.label === 'plan: writer write') return { ...PLAN_ANSWER, questions: ['plan first'] }
-    if (call.label === 'plan: writer write (retry)') return { ...PLAN_ANSWER, questions: ['plan retry', 'plan first'] }
+    if (call.label === 'plan: writer write') return { plan: `${FEATURE}/plan.md`, commit: 'c2', complexity: PLAN_ANSWER.complexity, assumptions: [], questions: ['plan first'] }
+    if (call.label === 'plan: writer tasks write (retry)') return { tasks: `${FEATURE}/tasks.md`, commit: 'c3', check: '{"ok":true}', assumptions: [], questions: ['plan retry', 'plan first'] }
     if (call.label === 'plan: writer revision 1') return { document: `${FEATURE}/tasks.md`, commit: 'c3', assumptions: [], questions: ['correction'], disagreements: [] }
     return fallback(call)
   }
@@ -520,7 +593,7 @@ test('a design that ends failed still carries the questions the Writer raised be
   const writer = (call, fallback) => (call.label.startsWith('plan: writer') ? { ...PLAN_ANSWER, questions: [`asked in ${call.label}`] } : fallback(call))
   const run = await go(ARGS, { ops: failing, writer })
   assert.equal(run.result.status, 'failed')
-  assert.deepEqual(run.result.writerQuestions, ['asked in plan: writer write', 'asked in plan: writer write (retry)'])
+  assert.deepEqual(run.result.writerQuestions, ['asked in plan: writer write', 'asked in plan: writer tasks write', 'asked in plan: writer tasks write (retry)'])
 })
 
 test('a design whose Writers raise no questions has no writerQuestions key', async () => {
