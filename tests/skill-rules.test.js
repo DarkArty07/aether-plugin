@@ -39,6 +39,7 @@ test('parseInstall reads each launcher, the sources, the author and -g, and igno
     ['npx skills add anthropics/skills@pdf', 'npx'],
     ['npx -y skills add anthropics/skills@pdf', 'npx'],
     ['npx skills@latest add anthropics/skills@pdf', 'npx'],
+    ['npx skills@1.9.0 add anthropics/skills@pdf', 'npx'],
     ['bunx skills add anthropics/skills@pdf', 'bunx'],
     ['pnpm dlx skills add anthropics/skills@pdf', 'pnpm dlx'],
     ['skills add anthropics/skills@pdf', 'skills'],
