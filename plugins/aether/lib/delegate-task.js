@@ -174,10 +174,6 @@ const lastOf = (entries, test) => {
   return { entry: null, index: -1 }
 }
 
-function verdictInputs(entries) {
-  return entries.filter((entry) => entry.kind === 'verdict' && isObject(entry.input)).map((entry) => entry.input)
-}
-
 // The verdict inputs the ladder judges: an automatic approval a later verdict reopened (spec 044, D11) no longer
 // closes the task, so the task behaves exactly as if the read-only attempt were still open at that attempt. With
 // `reopen`, the task's last verdict itself is the automatic approval being reopened, so it is dropped too.
@@ -956,7 +952,8 @@ async function verdict(input, deps = {}) {
     const entries = taskEntries(r.dataDir, task, session)
     const launch = lastOf(entries, isLaunch).entry
     if (!launch) return refuse('unknown task')
-    const reopening = reopenableAuto(entries) !== null && (kind === 'fix' || kind === 'infeasible')
+    const auto = reopenableAuto(entries)
+    const reopening = auto !== null && (kind === 'fix' || kind === 'infeasible')
     const state = ladderLib.stateOf(effectiveVerdictInputs(entries, reopening), r.ladder, auth.startStepOf(entries, r.ladder, r.configDir))
     const at = { step: state.step }
     if (!VERDICTS.includes(kind)) return refuse('the verdict must be approve, fix or infeasible', at)
@@ -970,7 +967,7 @@ async function verdict(input, deps = {}) {
       if (error) return refuse(error, at)
       verdictInput.findings = parsed
     }
-    if (kind === 'approve' && reopenableAuto(entries)) return refuse('the task was already closed by the system as approved: no verdict is needed; when its answer is wrong, judge it fix or infeasible', at)
+    if (kind === 'approve' && auto !== null) return refuse('the task was already closed by the system as approved: no verdict is needed; when its answer is wrong, judge it fix or infeasible', at)
     const judged = ladderLib.judge(state, verdictInput, r.ladder)
     if (!judged.accepted) return refuse(judged.error, at)
     if (kind === 'approve') {
