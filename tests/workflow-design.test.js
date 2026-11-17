@@ -291,6 +291,7 @@ test('R7: the native Writer makes two calls for the plan, each with its own sche
   assert.deepEqual(calls[1].schema.required.sort(), ['assumptions', 'check', 'commit', 'questions', 'tasks'])
   assert.ok(calls[1].prompt.includes(`${FEATURE}/plan.md`))
   assert.ok(calls[0].prompt.includes('Write only plan.md'))
+  assert.equal(calls[0].prompt.includes('and the tasks'), false, 'the first native call asks only for plan.md')
   assert.deepEqual([calls[1].model, calls[1].effort], [calls[0].model, calls[0].effort])
   assert.deepEqual([run.result.plan, run.result.tasks], [`${FEATURE}/plan.md`, `${FEATURE}/tasks.md`])
   assert.equal(run.result.complexity, PLAN_ONLY.complexity)
@@ -329,6 +330,35 @@ test('R8: a check that fails the first time repeats the second call once, with t
   assert.ok(reviews[0].prompt.includes(`${FEATURE}/plan.md`) && reviews[0].prompt.includes(`${FEATURE}/tasks.md`))
 })
 
+test('an external plan answer whose check fails retries in one native call with both documents, not the plan-only form', async () => {
+  let checks = 0
+  let plans = 0
+  const docs = {}
+  const ops = (call, fallback) => {
+    if (call.command.verb === 'check') return ++checks === 1 ? { ok: false, errors: ['task 2 has no Owns'], warnings: [] } : CHECK_OK
+    const out = fallback(call)
+    if (call.command.verb === 'seat-start' && call.command.rest[0] === 'writer') docs[out.id] = flag(call, '--doc')
+    if (call.command.verb === 'seat-wait' && docs[call.command.rest[0]] === 'plan' && ++plans === 1) {
+      return { done: true, exitCode: 0, value: { seat: 'writer', id: call.command.rest[0], harness: 'agy', model: 'gemini-4-argon', answer: 'x', result: PLAN_ANSWER, lane: '- Lane: agy gemini-4-argon-high' } }
+    }
+    return out
+  }
+  const writer = (call, fallback) => (call.label === 'plan: writer write (retry)' ? PLAN_ANSWER : fallback(call))
+  const run = await go({ ...ARGS, superdelegation: 'on' }, { ops, writer })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  const starts = opsCalls(run, 'seat-start').filter((c) => c.command.rest[0] === 'writer' && flag(c, '--doc') === 'plan')
+  assert.equal(starts.length, 2, 'the first round and its check retry')
+  const native = run.calls.filter((c) => c.role === 'writer' && c.label.startsWith('plan:'))
+  assert.deepEqual(native.map((c) => c.label), ['plan: writer write (retry)'])
+  assert.deepEqual(native[0].schema.required.sort(), ['assumptions', 'check', 'commit', 'plan', 'questions', 'tasks'])
+  assert.ok(native[0].prompt.startsWith(starts[1].payload.text), 'the retry message with the check errors')
+  assert.ok(native[0].prompt.includes('task 2 has no Owns'))
+  assert.equal(native[0].prompt.includes('Write only plan.md'), false, 'the retry writes both documents, not only plan.md')
+  assert.equal(run.calls.some((c) => c.label === 'plan: writer tasks write'), false, 'no tasks call follows the one-call retry')
+  assert.deepEqual([run.result.plan, run.result.tasks], [`${FEATURE}/plan.md`, `${FEATURE}/tasks.md`])
+})
+
 test('R7: the plan call and the tasks call of the Writer carry two schemas whose properties are those of the lib WRITER_SCHEMA, which does not change', async () => {
   const run = await go(ARGS, { writer: twoStep })
   const [planCall, tasksCall] = run.calls.filter((c) => c.role === 'writer' && c.label.startsWith('plan:'))
@@ -341,6 +371,8 @@ test('R7: the plan call and the tasks call of the Writer carry two schemas whose
       assert.deepEqual(call.schema.properties[name].items, lib.properties[name].items, `${call.label} ${name} items`)
     }
   }
+  assert.equal(planCall.schema.properties.commit.description, 'your commit of plan.md', 'the plan-only commit names only its file')
+  assert.equal(tasksCall.schema.properties.commit.description, 'your commit of tasks.md', 'the tasks-only commit names only its file')
   const external = fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
   assert.ok(external.includes('WRITER_SCHEMA') && external.includes('PLAN_WRITER_SCHEMA') && external.includes('TASKS_WRITER_SCHEMA'))
 })
@@ -1348,6 +1380,7 @@ test('issue 68: the native Writer of a plan round gets plan.md and tasks.md, and
   const replies = [(id) => withPartial(failedWait('writer', id, AGY), partial), () => noneLeft('writer')]
   const run = await go(ON, { ops: scripted(PLAN_WRITER, replies) })
   assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
   const native = nativeCalls(run).find((call) => call.label === 'plan: writer write')
   assert.ok(native.prompt.includes(NATIVE_PARTIAL))
   assert.ok(native.prompt.includes('## Partial document: ' + `${FEATURE}/plan.md`))
@@ -1355,9 +1388,41 @@ test('issue 68: the native Writer of a plan round gets plan.md and tasks.md, and
   assert.ok(native.prompt.includes('## Partial document: ' + `${FEATURE}/tasks.md`))
   assert.ok(native.prompt.includes('TASKS-PART'))
   assert.equal(native.prompt.includes('SPEC-SHOULD-NOT'), false)
+  assert.ok(native.prompt.includes('Write the plan and the tasks of'), 'the continuing call carries the one-call form')
+  assert.equal(native.prompt.includes('Write only plan.md'), false, 'the continuing call is not the plan-only form')
+  assert.deepEqual(native.schema.required.sort(), ['assumptions', 'check', 'commit', 'plan', 'questions', 'tasks'])
+  assert.equal(run.calls.some((c) => c.label === 'plan: writer tasks write'), false, 'no second tasks call happens')
   const planRound = run.result.rounds.find((round) => round.document === 'plan' && round.seat === 'writer' && round.tries)
   assert.equal(planRound.tries[0].continued, false)
   assert.equal(planRound.continued, true)
+})
+
+test('issue 68: a continued plan partial whose check fails retries in one native call, still with no tasks call', async () => {
+  let checks = 0
+  let plans = 0
+  const docs = {}
+  const ops = (call, fallback) => {
+    if (call.command.verb === 'check') return ++checks === 1 ? { ok: false, errors: ['task 2 has no Owns'], warnings: [] } : CHECK_OK
+    const out = fallback(call)
+    if (call.command.verb === 'seat-start' && call.command.rest[0] === 'writer') docs[out.id] = flag(call, '--doc')
+    if (call.command.verb === 'seat-wait' && docs[call.command.rest[0]] === 'plan' && ++plans === 1) {
+      return withPartial(failedWait('writer', call.command.rest[0], AGY), [
+        { path: `${FEATURE}/plan.md`, text: 'PLAN-PART' },
+        { path: `${FEATURE}/tasks.md`, text: 'TASKS-PART' },
+      ])
+    }
+    return out
+  }
+  const writer = (call, fallback) => (call.label === 'plan: writer write (retry)' ? PLAN_ANSWER : fallback(call))
+  const run = await go(ON, { ops, writer })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  const native = run.calls.filter((c) => c.role === 'writer' && c.label.startsWith('plan:'))
+  assert.deepEqual(native.map((c) => c.label), ['plan: writer write', 'plan: writer write (retry)'])
+  assert.ok(native[1].prompt.includes('task 2 has no Owns'), 'the retry carries the check errors')
+  assert.ok(native[1].prompt.includes('Write the plan and the tasks of'), 'the retry keeps the one-call form')
+  assert.deepEqual(native[1].schema.required.sort(), ['assumptions', 'check', 'commit', 'plan', 'questions', 'tasks'])
+  assert.equal(run.calls.some((c) => c.label === 'plan: writer tasks write'), false, 'no tasks call happens')
 })
 
 test('issue 68: a failed Judge round does not hand a partial to the native Judge', async () => {
@@ -1880,6 +1945,8 @@ test('R9: an Examiner that ends with no answer after writing tests is relaunched
   assert.deepEqual(calls.map((c) => c.label), ['exam: examiner', 'exam: examiner (retry)', 'exam: examiner (relaunch)'])
   assert.equal(launchesOf(run).length, 2)
   assert.ok(calls[2].prompt.includes('c1.test.js') && calls[2].prompt.includes('c2.test.js'))
+  assert.ok(calls[2].prompt.includes('Your checkout is /repo: the paths above are relative to it.'), 'the relaunch names the checkout like the first launch')
+  assert.ok(calls[2].prompt.includes('Write the exam under /repo/.aether/exam/ and nothing else.'), 'the relaunch names the exam folder like the first launch')
   assert.equal(opsCalls(run, 'store').length, 1)
   assert.equal(run.result.status, 'approved')
   assert.equal(run.result.exam.status, 'stored')
