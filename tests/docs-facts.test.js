@@ -882,6 +882,24 @@ test('the canonical countable rule is identical across the six places of R6, AGE
   assert.match(read('docs/reference/components.md'), /PostToolUse[^.\n]*Read[^.\n]*Grep[^.\n]*Glob/)
 })
 
+test('cleanup with an open run leaves only the tmp folders alone (R22)', () => {
+  const maintenance = read('docs/guide/maintenance.md')
+  assert.doesNotMatch(maintenance, /While an autonomous run is open in the project, the cleaning removes nothing of `\.aether\/`/)
+  assert.match(maintenance, /leaves the `\.aether\/tmp\/` folders alone/)
+})
+
+test('a harness that could not be read points at the Quota unavailable reason (R22)', () => {
+  const troubleshooting = read('docs/guide/troubleshooting.md')
+  assert.doesNotMatch(troubleshooting, /as with any unread quota above/)
+  assert.match(troubleshooting, /`Quota unavailable`/)
+})
+
+test('recompiling without --only keeps the selection minus the merged units (R22)', () => {
+  const troubleshooting = read('docs/guide/troubleshooting.md')
+  assert.doesNotMatch(troubleshooting, /offers only what is still pending of the run's own selection/)
+  assert.match(troubleshooting, /is already merged in run/)
+})
+
 test('the changelog entry of 0.36.0 names the four behaviours, the two new skills and what a normal session pays (spec 031)', () => {
   const changelog = read('docs/changelog.md')
   const start = changelog.indexOf('Version 0.36.0: ')
