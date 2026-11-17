@@ -845,7 +845,7 @@ function planWriterMessage(map = null, onlyPlan = false) {
 }
 
 function tasksMessage() {
-  return lines(`Write tasks.md of ${feature}, reading the plan.md already written (${PLAN}). Run aether-plan check until it passes and commit it.`)
+  return lines(`Write the tasks of ${feature}: ${TASKS}, reading the plan.md already written (${PLAN}). Run aether-plan check until it passes and commit it.`)
 }
 
 // What a document's Judge reviews, by document. How it reviews each kind is in judge.md.
