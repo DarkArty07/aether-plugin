@@ -157,8 +157,9 @@ test('main with no grant merges nothing and records no verdict; the same call me
   assert.equal(blocked.json.merged, false)
   assert.equal(
     blocked.json.reason,
-    'merge-main needs a grant: ask the owner for the merge, record it with aether-autonomy grant --class merge-main --quote "<their words>", then run approve again'
+    'merge-main needs a grant: record it with aether-autonomy grant --class merge-main --quote "<their words>" once the owner gives it, then run approve again; in an autonomous run the merge goes to "Espera tu sí" of the brief and the owner is not asked at that moment'
   )
+  assert.ok(!blocked.json.reason.includes('ask the owner for the merge'))
   assert.equal(repo.git('rev-parse', 'HEAD'), before)
   assert.equal(fs.existsSync(path.join(repo.dir, 'src', 'a.js')), false)
   assert.equal(verdicts(dataDir, 't1').length, 0)
