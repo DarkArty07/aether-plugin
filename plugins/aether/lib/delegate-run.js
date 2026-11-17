@@ -17,6 +17,7 @@ const path = require('node:path')
 const { isObject, isText, killGroup, messageOf, pidAlive, sleep: realSleep, sleepSync } = require('./common.js')
 const { pairId, nativeModels, loadPairs } = require('./pairs.js')
 const log = require('./delegate-log.js')
+const delegateTask = require('./delegate-task.js')
 const autonomy = require('./autonomy.js')
 const checksLib = require('./delegate-checks.js')
 const delegateChain = require('./delegate-chain.js')
@@ -322,6 +323,8 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
 async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { delegateCommand = laneDelegate.delegateCommand, runChain = delegateChain.runChain } = {}) {
   let attempt = null
   const pathSession = session
+  // The Lead's checkout, as `begin` recorded it when the attempt has an external file; `closeReadOnly` reads it back.
+  let workDir = cwd
   let outcome
   try {
     assertId(id)
@@ -335,7 +338,7 @@ async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { d
       external.owns = Array.isArray(external.owns) ? external.owns : []
       // The Lead's cwd, as `begin` recorded it: this process may have started in the isolation worktree of the delegate's
       // agent, and the unit branch and its integration worktree belong to the Lead's checkout (issue 94).
-      const workDir = isText(external.cwd) && fs.existsSync(external.cwd) ? external.cwd : cwd
+      workDir = isText(external.cwd) && fs.existsSync(external.cwd) ? external.cwd : cwd
       outcome = external.edits ? await runEdits(external, { cwd: workDir, dataDir }, delegateCommand) : await runReadOnly(external, { cwd: workDir, dataDir }, runChain)
     }
   } catch (err) {
@@ -349,6 +352,9 @@ async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { d
   // not climb. The result file below still carries it, so `wait` hands the pause to the mod.
   if (result.status !== 'paused') {
     log.appendEntry(dataDir, { kind: 'result', time: now(), session, task: id, attempt, ok: result.ok, status: result.status, ...empty, ...outcome.entry, checks: result.checks, reason: result.reason })
+    // A read-only delegate whose checks pass is closed by the system, without the Lead's verdict (spec 044, R23).
+    // An editing attempt, or a red check, is left pending for `aether-delegate verdict`, as today.
+    if (result.ok === true) delegateTask.closeReadOnly({ task: id, session, cwd: workDir, dataDir, now })
   }
   try {
     if (typeof id === 'string' && ID.test(id)) writeAtomic(resultFile(dataDir, id, pathSession), `${JSON.stringify(result)}\n`)
@@ -360,13 +366,15 @@ async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { d
 
 // ---- answer ----
 
-// Records the end of a delegate that ran on Claude, preserving text only for read-only attempts. Never throws.
-function recordAnswer({ task, attempt, text, session, dataDir, now = Date.now }) {
+// Records the end of a delegate that ran on Claude, preserving text only for read-only attempts. A read-only attempt
+// whose checks pass is closed by the system, without the Lead's verdict (spec 044, R23). Never throws.
+function recordAnswer({ task, attempt, text, session, cwd = process.cwd(), dataDir, now = Date.now }) {
   try {
     const launch = log.readEntries(dataDir, { task, session: session ?? null }).filter((entry) => log.isLaunch(entry) && entry.attempt === attempt).at(-1)
     const entry = { kind: launch?.edits === true ? 'ended' : 'answer', time: now(), session: session ?? null, task, attempt }
     if (entry.kind === 'answer') entry.text = typeof text === 'string' ? text : ''
     const recorded = log.appendEntry(dataDir, entry)
+    if (recorded && entry.kind === 'answer') delegateTask.closeReadOnly({ task, session: entry.session, cwd, dataDir, now })
     return { recorded }
   } catch {
     return { recorded: false }

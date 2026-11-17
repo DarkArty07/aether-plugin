@@ -446,7 +446,11 @@ test('answer writes an ended line, with no text, for an attempt that edits, and 
   assert.deepEqual(dr.recordAnswer({ task: 'e1', attempt: 1, text: 'done, in the worktree', session: 's1', dataDir, now: () => 7 }), { recorded: true })
   assert.deepEqual(dr.recordAnswer({ task: 'r1', attempt: 1, text: 'found it', session: 's1', dataDir, now: () => 8 }), { recorded: true })
   assert.deepEqual(log.readEntries(dataDir, { task: 'e1' }).at(-1), { kind: 'ended', time: 7, session: 's1', task: 'e1', attempt: 1 })
-  assert.deepEqual(log.readEntries(dataDir, { task: 'r1' }).at(-1), { kind: 'answer', time: 8, session: 's1', task: 'r1', attempt: 1, text: 'found it' })
+  const r1 = log.readEntries(dataDir, { task: 'r1' })
+  assert.deepEqual(r1.at(-2), { kind: 'answer', time: 8, session: 's1', task: 'r1', attempt: 1, text: 'found it' })
+  assert.deepEqual([r1.at(-1).kind, r1.at(-1).verdict, r1.at(-1).auto, r1.at(-1).reason],
+    ['verdict', 'approved', true, 'closed by the system: the read-only checks passed'],
+    'a read-only answer with a clean checkout is closed by the system (spec 044, R23)')
 })
 
 test('the kind of line follows the latest launch of that attempt in that session; with no launch it is an answer (spec 031, C1)', (t) => {
@@ -459,7 +463,11 @@ test('the kind of line follows the latest launch of that attempt in that session
     dr.recordAnswer({ task: 't1', attempt, text: 'x', session, dataDir, now: () => time })
   }
   const written = log.readEntries(dataDir, { task: 't1' }).filter((e) => e.kind !== 'launch').map((e) => [e.session, e.attempt, e.kind])
-  assert.deepEqual(written, [['s1', 1, 'ended'], ['s1', 2, 'answer'], ['s2', 1, 'answer'], ['s1', 9, 'answer']])
+  assert.deepEqual(written, [['s1', 1, 'ended'], ['s1', 2, 'answer'], ['s1', 2, 'verdict'], ['s2', 1, 'answer'], ['s2', 1, 'verdict'], ['s1', 9, 'answer']],
+    'a read-only answer with a clean checkout is closed by the system; an answer with no launch stays pending (spec 044, R23)')
+  for (const entry of log.readEntries(dataDir, { task: 't1' }).filter((e) => e.kind === 'verdict')) {
+    assert.deepEqual([entry.verdict, entry.auto], ['approved', true])
+  }
 })
 
 test('the bin: answer on an attempt that edits writes an ended line and says it recorded (spec 031, C1)', (t) => {
