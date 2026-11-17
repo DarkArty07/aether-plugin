@@ -699,6 +699,17 @@ function spelledWord(word) {
   return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : `"${word.replace(/["\\]/g, '\\$&')}"`
 }
 
+// The find actions that write: a find without any of them only reads. gh issue and gh pr only read too.
+const FIND_WRITE_ACTIONS = new Set(['-delete', '-exec', '-execdir', '-ok', '-okdir', '-fprint', '-fprint0', '-fprintf', '-fls'])
+
+// Whether a segment only reads: a find with none of its writing actions, or gh issue and gh pr. Such a segment
+// names the personal skill folders only through its redirections: mentioning them in a read is not a skill install.
+function isReadOnlySegment(named) {
+  if (named.length === 0) return false
+  if (named[0] === 'find') return !named.some((word) => FIND_WRITE_ACTIONS.has(word))
+  return named[0] === 'gh' && (named[1] === 'issue' || named[1] === 'pr')
+}
+
 // Limit A14 (spec 030): commands that assemble the personal skills path or an install at runtime (e.g. a script building
 // ~/.agents/skills/ dynamically, or $X skills add) cannot be detected.
 // Whether a segment is a skill install or writes into the owner's skill folders (spec 030 R25 R30). The install is read from
@@ -706,7 +717,7 @@ function spelledWord(word) {
 // `npx skills add`. A call to aether-autonomy names the folders in its quotes without writing there: only its redirections count.
 function isSkillInstallSegment(words, named, here, env) {
   const home = (env && env.HOME) || os.homedir()
-  const naming = isAutonomyCall(words, here) ? redirectTargets(words) : writeTargets(words)
+  const naming = isAutonomyCall(words, here) || isReadOnlySegment(named) ? redirectTargets(words) : writeTargets(words)
   if (naming.some((target) => isPersonalSkillPath(target, home))) return true
   return installClass(named.map(spelledWord).join(' '), { dataDir: getDataDir(env) }) === 'skill-install'
 }
