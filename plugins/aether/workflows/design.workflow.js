@@ -124,7 +124,7 @@ const PLAN_WRITER_SCHEMA = {
   required: ['plan', 'commit', 'assumptions', 'questions'],
   properties: {
     plan: { type: 'string', description: 'the path of plan.md' },
-    commit: { type: 'string', description: 'your commit of plan.md and tasks.md' },
+    commit: { type: 'string', description: 'your commit of plan.md' },
     assumptions: { type: 'array', items: { type: 'string' } },
     questions: { type: 'array', items: { type: 'string' } },
     complexity: { type: 'string', description: 'the complexity the plan adds beyond the spec, and why it is needed; empty if none' },
@@ -136,7 +136,7 @@ const TASKS_WRITER_SCHEMA = {
   required: ['tasks', 'commit', 'check', 'assumptions', 'questions'],
   properties: {
     tasks: { type: 'string', description: 'the path of tasks.md' },
-    commit: { type: 'string', description: 'your commit of plan.md and tasks.md' },
+    commit: { type: 'string', description: 'your commit of tasks.md' },
     check: { type: 'string', description: 'what aether-plan check printed' },
     assumptions: { type: 'array', items: { type: 'string' } },
     questions: { type: 'array', items: { type: 'string' } },
@@ -672,12 +672,15 @@ function failedPair(reply, value) {
 // (exit 3, where nothing ran, is not an entry). `author` is the model that wrote the document under review, so
 // that no seat takes it; `writes` is the Writer's --doc (spec or plan). `schema` is the shape of an external answer;
 // the native agent answers with `nativeSchema`, which is the same unless the round is a correction; `nativeText`
-// is the message of the native agent when the seat hands the round back (default `text`).
+// is the message of the native agent when the seat hands the round back (default `text`). With `oneCallOnPartial`,
+// a native Writer that continues a partial answers with the round's own `text` and `schema` instead: one call with
+// both documents, never the split-call overrides.
 // Resolves to { answer, text, seat, model, value } (seat: 'native' or '<harness> <model>'; model: the one that
 // answered; value: the external round's) or { failed }; a round the native agent took also carries its pair as
-// `native` (`effort` and `model`), also when it failed, so the Examiner can be relaunched on it. A seat-start the
+// `native` (`effort` and `model`), also when it failed, so the Examiner can be relaunched on it, and `continued`
+// when it continued a partial. A seat-start the
 // autonomous run refuses returns { failed, refused, stop, run } and does not hand the round to the native agent.
-async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema, nativeText = null, phase, author = null, writes = null }) {
+async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema, nativeText = null, phase, author = null, writes = null, oneCallOnPartial = false }) {
   const base = step ? `${doc}: ${seat} ${step}` : `${doc}: ${seat}`
   const record = { document: doc, seat, provider: 'native', id: null, lane: null, note: null }
   rounds.push(record)
@@ -767,9 +770,14 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   const native = nativeOf(seat, value, author)
   const message = nativeText === null || nativeText === undefined ? text : nativeText
   let prompt = message
+  let finalSchema = nativeSchema
   if (seat === 'writer' && partial !== null) {
     prompt = `${message}\n\n${partialForNative(partial)}`
     record.continued = true
+    if (oneCallOnPartial) {
+      prompt = `${text}\n\n${partialForNative(partial)}`
+      finalSchema = schema
+    }
   }
   if (seat === 'examiner' && examPartial !== null) {
     prompt = `${message}\n\n${examinerPartialForNative(examPartial)}`
@@ -781,9 +789,9 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
     if (block && !prompt.includes('## Project skills')) prompt = `${prompt}\n\n${block}`
   }
   seeNative(doc)
-  const taken = await nativeAnswer({ seat, base, text: prompt, schema: nativeSchema, phase, native })
+  const taken = await nativeAnswer({ seat, base, text: prompt, schema: finalSchema, phase, native })
   if (taken.failed) return { ...taken, native: { model: native.model, effort: native.effort } }
-  return { answer: taken.answer, text: seat === 'judge' ? judgeText(taken.answer) : '', seat: 'native', model: native.model, effort: native.effort, native: { model: native.model, effort: native.effort } }
+  return { answer: taken.answer, text: seat === 'judge' ? judgeText(taken.answer) : '', seat: 'native', model: native.model, effort: native.effort, native: { model: native.model, effort: native.effort }, ...(record.continued === true ? { continued: true } : {}) }
 }
 
 // A correction of design.md, the document of a short design. No Writer seat can write it (a Writer seat takes spec.md,
@@ -827,8 +835,11 @@ function mapMessage() {
   return lines(`Map the approved spec ${SPEC} to the code: one line per requirement, with the file and line where the plan will touch it, what the plan reuses, and the tests that pin it.`)
 }
 
-function planWriterMessage(map = null) {
-  const base = lines(`Write the plan and the tasks of ${feature}: ${PLAN} and ${TASKS}, from the approved spec ${SPEC}.`, ...planBinLines())
+function planWriterMessage(map = null, onlyPlan = false) {
+  const ask = onlyPlan
+    ? `Write the plan of ${feature}: ${PLAN}, from the approved spec ${SPEC}. Do not touch ${TASKS}.`
+    : `Write the plan and the tasks of ${feature}: ${PLAN} and ${TASKS}, from the approved spec ${SPEC}.`
+  const base = lines(ask, ...planBinLines())
   if (map === null) return base
   return lines(base, '', '## Mapa del código', '', map, '', 'Las líneas son posiciones de lectura: confírmalas antes de editar.')
 }
@@ -1083,7 +1094,7 @@ async function examine(author) {
       'examiner',
       native.model,
       native.effort,
-      `${examinerMessage()}\n\n${examinerPartialForNative({ partialDir: `${repoRoot}/.aether/exam`, partialPaths })}`,
+      `${examinerMessage()}\n\n${examinerPartialForNative({ partialDir: `${repoRoot}/.aether/exam`, partialPaths })}\n\n${nativeLines('examiner')}`,
       { phase: 'Exam', label: 'exam: examiner (relaunch)', schema: EXAMINER_SCHEMA },
     )
     if (relaunch !== null && fits(EXAMINER_SCHEMA, relaunch)) {
@@ -1124,16 +1135,32 @@ async function full() {
   // 3. The plan and the tasks, which aether-plan check must pass; a failed check gets one more Writer round with the errors.
   // Before the Writer, the code map when the approved spec reaches the map threshold (planMap logs its own failure
   // and hands back null, and the plan is then written without a map). The native Writer writes the plan in two
-  // calls: plan.md first (an external seat still answers the whole round at once), then tasks.md reading it.
-  const writePlan = (step, text) =>
-    seatRound({ seat: 'writer', doc: 'plan', step, text, schema: WRITER_SCHEMA, nativeSchema: PLAN_WRITER_SCHEMA, nativeText: lines(text, '', 'Write only plan.md and commit it; the tasks come in another call.'), phase: 'Plan', writes: 'plan' })
+  // calls: plan.md first (an external seat still answers the whole round at once), then tasks.md reading it. When the
+  // native Writer continues an external partial, it stays one call with both documents (R7) and no tasks call follows.
+  const writePlan = (step, text, native = null) =>
+    seatRound({ seat: 'writer', doc: 'plan', step, text, schema: WRITER_SCHEMA, nativeSchema: PLAN_WRITER_SCHEMA, nativeText: native === null ? lines(text, '', 'Write only plan.md and commit it; the tasks come in another call.') : native, oneCallOnPartial: true, phase: 'Plan', writes: 'plan' })
   const map = await planMap()
   const planText = planWriterMessage(map)
-  const plan = await writePlan('write', planText)
+  const planOnlyText = lines(planWriterMessage(map, true), '', 'Write only plan.md and commit it; the tasks come in another call.')
+  const plan = await writePlan('write', planText, planOnlyText)
   if (plan.failed) return failure('plan-writer', plan.failed, plan).end
   let written
   let checked
-  if (plan.seat === 'native') {
+  if (plan.seat === 'native' && plan.continued === true) {
+    const writeSingle = (step, text) => nativeAnswer({ seat: 'writer', base: `plan: writer ${step}`, text, schema: WRITER_SCHEMA, phase: 'Plan', native: plan.native })
+    checked = await planCheck()
+    if (checked.error) return failure('plan-check', `aether-plan check did not run: ${checked.error}`).end
+    if (!checked.ok) {
+      const single = await writeSingle('write (retry)', lines(planText, '', checkErrorsLines(checked.errors)))
+      if (single.failed) return failure('plan-writer', single.failed, single).end
+      written = { answer: single.answer, model: plan.model }
+      checked = await planCheck()
+      if (checked.error) return failure('plan-check', `aether-plan check did not run: ${checked.error}`).end
+      if (!checked.ok) return failure('plan-check', `aether-plan check ${TASKS} failed after the Writer's second try: ${checked.errors.join(' ')}`).end
+    } else {
+      written = { answer: plan.answer, model: plan.model }
+    }
+  } else if (plan.seat === 'native') {
     const writeTasks = (step, text) => nativeAnswer({ seat: 'writer', base: `plan: writer ${step}`, text, schema: TASKS_WRITER_SCHEMA, phase: 'Plan', native: plan.native })
     const tasks = await writeTasks('tasks write', tasksMessage())
     if (tasks.failed) return failure('plan-writer', tasks.failed, tasks).end
@@ -1157,7 +1184,10 @@ async function full() {
     }
     written = { answer: join(plan.answer, finalTasks.answer), model: plan.model }
   } else {
-    checked = await checkedAfter('write', planText, writePlan)
+    // An external seat answered the round at once; its check retry does the same, with no native split-call
+    // overrides, so a retry that falls back to the native Writer still writes both documents.
+    const retryPlan = (step, text) => seatRound({ seat: 'writer', doc: 'plan', step, text, schema: WRITER_SCHEMA, phase: 'Plan', writes: 'plan' })
+    checked = await checkedAfter('write', planText, retryPlan)
     if (checked.end) return checked.end
     written = checked.retried || plan
   }
