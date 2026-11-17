@@ -177,6 +177,7 @@ const OPS_SCHEMA = {
 
 // The answer of the code map: one line per requirement of the spec, with the file and line the plan will touch.
 const MAP_SCHEMA = {
+  type: 'object',
   required: ['map'],
   properties: {
     map: { type: 'string' },
@@ -948,7 +949,7 @@ async function planMap() {
     log('plan: map: the mapper ended without an answer; the plan is written without a map')
     return null
   }
-  if (!fits(MAP_SCHEMA, answer) || answer.map.trim() === '') {
+  if (!fits(MAP_SCHEMA, answer) || typeof answer.map !== 'string' || answer.map.trim() === '') {
     log('plan: map: the mapper answered without a map; the plan is written without a map')
     return null
   }

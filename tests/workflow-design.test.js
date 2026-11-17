@@ -318,6 +318,32 @@ for (const [name, mapper] of [['rejects', () => null], ['answers empty', () => (
   })
 }
 
+for (const [name, mapper] of [['answers no map', () => ({})], ['answers a non-string map', () => ({ map: 5 })]]) {
+  test(`R6: a map that ${name} leaves the plan written without a map, the result of the same shape, and the log says it`, async () => {
+    const run = await go(ARGS, { ops: mapOps(15), mapper })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    assert.equal(run.result.status, 'approved')
+    assert.equal(run.calls.filter((c) => c.label === 'plan: map').length, 1)
+    assert.ok(!planWriter(run).prompt.includes('Mapa del código'))
+    assert.ok(run.logs.some((line) => /plan: map: .*the plan is written without a map/.test(line)), run.logs.join('\n'))
+    const baseline = await go(ARGS)
+    assert.deepEqual(Object.keys(run.result).sort(), Object.keys(baseline.result).sort())
+  })
+}
+
+for (const [name, requirements] of [['fails', { raw: { exitCode: 1, stdout: '{}\n' } }], ['returns an error', { error: 'boom' }]]) {
+  test(`R6: a requirements step that ${name} writes the plan without a map and the log says it`, async () => {
+    const ops = (call, fallback) => (call.command.verb === 'requirements' ? requirements : fallback(call))
+    const run = await go(ARGS, { ops, mapper: () => { throw new Error('the mapper must not run') } })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    assert.equal(run.result.status, 'approved')
+    assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'judge', 'examiner'])
+    assert.equal(run.calls.filter((c) => c.label === 'plan: map').length, 0)
+    assert.ok(!planWriter(run).prompt.includes('Mapa del código'))
+    assert.ok(run.logs.some((line) => /plan: map: .*the plan is written without a map/.test(line)), run.logs.join('\n'))
+  })
+}
+
 test('the plan Judge reads what check printed, and the author of each document is the model that wrote it', async () => {
   const warn = { ...CHECK_OK, warnings: ['R3 has no task that serves it.'] }
   let docs = {}
