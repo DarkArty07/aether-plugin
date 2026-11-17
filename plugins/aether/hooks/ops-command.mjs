@@ -43,6 +43,7 @@ const SESSION = /^[A-Za-z0-9-]+$/
 const AUTHOR = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 const TASKS = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*\/tasks\.md$/
+const SPEC = /^specs\/\d{3}-[a-z0-9-]+\/spec\.md$/
 const HARNESSES = /^[a-z]+(,[a-z]+)*$/
 const SWITCH = ['on', 'off']
 const SEAT_ID = /^(judge|writer|examiner)-\d{8}-\d{6}-[0-9a-f]{4}$/
@@ -138,7 +139,7 @@ const COMMANDS = {
     { checks: [word('seat-wait'), is(SEAT_ID), word('--max'), is(MAX)] },
     { checks: [word('seat-stop'), is(SEAT_ID)] },
   ],
-  'aether-plan': [{ checks: [word('check'), is(TASKS)] }],
+  'aether-plan': [{ checks: [word('check'), is(TASKS)] }, { checks: [word('requirements'), is(SPEC)] }],
   'aether-exam': [
     { checks: [word('store'), is(FEATURE)] },
     { checks: [word('recover'), is(FEATURE)] },

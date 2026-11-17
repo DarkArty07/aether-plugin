@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 'use strict'
 
-// aether-plan: checks and compiles plans and briefs, builds /aether:design args, and finds the next spec number.
-// Calls lib/plan-compile.js, lib/plan-design.js or lib/plan-number.js.
+// aether-plan: checks and compiles plans and briefs, builds /aether:design args, finds the next spec number,
+// and counts a spec's requirements against the map threshold.
+// Calls lib/plan-compile.js, lib/plan-design.js, lib/plan-number.js or lib/plan-requirements.js.
 
+const fs = require('node:fs')
 const path = require('node:path')
 const argv = process.argv.slice(2)
 const verb = argv[0]
 
 const USAGE =
-  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline] | aether-plan next-spec | aether-plan design-args <feature> [--short <document> --intent <text> --author <model>]'
+  'usage: aether-plan check <plan.md> | aether-plan compile <plan.md> [--run <id>] [--only task-1,task-2] [--allow-main] [--no-lanes] [--no-baseline] | aether-plan next-spec | aether-plan design-args <feature> [--short <document> --intent <text> --author <model>] | aether-plan requirements <spec.md>'
 
 if (verb === 'next-spec') {
   const { nextSpec } = require(path.join(__dirname, '..', 'lib', 'plan-number.js'))
@@ -20,6 +22,28 @@ if (verb === 'next-spec') {
 } else if (verb === 'check' || verb === 'compile') {
   const { main } = require(path.join(__dirname, '..', 'lib', 'plan-compile.js'))
   main(argv, { cwd: process.cwd(), stdout: process.stdout })
+} else if (verb === 'requirements') {
+  const { loadThreshold, requirementsResult } = require(path.join(__dirname, '..', 'lib', 'plan-requirements.js'))
+  const fail = (errors) => {
+    process.stdout.write(JSON.stringify({ ok: false, errors, warnings: [] }) + '\n')
+    process.exit(1)
+  }
+  const specArg = argv[1]
+  if (!specArg || argv.length > 2) fail([USAGE])
+  const specPath = path.resolve(specArg)
+  let specText
+  try {
+    specText = fs.readFileSync(specPath, 'utf8')
+  } catch {
+    fail([`spec not found: ${specPath}`])
+  }
+  let threshold
+  try {
+    threshold = loadThreshold()
+  } catch (err) {
+    fail([err.message])
+  }
+  process.stdout.write(JSON.stringify(requirementsResult(specText, threshold)) + '\n')
 } else {
   process.stdout.write(JSON.stringify({ ok: false, errors: [USAGE], warnings: [] }) + '\n')
   process.exit(1)

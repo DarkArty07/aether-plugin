@@ -567,3 +567,11 @@ test('aether-plan compile refuses in a Lead session when an open autonomous run 
   assert.match(resCost.json.errors[0], new RegExp(started3.run.id))
   assert.match(resCost.json.errors[0], /aether-autonomy end --outcome ceiling/)
 })
+
+test('the usage error of the bin names aether-plan requirements <spec.md>', (t) => {
+  const repo = makeRepo(t)
+  const r = runBin(PLAN_BIN, ['requirements'], repo.dir)
+  assert.equal(r.status, 1)
+  assert.equal(r.json.ok, false)
+  assert.ok(r.json.errors[0].includes('aether-plan requirements <spec.md>'), r.json.errors[0])
+})
