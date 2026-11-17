@@ -891,6 +891,42 @@ function sessionOf(dataDir, task, session) {
   return launch ? launch.session ?? null : null
 }
 
+// The reason a verdict line the system writes itself carries (spec 044, R23).
+const AUTOCLOSE_REASON = 'closed by the system: the read-only checks passed'
+
+// Closes a read-only delegate whose checks pass, without the Lead's verdict (spec 044, R23): the same approval line
+// `verdict()` writes, with `auto: true`. Takes the task's last launch and does nothing, returning
+// `{ closed: false, reason }`, when the launch edits, when the ladder already closed the task, or when the same
+// checks an approve runs fail. Never throws: a failure leaves the task pending as today.
+function closeReadOnly({ task, session, cwd, dataDir, now }) {
+  try {
+    if (!isId(task)) return { closed: false, reason: 'unknown task' }
+    const r = resolve({ dataDir, cwd, now })
+    const taskSession = sessionOf(r.dataDir, task, session)
+    const entries = taskEntries(r.dataDir, task, taskSession)
+    const launch = lastOf(entries, isLaunch).entry
+    if (!launch) return { closed: false, reason: 'unknown task' }
+    if (editsOf(launch)) return { closed: false, reason: 'the task edits: only aether-delegate verdict closes it' }
+    const verdictInput = { kind: 'approve', findings: [], reason: null, fromScratch: false }
+    const state = ladderLib.stateOf(verdictInputs(entries), r.ladder, auth.startStepOf(entries, r.ladder, r.configDir))
+    const judged = ladderLib.judge(state, verdictInput, r.ladder)
+    if (!judged.accepted) return { closed: false, reason: judged.error }
+    const error = approveError(r, entries, launch, undefined, [])
+    if (error) return { closed: false, reason: error }
+    const next = judged.next
+    let repo = null
+    try { repo = repoPaths(r.cwd).mainRoot } catch { /* not a repository: the record keeps repo null */ }
+    const written = log.appendEntry(r.dataDir, {
+      kind: 'verdict', time: r.now(), session: taskSession, task, attempt: launch.attempt, step: state.step, verdict: 'approved',
+      input: verdictInput, reason: AUTOCLOSE_REASON, cause: next.cause, next, ignore: [], auto: true, repo,
+    })
+    if (!written) return { closed: false, reason: 'the verdict line could not be written' }
+    return { closed: true }
+  } catch (err) {
+    return { closed: false, reason: messageOf(err) }
+  }
+}
+
 async function verdict(input, deps = {}) {
   const { task, verdict: kind, reason, findings, fromScratch, worktree, session: named, ignore } = isObject(input) ? input : {}
   const refuse = (error, extra = {}) => ({ ok: false, task: isId(task) ? task : null, verdict: null, step: null, next: null, error, ...extra })
@@ -935,4 +971,4 @@ async function verdict(input, deps = {}) {
   }
 }
 
-module.exports = { parseBrief, begin, verdict, ignoreOf, findingsSection }
+module.exports = { parseBrief, begin, verdict, closeReadOnly, ignoreOf, findingsSection }
