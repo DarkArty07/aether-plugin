@@ -330,7 +330,7 @@ function main(argv, { cwd = process.cwd(), env = process.env, stderr = process.s
     const ids = named.length ? namedRuns(named) : inFlightRuns(mainRoot, earliest)
     ensureExcluded(gitCommonDir)
     const data = env.AETHER_DATA_DIR || dataDir(env)
-    const sessions = [...new Set(paused.map(({ run }) => run.session).filter((s) => typeof s === 'string' && s !== ''))]
+    const sessions = [...new Set(paused.flatMap(({ run }) => [...autonomy.runSessions(run)]))]
     const chainStop = stopAll(data, { sessions })
     const settings = autonomy.brakeSettings(mainRoot, { session, dataDir: data })
     const abandoned = autonomy.abandonedRuns(mainRoot, data)
