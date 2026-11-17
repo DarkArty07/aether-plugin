@@ -17,7 +17,7 @@ const { nulEntries, runShell } = require('./common.js')
 
 // The refusal text of `verdict --verdict approve` for an editing task with no worktree (lib/delegate-task.js).
 const NO_WORKTREE = 'approve needs the worktree of the attempt (--worktree) or the checks of its result'
-const MERGE_MAIN = 'merge-main needs a grant: ask the owner for the merge, record it with aether-autonomy grant --class merge-main --quote "<their words>", then run approve again'
+const MERGE_MAIN = 'merge-main needs a grant: record it with aether-autonomy grant --class merge-main --quote "<their words>" once the owner gives it, then run approve again; in an autonomous run the merge goes to "Espera tu sí" of the brief and the owner is not asked at that moment'
 const UNIT_BRANCH = /^aether\/([^/]+)\/(task-\d+)$/
 // The file in the main checkout's .aether directory whose testCommand replaces npm test. Aether only reads it and never
 // writes it, so it is not in the map of what Aether writes there (lib/tree-map.js).
