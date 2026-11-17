@@ -97,12 +97,12 @@ Report from it:
 - the lanes, in these lines, one block per harness that ran:
 
       Lanes (agy)
-        Gemini Models:          5 h 34 % · weekly 8 %  · 1.2M tokens · $2.10 at list price
-        Claude and GPT models:  5 h 61 % · weekly 12 % · 3.4M tokens · $9.80
+        Gemini Models:          5 h 34 % · weekly 8 %  · 1.2M tokens · US$ 2.10 at list price
+        Claude and GPT models:  5 h 61 % · weekly 12 % · 3.4M tokens · US$ 9.80
       Lanes (grok)
-        Grok plan:              weekly 100 % → 97 % · resets 2026-10-17 09:08 UTC · 1 call · $0.04
-      Native Claude:            $3.40
-      Total at list price: $15.30; the plans covered $11.90 (78 %)
+        Grok plan:              weekly 100 % → 97 % · resets 2026-10-17 09:08 UTC · 1 call · US$ 0.04
+      Native Claude:            US$ 3.40
+      Total at list price: US$ 15.30; the plans covered US$ 11.90 (78 %)
 
 ## 5. Act on it
 
