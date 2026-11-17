@@ -67,6 +67,21 @@ const FINDINGS = {
   },
 }
 
+const REVIEW_FINDINGS = {
+  type: 'array',
+  items: {
+    type: 'object',
+    required: ['severity', 'title', 'file', 'evidence', 'fix'],
+    properties: {
+      severity: { type: 'string', enum: ['critical', 'important', 'minor'] },
+      title: { type: 'string' },
+      file: { type: 'string', description: 'path:line' },
+      evidence: { type: 'string' },
+      fix: { type: 'string', description: 'the change that resolves the finding, in one line' },
+    },
+  },
+}
+
 // concerns and question are optional: a report that leaves them out is a report (issue #110).
 const IMPLEMENTER_SCHEMA = {
   type: 'object',
@@ -98,7 +113,7 @@ const REVIEW_SCHEMA = {
   required: ['verdict', 'findings', 'declined', 'summary'],
   properties: {
     verdict: { type: 'string', enum: ['ready', 'ready-with-fixes', 'not-ready'] },
-    findings: FINDINGS,
+    findings: REVIEW_FINDINGS,
     declined: {
       type: 'array',
       items: { type: 'string' },
