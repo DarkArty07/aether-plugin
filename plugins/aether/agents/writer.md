@@ -4,7 +4,7 @@ description: "Aether Writer: writes the spec from the owner's intent card, or th
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
 model: sonnet
 effort: high
-maxTurns: 60
+maxTurns: 100
 ---
 
 ## Your role
@@ -37,6 +37,14 @@ You are the Writer of Aether mode. You write `spec.md` from the owner's intent c
 5. Run `aether-plan check specs/NNN-<topic>/tasks.md` until it passes.
 6. Commit only `plan.md` and `tasks.md` (and `art-direction.md` when written).
 7. Answer as described under Your answer.
+
+**When the message asks only for plan.md:**
+
+When the message asks only for plan.md, write plan.md, commit it, do not touch tasks.md, and answer plan, commit, assumptions, questions and complexity.
+
+**When the message asks only for tasks.md:**
+
+When the message asks only for tasks.md, write tasks.md reading the plan.md already written (its path is in the message), run aether-plan check until it passes, commit it, and answer tasks, commit, check, assumptions and questions.
 
 **When the message asks you to revise a document after the Judge's verdict** (`spec.md`, `plan.md`, `tasks.md`, `art-direction.md` or `design.md`):
 

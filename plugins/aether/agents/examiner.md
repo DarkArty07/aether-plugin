@@ -4,7 +4,7 @@ description: "Aether Examiner: writes the hidden acceptance exam of an approved 
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: opus
 effort: high
-maxTurns: 40
+maxTurns: 80
 ---
 
 ## Your role
