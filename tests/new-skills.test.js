@@ -32,7 +32,7 @@ test('aether:skills has its cover and can be loaded by the Lead (C12, R34)', () 
 
 test('aether:skills teaches the four types, where to find and download, what to review, when to create and how to give skills to a task (R34, R46, C12)', () => {
   const text = read('skills', 'skills', 'SKILL.md')
-  for (const token of ['~/.agents/skills/', '.agents/skills/', '.claude/skills/', 'skills-lock.json', 'uses.jsonl', 'npx skills find', 'npx skills add', 'aether-autonomy trust', 'trusted.json', 'skill-install', 'AETHER-SKILLS:', 'Skills:', 'AGENTS.md', 'at most 3', '500 lines']) {
+  for (const token of ['~/.agents/skills/', '.agents/skills/', '.claude/skills/', 'skills-lock.json', 'uses.jsonl', 'npx skills@1.9.0 find', 'npx skills@1.9.0 add', 'aether-autonomy trust', 'trusted.json', 'skill-install', 'AETHER-SKILLS:', 'Skills:', 'AGENTS.md', 'at most 3', '500 lines']) {
     assert.ok(text.includes(token), `the skill names ${token}`)
   }
   const lower = text.toLowerCase()

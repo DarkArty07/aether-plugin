@@ -29,8 +29,10 @@ Search for a skill when the visible-signals notice fires (on the first Aether st
 Skills are for practical processes and repeatable procedures. The API documentation of a library is looked up with Context7, not by installing a skill. When Context7 is not connected, read the library's own documentation.
 
 The Lead searches and installs external skills using the `skills.sh` ecosystem:
-- Search for available skills: `npx skills find <query>`
-- Download and install a skill: `npx skills add <source>`
+- Search for available skills: `npx skills@1.9.0 find <query>`
+- Download and install a skill: `npx skills@1.9.0 add <source>`
+
+The version is pinned so that `npx` does not fetch and run whatever was published last; raise it by hand when a newer release is needed.
 
 ### The Review Rule
 
