@@ -158,6 +158,22 @@ test('a read-only delegate runs the chain; its answer is saved and an empty one 
   assert.deepEqual([blank.checks.ok, blank.checks.empty], [false, true])
 })
 
+test('the text of a read-only result says the system closed it when its checks pass, and how to judge it when they fail (spec 044, D11)', async (t) => {
+  const { repo, dataDir } = world(t, { edits: false, owns: [], tests: null })
+  const chain = async () => ({ ok: true, status: 'ok', text: 'the answer', attribution: 'Aether: the answer is from grok-4.7 at high', attempts: [], journaled: true })
+  const result = await dr.runTask({ id: 't1', cwd: repo.dir, dataDir }, { runChain: chain })
+  assert.equal(result.checks.ok, true)
+  assert.match(result.text, /Closed by the system as approved: the read-only checks passed/)
+  assert.match(result.text, /aether-delegate verdict --task t1 --verdict fix\|infeasible/)
+  assert.doesNotMatch(result.text, /Judge it:/)
+
+  const other = world(t, { edits: false, owns: [], tests: null })
+  const red = await dr.runTask({ id: 't1', cwd: other.repo.dir, dataDir: other.dataDir }, { runChain: async () => ({ ok: true, status: 'ok', text: 'the answer', attribution: 'a', changed: ['src/a.js'], attempts: [], journaled: true }) })
+  assert.equal(red.checks.ok, false)
+  assert.match(red.text, /Judge it: aether-delegate verdict --task t1 --verdict approve\|fix\|infeasible/)
+  assert.doesNotMatch(red.text, /Closed by the system/)
+})
+
 test('a read-only delegate that touched the copy comes back marked with the files it touched, never with an answer (R6)', async (t) => {
   const { repo, dataDir } = world(t, { edits: false, owns: [], tests: null })
   const chain = async () => ({ ok: false, status: 'violation', text: null, changed: ['src/a.js'], attempts: [], journaled: true })
