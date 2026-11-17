@@ -1,5 +1,5 @@
 ---
-description: "Write a feature's spec.md from the intent the owner confirmed, without stopping to ask."
+description: "Write a feature's spec.md from the intent the owner confirmed, without stopping to ask. Use when the intent is confirmed and its spec is the next step."
 ---
 
 ## User Input

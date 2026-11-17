@@ -1,5 +1,5 @@
 ---
-description: "Create or update the project's constitution: the principles every spec, plan and task follows."
+description: "Create or update the project's constitution: the principles every spec, plan and task follows. Use when the owner sets or changes those principles."
 ---
 
 ## User Input
