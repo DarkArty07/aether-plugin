@@ -27,6 +27,20 @@ That loads the tree for one session, in place of the installed release; with the
 
 Node.js 22 with no dependencies. The workflow's tests run its script in a harness with stubbed agents, so they spend no tokens. `node scripts/aa-pages.js read` reads Artificial Analysis model pages when the owner asks and writes the snapshot; `node scripts/refresh-lanes.js [--write]` reads the snapshot and, only with `--write`, writes the intelligence and the cost per task of every row with a page of `config/pairs.json` in one run, displays the recalculated ladder and does not save it; `node scripts/build-models-index.js` rebuilds the index from the snapshot without network.
 
+### Evals
+
+`plugins/aether/evals/` holds the plugin's behaviour suite for `claude plugin eval`, in early access in Claude Code 2.1.326. Each case is a folder with a `prompt.md` and its `graders/`. Each case runs with the plugin and without it, and the report gives the difference. The suite has two tags:
+
+- `dormido`: five cases that check that Aether does nothing in a session that is not the Lead's. The answer is the same with and without the plugin, the trace never says `Aether mode is active`, no Aether skill is loaded, and a write goes through. They use no judge.
+- `skills`: ten cases for the skills the model may pick by itself. Seven ask for the work of one of them (art-direction, constitution, specify, plan, tasks, models and skills), and three ask for something unrelated that must load none. Their `llm` graders call a judge.
+
+```
+claude plugin eval plugins/aether --tag dormido --allow-tools Write --model haiku --max-cost-usd 3 --no-publish
+claude plugin eval plugins/aether --tag skills --allow-tools Write --model haiku --max-cost-usd 2 --no-publish
+```
+
+A run spends the account's plan or API credit, and its results go to a `results/` folder beside the cases, which git ignores. A case cannot start its session as `aether:lead`, so the suite does not evaluate Aether mode itself.
+
 Take the number of a new `docs/decisions.md` entry when the change is integrated, not when the branch starts: if `main` moved since and the number is taken, renumber to the next free number before merging. `tests/docs-decisions.test.js` fails on a repeated number. A decision or issue about a change to a documented concept quotes the owner's decisive words; an issue about a third-party service gives the version, the date and the source of the fact it rests on.
 
 ### Check the plan format
