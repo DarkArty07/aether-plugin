@@ -11,7 +11,7 @@ const using = read('skills', 'using-aether', 'SKILL.md')
 const section = swarm.slice(swarm.indexOf('Final review findings'))
 
 test('R14: the swarm skill says what to do with each verdict', () => {
-  assert.ok(section.includes('ready is approved.'))
+  assert.ok(section.includes('A ready verdict is approved.'))
   assert.ok(section.includes('ready-with-fixes is approved when no finding is important or critical; when one is, fix the critical and important findings, and the minor ones are deferred.'))
   assert.ok(section.includes('This rule serves the final reviewer and the reviewer of a delegate alike.'))
 })
