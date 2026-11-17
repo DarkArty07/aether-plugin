@@ -92,7 +92,7 @@ Existing tests changed in the same task: `tests/agents.test.js` line 54 (`'60'` 
 
 **Aether:**
 - Area: plan-verb
-- Owns: `plugins/aether/lib/plan-requirements.js`, `plugins/aether/config/design.json`, `plugins/aether/bin/aether-plan`, `plugins/aether/hooks/ops-command.mjs`, `plugins/aether/hooks/ops.test.ts`, `docs/guide/ops.md`, `docs/reference/components.md`, `tests/plan-requirements.test.js`, `tests/ops-command-design.test.js`, `tests/aether-plan.test.js`
+- Owns: `plugins/aether/lib/plan-requirements.js`, `plugins/aether/config/design.json`, `plugins/aether/bin/aether-plan`, `plugins/aether/hooks/ops-command.mjs`, `plugins/aether/hooks/ops.test.ts`, `docs/guide/ops.md`, `docs/reference/components.md`, `tests/plan-requirements.test.js`, `tests/ops-command-design.test.js`, `tests/aether-plan.test.js`, `tests/ops-command.test.js`
 - Depends on: none
 - Serves: R3
 
