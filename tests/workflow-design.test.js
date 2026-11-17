@@ -1840,9 +1840,9 @@ test('an Examiner that ends without a valid answer recovers checkout tests witho
   })
   assert.equal(recovered.error, null, recovered.error && recovered.error.stack)
   assert.equal(recovered.result.status, 'approved')
-  assert.equal(opsCalls(recovered, 'recover').length, 1)
+  assert.equal(opsCalls(recovered, 'recover').length, 2, 'recover runs before the relaunch and again after it fails')
   assert.equal(opsCalls(recovered, 'store').length, 0)
-  assert.equal(recovered.calls.filter((c) => c.role === 'examiner').length, 2)
+  assert.deepEqual(recovered.calls.filter((c) => c.role === 'examiner').map((c) => c.label), ['exam: examiner', 'exam: examiner (retry)', 'exam: examiner (relaunch)'])
   assert.equal(recovered.result.exam.status, 'failed')
   assert.equal(recovered.result.exam.step, 'examiner')
   assert.deepEqual(recovered.result.exam.tests, marks)
@@ -1856,8 +1856,64 @@ test('an Examiner that ends without a valid answer recovers checkout tests witho
   assert.equal(recoverFailed.result.exam.step, 'examiner')
   assert.equal('tests' in recoverFailed.result.exam, false)
   assert.match(recoverFailed.result.exam.reason, /recover boom/)
+  assert.deepEqual(recoverFailed.calls.filter((c) => c.role === 'examiner').map((c) => c.label), ['exam: examiner', 'exam: examiner (retry)'], 'a failed recover means no relaunch: the single launch and its retry')
 
   const ok = await go(ARGS)
   assert.equal(opsCalls(ok, 'recover').length, 0)
   assert.deepEqual(ok.result.exam, { status: 'stored', dir: '/data/exams/007-demo' })
+})
+
+const LEFT = [{ path: 'c1.test.js', inIndex: true }, { path: 'c2.test.js', inIndex: false }] // the shape `aether-exam recover` returns (lib/exam.js:120)
+const examinerCalls = (run) => run.calls.filter((c) => c.role === 'examiner')
+
+// nativeAnswer makes two calls for one launch (the label, then `${label} (retry)`): a launch is a call whose label does not end in `(retry)`.
+const launchesOf = (run) => examinerCalls(run).filter((c) => !c.label.endsWith('(retry)'))
+const relaunchAnswers = (call) => (call.label === 'exam: examiner (relaunch)' ? EXAM : null)
+
+test('R9: an Examiner that ends with no answer after writing tests is relaunched once with those tests, and the Lead is not asked to resume', async () => {
+  const run = await go(ARGS, {
+    examiner: relaunchAnswers,
+    ops: (call, fallback) => (call.command.verb === 'recover' ? { feature: FEATURE, tests: LEFT } : fallback(call)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const calls = examinerCalls(run)
+  assert.deepEqual(calls.map((c) => c.label), ['exam: examiner', 'exam: examiner (retry)', 'exam: examiner (relaunch)'])
+  assert.equal(launchesOf(run).length, 2)
+  assert.ok(calls[2].prompt.includes('c1.test.js') && calls[2].prompt.includes('c2.test.js'))
+  assert.equal(opsCalls(run, 'store').length, 1)
+  assert.equal(run.result.status, 'approved')
+  assert.equal(run.result.exam.status, 'stored')
+})
+
+test('R10: an Examiner that does not finish twice gives one relaunch only, and the result lists the existing tests with their index mark', async () => {
+  const run = await go(ARGS, {
+    examiner: () => null,
+    ops: (call, fallback) => (call.command.verb === 'recover' ? { feature: FEATURE, tests: LEFT } : fallback(call)),
+  })
+  assert.equal(launchesOf(run).length, 2)
+  assert.equal(examinerCalls(run).length, 3, 'the first launch and its retry, then the relaunch with no retry')
+  assert.equal(opsCalls(run, 'recover').length, 2)
+  assert.equal(opsCalls(run, 'store').length, 0)
+  assert.equal(run.result.exam.status, 'failed')
+  assert.deepEqual(run.result.exam.tests.map((t) => [t.path, t.inIndex]), [['c1.test.js', true], ['c2.test.js', false]])
+})
+
+test('R10: an Examiner that ends with no answer and left no tests is not relaunched', async () => {
+  const run = await go(ARGS, { examiner: () => null })
+  assert.equal(launchesOf(run).length, 1)
+  assert.equal(examinerCalls(run).length, 2, 'the launch and its own retry, and no relaunch')
+  assert.equal(run.result.exam.status, 'failed')
+})
+
+test('R9: an external Examiner seat that already fell to the native one still gets one relaunch in total', async () => {
+  // superdelegation on: the Examiner seat is started, and the default handler hands the round back (exit 3, handedBack('examiner')).
+  const run = await go({ ...ARGS, superdelegation: 'on' }, {
+    examiner: relaunchAnswers,
+    ops: (call, fallback) => (call.command.verb === 'recover' ? { feature: FEATURE, tests: LEFT } : fallback(call)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(opsCalls(run, 'seat-start').filter((c) => c.command.rest[0] === 'examiner').length, 1)
+  assert.deepEqual(launchesOf(run).map((c) => c.label), ['exam: examiner', 'exam: examiner (relaunch)'])
+  assert.equal(opsCalls(run, 'store').length, 1)
+  assert.equal(run.result.exam.status, 'stored')
 })

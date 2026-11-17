@@ -674,9 +674,9 @@ function failedPair(reply, value) {
 // the native agent answers with `nativeSchema`, which is the same unless the round is a correction; `nativeText`
 // is the message of the native agent when the seat hands the round back (default `text`).
 // Resolves to { answer, text, seat, model, value } (seat: 'native' or '<harness> <model>'; model: the one that
-// answered; value: the external round's) or { failed }; a native round also carries its pair as `native`
-// (`effort` and `model`). A seat-start the autonomous run refuses
-// returns { failed, refused, stop, run } and does not hand the round to the native agent.
+// answered; value: the external round's) or { failed }; a round the native agent took also carries its pair as
+// `native` (`effort` and `model`), also when it failed, so the Examiner can be relaunched on it. A seat-start the
+// autonomous run refuses returns { failed, refused, stop, run } and does not hand the round to the native agent.
 async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema, nativeText = null, phase, author = null, writes = null }) {
   const base = step ? `${doc}: ${seat} ${step}` : `${doc}: ${seat}`
   const record = { document: doc, seat, provider: 'native', id: null, lane: null, note: null }
@@ -782,7 +782,7 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   }
   seeNative(doc)
   const taken = await nativeAnswer({ seat, base, text: prompt, schema: nativeSchema, phase, native })
-  if (taken.failed) return taken
+  if (taken.failed) return { ...taken, native: { model: native.model, effort: native.effort } }
   return { answer: taken.answer, text: seat === 'judge' ? judgeText(taken.answer) : '', seat: 'native', model: native.model, effort: native.effort, native: { model: native.model, effort: native.effort } }
 }
 
@@ -1066,14 +1066,36 @@ function corrector(doc, path, phase) {
 }
 
 // The Examiner's round on the approved plan, written by `author`, and the exam's storage: { status: 'stored', dir } or
-// failedResult. A failure here does not undo the approval.
+// failedResult. A failure here does not undo the approval. An Examiner that ends failed with no refusal, after
+// writing tests, is relaunched once with those tests; a relaunch that answers is stored like a native Examiner,
+// and one that does not finish lists what `recover` finds, in the shape of today. There is never a third launch.
 async function examine(author) {
   const round = await seatRound({ seat: 'examiner', doc: 'exam', step: '', text: examinerMessage(), schema: EXAMINER_SCHEMA, phase: 'Exam', author })
   if (round.refused) return failure('examiner', round.failed, round).end
   if (round.failed) {
     const recovered = await opsTwice(`aether-exam recover ${feature}`, { phase: 'Exam', label: 'exam: recover' })
     if (recovered.error) return failedResult('examiner', `${round.failed} (exam recover failed: ${recovered.error})`)
-    return { ...failedResult('examiner', round.failed), tests: Array.isArray(recovered.tests) ? recovered.tests : [] }
+    const left = Array.isArray(recovered.tests) ? recovered.tests : []
+    if (left.length === 0) return { ...failedResult('examiner', round.failed), tests: left }
+    const native = isObject(round.native) && TIERS.includes(round.native.model) && EFFORTS.includes(round.native.effort) ? round.native : nativeOf('examiner', {}, author)
+    const partialPaths = left.map((t) => t.path)
+    const relaunch = await call(
+      'examiner',
+      native.model,
+      native.effort,
+      `${examinerMessage()}\n\n${examinerPartialForNative({ partialDir: `${repoRoot}/.aether/exam`, partialPaths })}`,
+      { phase: 'Exam', label: 'exam: examiner (relaunch)', schema: EXAMINER_SCHEMA },
+    )
+    if (relaunch !== null && fits(EXAMINER_SCHEMA, relaunch)) {
+      const out = await opsTwice(`aether-exam store ${feature}`, { phase: 'Exam', label: 'exam: store' })
+      if (out.error) return failedResult('exam-store', `aether-exam store failed: ${out.error}`)
+      const dir = typeof out.dir === 'string' ? out.dir : out.stored
+      return typeof dir === 'string' ? { status: 'stored', dir } : failedResult('exam-store', `aether-exam store named no directory: ${JSON.stringify(out).slice(0, 300)}`)
+    }
+    log(`exam: examiner (relaunch): ${relaunch === null ? 'no answer' : 'an answer that does not fit its schema'}`)
+    const again = await opsTwice(`aether-exam recover ${feature}`, { phase: 'Exam', label: 'exam: recover' })
+    if (again.error) return failedResult('examiner', `${round.failed} (exam recover failed: ${again.error})`)
+    return { ...failedResult('examiner', round.failed), tests: Array.isArray(again.tests) ? again.tests : [] }
   }
   if (round.seat !== 'native') {
     // An external Examiner's round stores the exam itself.
