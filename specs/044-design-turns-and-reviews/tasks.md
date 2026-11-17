@@ -121,7 +121,7 @@ const { tempDir, PLUGIN } = require('./helpers.js')
 const { countRequirements, loadThreshold, requirementsResult } = require('../plugins/aether/lib/plan-requirements.js')
 
 const BIN = path.join(PLUGIN, 'bin', 'aether-plan')
-const spec = (n) => ['# Spec', '', '## Requirements', '', ...Array.from({ length: n }, (_, i) => `- R${i + 1}: requirement ${i + 1}. Serves: C1`), '', '## Assumptions', '- R99: not a requirement line, it starts with text'].join('\n')
+const spec = (n) => ['# Spec', '', '## Requirements', '', ...Array.from({ length: n }, (_, i) => `- R${i + 1}: requirement ${i + 1}. Serves: C1`), '', '## Assumptions', '  - R99: not a requirement line, it is indented'].join('\n')
 
 test('R3: the threshold is data in config/design.json', () => {
   assert.equal(loadThreshold(), 15)
@@ -306,7 +306,7 @@ Also, in `tests/workflow-final-slices.test.js` (or `tests/workflow.test.js`, whe
   - `A not-ready is not approved before you write the reason: in the run's diary (.aether/autonomy/<run id>/diary.md) or, outside a run, in your next answer to the owner. There is no command and no flag for it.`
   - `This rule serves the final reviewer and the reviewer of a delegate alike.`
 - `skills/using-aether/SKILL.md`, paragraph «Verify before you relay» (part 2): one line pointer: `Act on a reviewer's verdict, final or of a delegate, with the rule of aether:swarm, «Final review findings».`
-- `skills/using-aether/SKILL.md`, paragraph «The verdict»: replace the sentence `A read-only delegate did not edit, so `aether-delegate approve` refuses it and `approve` on that line closes it.` by: `A read-only delegate whose checks pass is closed by the system; use verdict with it only for fix or infeasible, and before it is closed; when a check fails on files another writer changed, approve --ignore '<glob>'.` (the paragraph at the same size or smaller).
+- `skills/using-aether/SKILL.md`, paragraph «The verdict»: replace the sentence `A read-only delegate did not edit, so `aether-delegate approve` refuses it and `approve` on that line closes it.` by: `A read-only delegate whose checks pass is closed by the system; use verdict with it only for fix or infeasible, and before it is closed; when a check fails on files another writer changed, verdict --verdict approve --ignore '<glob>'.` (the paragraph at the same size or smaller).
 - If the two changes do not fit the margin of part 2 (328 characters) shorten another sentence of the same paragraph without dropping a rule; or put the pointer in part 3.
 
 **Tests (write first):**
@@ -348,7 +348,7 @@ test('R17: the bootstrap carries only a pointer to the rule', () => {
 
 test('R26: the verdict paragraph says the system closes a read-only delegate whose checks pass', () => {
   assert.ok(!using.includes('A read-only delegate did not edit, so `aether-delegate approve` refuses it'))
-  assert.ok(using.includes('A read-only delegate whose checks pass is closed by the system; use verdict with it only for fix or infeasible, and before it is closed; when a check fails on files another writer changed, approve --ignore \'<glob>\'.'))
+  assert.ok(using.includes('A read-only delegate whose checks pass is closed by the system; use verdict with it only for fix or infeasible, and before it is closed; when a check fails on files another writer changed, verdict --verdict approve --ignore \'<glob>\'.'))
 })
 ```
 
@@ -519,7 +519,7 @@ New file `tests/delegate-auto-close.test.js` (follow the setup of `tests/delegat
 1. External read-only delegate, result ok with `checks.ok`: the log has a `verdict` line for the task with `verdict: 'approved'` and `auto: true`, with no call to `aether-delegate verdict`; `unverdictedDelegates({ dataDir })` does not list the task; `unverdictedStopMessage` (lib/continuity-hook.js) has nothing to say about it.
 2. Claude read-only delegate, `aether-delegate answer` records a non-empty answer and no file was touched since the launch: same three assertions.
 3. Empty answer (Claude) or a result with a failed check (external): no `verdict` line; the task is listed by `unverdictedDelegates`.
-4. Red check by files another writer changed: no automatic closing, and `aether-delegate approve --task <id> --ignore '<glob>'` still approves it (the flow of `tests/delegate-task.test.js` 426 and 446 stays green).
+4. Red check by files another writer changed: no automatic closing, and `aether-delegate verdict --task <id> --verdict approve --ignore '<glob>'` still approves it (the flow of `tests/delegate-task.test.js` 426 and 446 stays green).
 5. An editing delegate (a launch with edits): `closeReadOnly` returns `{ closed: false }` and the task still needs `aether-delegate verdict`.
 6. R26: `verdict --verdict fix` and `--verdict infeasible` on an open read-only delegate are accepted; after the automatic closing, the same call is refused by the ladder with the reason that the task is approved.
 7. A second call of `closeReadOnly` on a closed task writes nothing (one `verdict` line only).
@@ -624,7 +624,7 @@ In `tests/docs-facts.test.js`, after the assertions near lines 826 to 864 (same 
   - `MAP_SCHEMA = { required: ['map'], properties: { map: { type: 'string' } } }` in the same schema dialect as the other schemas of the file.
   - In `full()`, between the approval of the spec and the plan Writer: an ops call `aether-plan requirements <SPEC>` (shell, no model); when its JSON has `map: true`, one call `call('mapper', MAP_PAIR.model, MAP_PAIR.effort, mapMessage(), { phase: 'Plan', label: 'plan: map', schema: MAP_SCHEMA })`. It does not pass through `aether-delegate` and writes nothing.
   - `planWriterMessage(map = null)`: with a map, it adds a block `## Mapa del código` with the text and the line `Las líneas son posiciones de lectura: confírmalas antes de editar.`; without a map the message is today's, letter by letter.
-  - Failure (R6): the ops verb fails, the mapper returns null, the answer does not fit the schema or `map` is empty: `log('plan: map: <reason>; the plan is written without a map')` and the run goes on with today's message. It does not go through `failure()`; the result keeps its shape.
+  - Failure (R6): the ops verb fails, the mapper returns null, the mapper call throws (a `try`/`catch` around the call, because the test harness rethrows a handler's error), the answer does not fit the schema or `map` is empty: `log('plan: map: <reason>; the plan is written without a map')` and the run goes on with today's message. It does not go through `failure()`; the result keeps its shape.
   - The header comment of the file (lines 12 to 23, the order of the flow) names the new step.
 - `tests/workflow-design.test.js` and `tests/ops-note.test.js`: the default ops handlers answer `requirements` with `{ requirements: 8, threshold: 15, map: false }`, so every existing test keeps its sequence. Add `'mapper'` to the `ROLES` of both files.
 
@@ -702,7 +702,7 @@ Existing tests of this file that count calls or labels (lines 89, 106, 251 to 31
   - `WRITER_SCHEMA` and `lib/lane-schemas.js` do not change; the external seat keeps `WRITER_SCHEMA`.
   - `seatRound` gains the optional parameters `nativeText` (the message of the native agent when the seat hands the round back; default `text`) and returns the native pair it ran with (`effort` and `model`).
   - First call: `writePlan('write', planText)` stays a `seatRound({ seat: 'writer', doc: 'plan', … })` (an external seat is offered first, with `WRITER_SCHEMA` and today's message); `nativeSchema: PLAN_WRITER_SCHEMA`; `nativeText` is `planWriterMessage(map)` plus the line `Write only plan.md and commit it; the tasks come in another call.`
-  - Second call (only when the answer came from the native agent): `nativeAnswer({ seat: 'writer', base: 'plan: writer tasks', text: tasksMessage(), schema: TASKS_WRITER_SCHEMA, phase: 'Plan', native: <the pair of the first call> })`. `tasksMessage()` is: `Write tasks.md of <feature>, reading the plan.md already written (<feature>/plan.md). Run aether-plan check until it passes and commit it.` The label is `plan: writer tasks write`; the second call's answer joins the first one (`complexity` comes from the first).
+  - Second call (only when the answer came from the native agent): `nativeAnswer({ seat: 'writer', base: 'plan: writer tasks write', text: tasksMessage(), schema: TASKS_WRITER_SCHEMA, phase: 'Plan', native: <the pair of the first call> })`. `tasksMessage()` is: `Write tasks.md of <feature>, reading the plan.md already written (<feature>/plan.md). Run aether-plan check until it passes and commit it.` The label is `plan: writer tasks write`; the second call's answer joins the first one (`complexity` comes from the first).
   - R8: `checkedAfter` runs `aether-plan check` after the second call; on failure the retry is the second call again once, with `tasksMessage()` plus the errors (an external seat's answer keeps retrying the whole round as today). The Judge still gets plan.md and tasks.md in one round (`reviews({ doc: 'plan' … })`).
   - Corrections of the plan (`corrector('plan')`) stay a single call with `REVISION_SCHEMA`.
 
@@ -730,8 +730,21 @@ test('R7: the native Writer makes two calls for the plan, each with its own sche
 })
 
 test('R7: an external seat that answers keeps one call, with plan and tasks together', async () => {
-  // an external Writer answer on the plan step (follow the external-writer case near lines 282 to 290 of this file)
-  // assert: exactly one writer call carries a plan seat, there is no label 'plan: writer tasks write', and the answer's plan and tasks reach the result.
+  const docs = {}
+  const ops = (call, fallback) => {
+    const out = fallback(call)
+    if (call.command.verb === 'seat-start' && call.command.rest[0] === 'writer') docs[out.id] = flag(call, '--doc')
+    if (call.command.verb === 'seat-wait' && docs[call.command.rest[0]] === 'plan') {
+      return { done: true, exitCode: 0, value: { seat: 'writer', id: call.command.rest[0], harness: 'agy', model: 'gemini-4-argon', answer: 'x', result: PLAN_ANSWER, lane: '- Lane: agy gemini-4-argon-high' } }
+    }
+    return out
+  }
+  const run = await go({ ...ARGS, superdelegation: 'on' }, { ops, writer: twoStep })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(opsCalls(run, 'seat-start').filter((c) => c.command.rest[0] === 'writer' && flag(c, '--doc') === 'plan').length, 1)
+  assert.equal(run.calls.filter((c) => c.role === 'writer' && c.label.startsWith('plan:')).length, 0, 'no native Writer call for the plan')
+  assert.equal(run.calls.some((c) => c.label === 'plan: writer tasks write'), false)
+  assert.deepEqual([run.result.plan, run.result.tasks], [PLAN_ANSWER.plan, PLAN_ANSWER.tasks])
 })
 
 test('R8: a check that fails the first time repeats the second call once, with the errors, and the Judge gets both documents in one round', async () => {
@@ -749,8 +762,17 @@ test('R8: a check that fails the first time repeats the second call once, with t
   assert.ok(reviews[0].prompt.includes(`${FEATURE}/plan.md`) && reviews[0].prompt.includes(`${FEATURE}/tasks.md`))
 })
 
-test('R7: the plan call and the tasks call of the Writer exist as two schemas in the workflow, equal to the shape pinned here', () => {
-  // read design.workflow.js text; assert PLAN_WRITER_SCHEMA and TASKS_WRITER_SCHEMA are declared and WRITER_SCHEMA still equals schemas.WRITER_SCHEMA
+test('R7: the plan call and the tasks call of the Writer carry two schemas whose properties are those of the lib WRITER_SCHEMA, which does not change', async () => {
+  const run = await go(ARGS, { writer: twoStep })
+  const [planCall, tasksCall] = run.calls.filter((c) => c.role === 'writer' && c.label.startsWith('plan:'))
+  const lib = schemas.WRITER_SCHEMA
+  assert.deepEqual(lib.required, ['plan', 'tasks', 'commit', 'check', 'assumptions', 'questions'])
+  for (const [call, names] of [[planCall, ['plan', 'commit', 'assumptions', 'questions', 'complexity']], [tasksCall, ['tasks', 'commit', 'check', 'assumptions', 'questions']]]) {
+    assert.deepEqual(Object.keys(call.schema.properties).sort(), [...names].sort(), call.label)
+    for (const name of names) assert.deepEqual(call.schema.properties[name], lib.properties[name], `${call.label} ${name}`)
+  }
+  const external = fs.readFileSync(path.join(PLUGIN, 'workflows', 'design.workflow.js'), 'utf8')
+  assert.ok(external.includes('WRITER_SCHEMA') && external.includes('PLAN_WRITER_SCHEMA') && external.includes('TASKS_WRITER_SCHEMA'))
 })
 ```
 
@@ -782,17 +804,20 @@ In `tests/workflow-design.test.js` (helpers: `go`, `opsCalls`, `nativeCalls`, `E
 const LEFT = [{ id: 'c1', criterion: 'C1', command: 'node --test .aether/exam/c1.test.js', files: ['c1.test.js'], inIndex: true }, { id: 'c2', criterion: 'C2', command: 'node --test .aether/exam/c2.test.js', files: ['c2.test.js'], inIndex: false }]
 const examinerCalls = (run) => run.calls.filter((c) => c.role === 'examiner')
 
+// nativeAnswer makes two calls for one launch (the label, then `${label} (retry)`): a launch is a call whose label does not end in `(retry)`.
+const launchesOf = (run) => examinerCalls(run).filter((c) => !c.label.endsWith('(retry)'))
+const relaunchAnswers = (call) => (call.label === 'exam: examiner (relaunch)' ? EXAM : null)
+
 test('R9: an Examiner that ends with no answer after writing tests is relaunched once with those tests, and the Lead is not asked to resume', async () => {
-  let launches = 0
   const run = await go(ARGS, {
-    examiner: () => (++launches === 1 ? null : EXAM),
+    examiner: relaunchAnswers,
     ops: (call, fallback) => (call.command.verb === 'recover' ? { feature: FEATURE, tests: LEFT } : fallback(call)),
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   const calls = examinerCalls(run)
-  assert.equal(calls.length, 2)
-  assert.equal(calls[1].label, 'exam: examiner (relaunch)')
-  assert.ok(calls[1].prompt.includes('c1.test.js') && calls[1].prompt.includes('c2.test.js'))
+  assert.deepEqual(calls.map((c) => c.label), ['exam: examiner', 'exam: examiner (retry)', 'exam: examiner (relaunch)'])
+  assert.equal(launchesOf(run).length, 2)
+  assert.ok(calls[2].prompt.includes('c1.test.js') && calls[2].prompt.includes('c2.test.js'))
   assert.equal(opsCalls(run, 'store').length, 1)
   assert.equal(run.result.status, 'approved')
   assert.equal(run.result.exam.status, 'stored')
@@ -803,7 +828,9 @@ test('R10: an Examiner that does not finish twice gives one relaunch only, and t
     examiner: () => null,
     ops: (call, fallback) => (call.command.verb === 'recover' ? { feature: FEATURE, tests: LEFT } : fallback(call)),
   })
-  assert.equal(examinerCalls(run).length, 2)
+  assert.equal(launchesOf(run).length, 2)
+  assert.equal(examinerCalls(run).length, 3, 'the first launch and its retry, then the relaunch with no retry')
+  assert.equal(opsCalls(run, 'recover').length, 2)
   assert.equal(opsCalls(run, 'store').length, 0)
   assert.equal(run.result.exam.status, 'failed')
   assert.deepEqual(run.result.exam.tests.map((t) => [t.id, t.inIndex]), [['c1', true], ['c2', false]])
@@ -811,17 +838,26 @@ test('R10: an Examiner that does not finish twice gives one relaunch only, and t
 
 test('R10: an Examiner that ends with no answer and left no tests is not relaunched', async () => {
   const run = await go(ARGS, { examiner: () => null })
-  assert.equal(examinerCalls(run).length, 1)
+  assert.equal(launchesOf(run).length, 1)
+  assert.equal(examinerCalls(run).length, 2, 'the launch and its own retry, and no relaunch')
   assert.equal(run.result.exam.status, 'failed')
 })
 
 test('R9: an external Examiner seat that already fell to the native one still gets one relaunch in total', async () => {
-  // the seat hands the round back (as handedBack('examiner')) and the native Examiner ends with no answer, then recover returns LEFT:
-  // assert examinerCalls(run) are the first native launch plus exactly one 'exam: examiner (relaunch)'.
+  // superdelegation on: the Examiner seat is started, and the default handler hands the round back (exit 3, handedBack('examiner')).
+  const run = await go({ ...ARGS, superdelegation: 'on' }, {
+    examiner: relaunchAnswers,
+    ops: (call, fallback) => (call.command.verb === 'recover' ? { feature: FEATURE, tests: LEFT } : fallback(call)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(opsCalls(run, 'seat-start').filter((c) => c.command.rest[0] === 'examiner').length, 1)
+  assert.deepEqual(launchesOf(run).map((c) => c.label), ['exam: examiner', 'exam: examiner (relaunch)'])
+  assert.equal(opsCalls(run, 'store').length, 1)
+  assert.equal(run.result.exam.status, 'stored')
 })
 ```
 
-Match the real names and shape of the failed exam result (`run.result.exam`, the `tests` entries and the index mark) with what `failedResult('examiner', …)` returns today (see lines 1685 to 1712 of the test file and update that existing case to the new behaviour: a single launch followed by `recover` with tests now relaunches). Replace the comment-only test with a real one. `tests/ops-note.test.js` keeps its handlers green.
+Match the real names and shape of the failed exam result (`run.result.exam`, the `tests` entries and the index mark) with what `failedResult('examiner', …)` returns today (see lines 1685 to 1712 of the test file). Update that existing case to the new behaviour: its `recover` with `marks` now relaunches once, so it expects 3 examiner calls (the launch, its `(retry)`, the relaunch) and 2 `recover` calls where it expects 2 and 1 today; the case where `recover` fails keeps its single launch (2 calls with the retry). Count launches by label with `launchesOf`, which leaves out `(retry)`. `tests/ops-note.test.js` keeps its handlers green.
 
 **Acceptance:**
 - `node --test tests/workflow-design.test.js tests/ops-note.test.js tests/examiner-order.test.js tests/seat-exam-leak.test.js tests/seat-partial.test.js` passes; the new tests fail before the change.
