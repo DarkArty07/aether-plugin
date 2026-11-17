@@ -408,7 +408,7 @@ function landsOnMain(git, sequence) {
 // shell or eval is matched by the script it runs, one level deeper, and a shell that takes its
 // script from a heredoc is matched the same way by each heredoc body it started. A heredoc to any
 // other command stays text. When wanted is given, only that class is appended.
-function collectWords(words, depth, wanted, sequence, out, env = process.env) {
+function collectWords(words, depth, wanted, sequence, out, env = process.env, writes = false) {
   const unwrapped = dropWrappers(words)
   // A command run by its path, such as /usr/bin/git, is matched by its name.
   const named = unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
@@ -426,7 +426,7 @@ function collectWords(words, depth, wanted, sequence, out, env = process.env) {
   const git = gitCall(named)
   const mergesToMain = git !== null && landsOnMain(git, sequence)
   const found = mergesToMain ? { cls: 'merge-main', head: ['git', 'merge'] } : subcommandOf(command)
-  const install = isSkillInstallSegment(words, named, sequence.here, env) ? { cls: 'skill-install', head: named.slice(0, 2) } : null
+  const install = isSkillInstallSegment(words, named, sequence.here, env, writes) ? { cls: 'skill-install', head: named.slice(0, 2) } : null
   // The tidy targets of this segment, read in the directory it runs in (spec 030 R38). Its first one makes the delete class.
   const tidy = tidyTargetsOf(command, git !== null ? gitDirOf(sequence, git.dirs) : sequence.here, sequence.home)
   sequence.targets.push(...tidy)
@@ -437,10 +437,14 @@ function collectWords(words, depth, wanted, sequence, out, env = process.env) {
   }
 }
 
-// The matches among a command's segments, appended to out in reading order.
+// The matches among a command's segments, appended to out in reading order. Whether the line writes anywhere
+// (segmentsWrite) is read once per command, so a read-only segment that names the personal skill folder stays
+// read-only only when nothing else in the line writes; a nested script reads its own line when it is collected.
 function collectCommand(command, depth, wanted, sequence, out, env = process.env) {
   if (typeof command !== 'string') return
-  for (const words of segmentsOf(command)) collectWords(words, depth, wanted, sequence, out, env)
+  const segments = segmentsOf(command)
+  const writes = segmentsWrite(segments)
+  for (const words of segments) collectWords(words, depth, wanted, sequence, out, env, writes)
 }
 
 // The first match among a command's segments, or the first of class wanted when it is given.
@@ -702,6 +706,41 @@ function spelledWord(word) {
 // The find actions that write: a find without any of them only reads. gh issue and gh pr only read too.
 const FIND_WRITE_ACTIONS = new Set(['-delete', '-exec', '-execdir', '-ok', '-okdir', '-fprint', '-fprint0', '-fprintf', '-fls'])
 
+// The index of the command xargs runs, past its options: an option value or an echo argument
+// named rm is not the verb (as tidyTargetsOf reads them).
+function xargsRunsAt(command) {
+  let index = 1
+  while (index < command.length && command[index].startsWith('-')) {
+    const option = command[index++]
+    if (option === '--') break
+    if (XARGS_VALUED.includes(option)) index++
+  }
+  return index
+}
+
+// Whether a sed flag edits in place: with one of them sed writes, without them sed only reads.
+function isSedInPlace(word) {
+  return word.startsWith('-i') || word === '--in-place' || word.startsWith('--in-place=')
+}
+
+// Whether a command line writes anywhere: a WRITE_COMMANDS word (a direct write, the command
+// xargs runs as in `xargs rm`, or a loop body as in `while read f; do rm …; done`), a find with
+// one of its writing actions, or a sed that edits in place (`xargs -0 sed -i …` writes through
+// the pipe; `-i` alone is also grep's flag, so it only counts in the segment that runs sed).
+// A read-only find or gh read that names the personal skill folder stays read-only only when
+// nothing in the same line writes (spec 044 R29-R30).
+function segmentsWrite(segments) {
+  const words = segments.flat()
+  if (words.some((w) => WRITE_COMMANDS.has(nameOf(w)))) return true
+  if (words.some((w) => nameOf(w) === 'find') && words.some((w) => FIND_WRITE_ACTIONS.has(w))) return true
+  return segments.some((segment) => {
+    const unwrapped = dropWrappers(segment)
+    if (unwrapped.length === 0) return false
+    const runs = nameOf(unwrapped[0]) === 'xargs' ? unwrapped.slice(xargsRunsAt(unwrapped)) : unwrapped
+    return runs.length > 0 && nameOf(runs[0]) === 'sed' && runs.some(isSedInPlace)
+  })
+}
+
 // Whether a segment only reads: a find with none of its writing actions, or gh issue and gh pr. Such a segment
 // names the personal skill folders only through its redirections: mentioning them in a read is not a skill install.
 function isReadOnlySegment(named) {
@@ -712,12 +751,15 @@ function isReadOnlySegment(named) {
 
 // Limit A14 (spec 030): commands that assemble the personal skills path or an install at runtime (e.g. a script building
 // ~/.agents/skills/ dynamically, or $X skills add) cannot be detected.
-// Whether a segment is a skill install or writes into the owner's skill folders (spec 030 R25 R30). The install is read from
-// the words after the wrappers (named), so `CI=1 npx skills add`, `sudo npx ...` and `/usr/bin/npx ...` are the install of
-// `npx skills add`. A call to aether-autonomy names the folders in its quotes without writing there: only its redirections count.
-function isSkillInstallSegment(words, named, here, env) {
+// Whether a segment is a skill install or writes into the owner's skill folders (spec 030 R25 R30, spec 044 R29-R30).
+// The install is read from the words after the wrappers (named), so `CI=1 npx skills add`, `sudo npx ...` and
+// `/usr/bin/npx ...` are the install of `npx skills add`. A call to aether-autonomy names the folders in its quotes
+// without writing there: only its redirections count. A read-only find or gh read keeps that narrowed reading only
+// when nothing else in the line writes (writes): piped through `xargs rm`, `xargs sed -i` or a `while` loop that
+// removes, the found folder is written, so the whole line keeps the skill-install class.
+function isSkillInstallSegment(words, named, here, env, writes = false) {
   const home = (env && env.HOME) || os.homedir()
-  const naming = isAutonomyCall(words, here) || isReadOnlySegment(named) ? redirectTargets(words) : writeTargets(words)
+  const naming = !writes && (isAutonomyCall(words, here) || isReadOnlySegment(named)) ? redirectTargets(words) : writeTargets(words)
   if (naming.some((target) => isPersonalSkillPath(target, home))) return true
   return installClass(named.map(spelledWord).join(' '), { dataDir: getDataDir(env) }) === 'skill-install'
 }
