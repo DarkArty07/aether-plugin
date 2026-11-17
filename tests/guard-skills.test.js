@@ -176,6 +176,37 @@ test('a path that classifySkillPath cannot resolve is judged by its text: an own
   assert.equal(decide(w.file(path.join(elsewhere, 'notes.md')), w.enforce), null)
 })
 
+test('R29: a read that names the personal skill folder is not a skill-install', (t) => {
+  const w = world(t)
+  const dir = path.join(w.home, '.claude', 'skills')
+  for (const command of [
+    `find ${dir} -name SKILL.md`,
+    `gh issue comment 315 --body "the folder ${dir} was named by a read"`,
+    `gh pr create --title t --body "see ${dir}"`,
+  ]) {
+    assert.equal(w.bash(command), null, command)
+  }
+  assert.equal(readPending(w.repo.dir).length, 0)
+})
+
+test('R30: a write to the personal skill folder is still a skill-install', (t) => {
+  const w = world(t)
+  const dir = path.join(w.home, '.claude', 'skills')
+  for (const command of [
+    `cp -r x ${dir}/`,
+    `ln -s x ${dir}/y`,
+    `mv x ${dir}/y`,
+    `find ${dir} -name SKILL.md -delete`,
+    `find ${dir} -name SKILL.md -exec cp x {} ;`,
+    `find ${dir} -name SKILL.md -fprint ${dir}/out`,
+    `echo hi > ${dir}/new/SKILL.md`,
+    `gh issue comment 315 --body x > ${dir}/new/SKILL.md`,
+  ]) {
+    const d = w.bash(command)
+    assert.ok(d && d.reason.includes('skill-install'), command)
+  }
+})
+
 test('a command that is irreversible and also writes into the personal skill folders keeps both classes (R30)', (t) => {
   const w = world(t)
   assert.deepEqual(irreversibleClasses('npm publish ~/.agents/skills/mine', w.repo.dir, w.enforce), ['publish', 'skill-install'])
