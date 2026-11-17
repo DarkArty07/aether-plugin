@@ -9,9 +9,9 @@ const { PLUGIN } = require('./helpers.js')
 const examiner = () => fs.readFileSync(path.join(PLUGIN, 'agents', 'examiner.md'), 'utf8')
 const designing = () => fs.readFileSync(path.join(PLUGIN, 'skills', 'designing', 'SKILL.md'), 'utf8')
 
-test('the Examiner maxTurns is unchanged at 40 (#229)', () => {
+test('the Examiner maxTurns is 80 (#303)', () => {
   const content = examiner()
-  assert.match(content, /^maxTurns:\s*40$/m)
+  assert.match(content, /^maxTurns:\s*80$/m)
 })
 
 test('the Examiner writes one test per criterion first, keeps exam.json up to date, and widens only after (#229)', () => {

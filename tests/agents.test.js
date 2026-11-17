@@ -51,7 +51,7 @@ test('the Writer runs on Sonnet at high effort, and writes plans with Aether fie
   assert.equal(field(front, 'name'), 'writer')
   assert.equal(field(front, 'model'), 'sonnet')
   assert.equal(field(front, 'effort'), 'high')
-  assert.equal(field(front, 'maxTurns'), '60')
+  assert.equal(field(front, 'maxTurns'), '100')
   assert.deepEqual(
     field(front, 'tools').split(',').map((s) => s.trim()),
     ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Skill'],
@@ -90,7 +90,7 @@ test('the Examiner runs on Opus at high effort, writes only its exam, and never 
   assert.match(field(front, 'description'), /^"?Aether Examiner:/)
   assert.equal(field(front, 'model'), 'opus')
   assert.equal(field(front, 'effort'), 'high')
-  assert.equal(field(front, 'maxTurns'), '40')
+  assert.equal(field(front, 'maxTurns'), '80')
   assert.deepEqual(
     field(front, 'tools').split(',').map((s) => s.trim()),
     ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob'],
