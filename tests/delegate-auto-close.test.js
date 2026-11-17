@@ -118,27 +118,65 @@ test('5. an editing delegate is never closed by the system and still needs a ver
   assert.equal(judged.next.kind, 'rise')
 })
 
-test('6. fix and infeasible are accepted while open, and refused once the system closed the task', async (t) => {
+test('6. fix and infeasible are accepted while open, through the real answer path', async (t) => {
   const { dataDir, deps } = world(t)
   await task.begin(call(BRIEF('ro-fix')), deps)
-  log.appendEntry(dataDir, { kind: 'answer', task: 'ro-fix', attempt: 1, session: 's1', time: 5000, text: 'found it' })
+  assert.deepEqual(dr.recordAnswer({ task: 'ro-fix', attempt: 1, text: 'found it', session: 's1', dataDir, now: () => 5000 }), { recorded: true })
   assert.equal((await task.verdict({ task: 'ro-fix', verdict: 'fix', findings: [FINDING] }, deps)).ok, true)
 
   const { dataDir: dataDir2, deps: deps2 } = world(t)
   await task.begin(call(BRIEF('ro-infeas')), deps2)
-  log.appendEntry(dataDir2, { kind: 'answer', task: 'ro-infeas', attempt: 1, session: 's1', time: 5000, text: 'found it' })
+  assert.deepEqual(dr.recordAnswer({ task: 'ro-infeas', attempt: 1, text: 'found it', session: 's1', dataDir: dataDir2, now: () => 5000 }), { recorded: true })
   assert.equal((await task.verdict({ task: 'ro-infeas', verdict: 'infeasible', reason: 'wrong layer' }, deps2)).ok, true)
+})
 
-  const { dataDir: dataDir3, deps: deps3 } = world(t)
-  await task.begin(call(BRIEF('ro-shut')), deps3)
-  log.appendEntry(dataDir3, { kind: 'answer', task: 'ro-shut', attempt: 1, session: 's1', time: 5000, text: 'found it' })
-  assert.deepEqual(task.closeReadOnly({ task: 'ro-shut', session: 's1', cwd: deps3.cwd, dataDir: dataDir3, now: () => 6000 }), { closed: true })
-  for (const kind of ['fix', 'infeasible']) {
-    const args = kind === 'fix' ? { findings: [FINDING] } : { reason: 'wrong layer' }
-    const refused = await task.verdict({ task: 'ro-shut', verdict: kind, ...args }, deps3)
-    assert.equal(refused.ok, false)
-    assert.match(refused.error, /the task is approved/, `${kind} after the closing is refused by the ladder`)
-  }
+test('8. an automatic approval reopens: fix is accepted and the next launch rises with the findings (spec 044, D11)', async (t) => {
+  const repo = makeRepo(t)
+  const { dataDir, deps } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('ro-re')), deps)
+  assert.deepEqual(dr.recordAnswer({ task: 'ro-re', attempt: 1, text: 'found it', session: 's1', dataDir, cwd: repo.dir, now: () => 5000 }), { recorded: true })
+  assert.equal(verdictsOf(dataDir, 'ro-re').length, 1, 'the answer closed the task by itself')
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's1' }), [], 'the closed task is not pending')
+  const judged = await task.verdict({ task: 'ro-re', verdict: 'fix', findings: [FINDING] }, deps)
+  assert.equal(judged.ok, true, 'fix reopens the automatic approval')
+  assert.deepEqual([judged.next.kind, judged.next.step], ['rise', 'haiku-xhigh'])
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's1' }), [], 'the reopened task waits for its next attempt, as after any fix')
+  const next = await task.begin(call(BRIEF('ro-re')), deps)
+  assert.deepEqual([next.step, next.kind], ['haiku-xhigh', 'rise'])
+  assert.ok(next.args.prompt.includes(FINDING), 'the rise carries the findings')
+})
+
+test('9. an automatic approval reopens for infeasible with a reason, and stays shut for approve (spec 044, D11)', async (t) => {
+  const repo = makeRepo(t)
+  const { dataDir, deps } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('ro-inf')), deps)
+  dr.recordAnswer({ task: 'ro-inf', attempt: 1, text: 'found it', session: 's1', dataDir, cwd: repo.dir, now: () => 5000 })
+  const judged = await task.verdict({ task: 'ro-inf', verdict: 'infeasible', reason: 'wrong layer' }, deps)
+  assert.equal(judged.ok, true, 'infeasible with a reason reopens the automatic approval')
+  assert.deepEqual([judged.next.kind, judged.next.step], ['rise', 'haiku-xhigh'])
+
+  const repo2 = makeRepo(t)
+  const { dataDir: dataDir2, deps: deps2 } = world(t, { cwd: repo2.dir })
+  await task.begin(call(BRIEF('ro-shut')), deps2)
+  dr.recordAnswer({ task: 'ro-shut', attempt: 1, text: 'found it', session: 's1', dataDir: dataDir2, cwd: repo2.dir, now: () => 5000 })
+  assert.equal(verdictsOf(dataDir2, 'ro-shut').length, 1, 'the answer closed the task by itself')
+  const refused = await task.verdict({ task: 'ro-shut', verdict: 'approve' }, deps2)
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /closed by the system/, 'approve on a closed task stays refused with the closed message')
+  assert.equal(verdictsOf(dataDir2, 'ro-shut').length, 1, 'the refused approve writes nothing')
+})
+
+test('10. after a reopen and a later launch, a fix is judged for that launch as today (spec 044, D11)', async (t) => {
+  const repo = makeRepo(t)
+  const { dataDir, deps } = world(t, { cwd: repo.dir })
+  await task.begin(call(BRIEF('ro-late')), deps)
+  dr.recordAnswer({ task: 'ro-late', attempt: 1, text: 'found it', session: 's1', dataDir, cwd: repo.dir, now: () => 5000 })
+  assert.equal((await task.verdict({ task: 'ro-late', verdict: 'fix', findings: [FINDING] }, deps)).ok, true)
+  const next = await task.begin(call(BRIEF('ro-late')), deps)
+  assert.equal(next.kind, 'rise')
+  const again = await task.verdict({ task: 'ro-late', verdict: 'fix', findings: [FINDING] }, deps)
+  assert.equal(again.ok, true, 'a fix on the later launch is judged as today')
+  assert.deepEqual([again.next.kind, again.next.step], ['rise', 'sonnet-high'])
 })
 
 test('7. a second closeReadOnly on a closed task writes nothing', async (t) => {
