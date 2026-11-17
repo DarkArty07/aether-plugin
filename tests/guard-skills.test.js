@@ -181,6 +181,8 @@ test('R29: a read that names the personal skill folder is not a skill-install', 
   const dir = path.join(w.home, '.claude', 'skills')
   for (const command of [
     `find ${dir} -name SKILL.md`,
+    `find ${dir} -name SKILL.md | wc -l`,
+    `find ${dir} -name SKILL.md | head -5`,
     `gh issue comment 315 --body "the folder ${dir} was named by a read"`,
     `gh pr create --title t --body "see ${dir}"`,
   ]) {
@@ -199,6 +201,9 @@ test('R30: a write to the personal skill folder is still a skill-install', (t) =
     `find ${dir} -name SKILL.md -delete`,
     `find ${dir} -name SKILL.md -exec cp x {} ;`,
     `find ${dir} -name SKILL.md -fprint ${dir}/out`,
+    `find ${dir} -name SKILL.md | xargs rm`,
+    `find ${dir} -name SKILL.md -print0 | xargs -0 sed -i s/a/b/`,
+    `find ${dir} -name SKILL.md | while read f; do rm "$f"; done`,
     `echo hi > ${dir}/new/SKILL.md`,
     `gh issue comment 315 --body x > ${dir}/new/SKILL.md`,
   ]) {
