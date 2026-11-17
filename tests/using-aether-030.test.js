@@ -114,7 +114,7 @@ test('a read-only delegate whose checks pass is closed by the system, and is jud
   const verdict = text.slice(text.indexOf('**The verdict.**'), text.indexOf('**Climbing.**'))
   const other = verdict.slice(verdict.indexOf('Otherwise'))
   assert.match(other, /`aether-delegate verdict --task <id> --verdict approve\|fix\|infeasible`/)
-  assert.match(other, /A read-only delegate whose checks pass is closed by the system; use verdict with it only for fix or infeasible, and before it is closed; when a check fails on files another writer changed, verdict --verdict approve --ignore '<glob>'\./)
+  assert.match(other, /A read-only delegate whose checks pass is closed by the system when it answers; if its answer is wrong, `verdict --verdict fix\|infeasible` reopens it; when a check fails on files another writer changed, `verdict --verdict approve --ignore '<glob>'`\./)
   assert.match(other, /`fix` and `infeasible` stay on that line for an edit too/)
 })
 
