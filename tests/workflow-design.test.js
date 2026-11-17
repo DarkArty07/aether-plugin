@@ -14,7 +14,7 @@ const FEATURE = 'specs/007-demo'
 const SCOPE = 'Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.'
 const ARGS = { feature: FEATURE, session: 'sess-1', repoRoot: '/repo', superdelegation: 'off', harnesses: 'agy' }
 const SHORT = { ...ARGS, mode: 'short', document: `${FEATURE}/design.md`, intent: 'Understanding: add a retry. Owner: «hazlo robusto»', author: 'opus' }
-const ROLES = ['writer', 'judge', 'examiner', 'ops']
+const ROLES = ['writer', 'judge', 'examiner', 'mapper', 'ops']
 
 let parseOpsPrompt
 let PAYLOAD_PATH
@@ -50,6 +50,7 @@ function handlers() {
       if (verb === 'seat-wait') return handedBack(rest[0].split('-')[0])
       if (verb === 'seat-stop') return { stopped: true }
       if (verb === 'check') return CHECK_OK
+      if (verb === 'requirements') return { requirements: 8, threshold: 15, map: false }
       if (verb === 'store') return { stored: '/data/exams/007-demo' }
       if (verb === 'recover') return { feature: rest[0], tests: [] }
       throw new Error(`unexpected ops command: ${call.command.line}`)
@@ -271,6 +272,78 @@ test('a plan that fails aether-plan check gets one more try with the errors, the
   assert.equal(run.calls.filter((c) => c.label.startsWith('plan: judge')).length, 0)
 })
 
+const mapOps = (n) => (call, fallback) => (call.command.verb === 'requirements' ? { requirements: n, threshold: 15, map: n >= 15 } : fallback(call))
+const MAP_TEXT = 'R1: plugins/aether/agents/writer.md:7, one line, tests/agents.test.js\nR2: plugins/aether/agents/examiner.md:7, one line, tests/examiner-order.test.js'
+const planWriter = (run) => run.calls.find((c) => c.label === 'plan: writer write')
+
+test('R3 R5: a spec of 15 requirements runs the map step once, before the plan Writer, and the Writer message carries the map', async () => {
+  const run = await go(ARGS, { ops: mapOps(15), mapper: () => ({ map: MAP_TEXT }) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'mapper', 'writer', 'judge', 'examiner'])
+  assert.equal(run.calls.filter((c) => c.label === 'plan: map').length, 1)
+  assert.ok(planWriter(run).prompt.includes('## Mapa del código'))
+  assert.ok(planWriter(run).prompt.includes(MAP_TEXT))
+  assert.equal(run.result.status, 'approved')
+})
+
+test('R3 R5: a spec of 14 requirements has no map step and the Writer message is the one of today', async () => {
+  const run = await go(ARGS, { ops: mapOps(14), mapper: () => { throw new Error('the mapper must not run') } })
+  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'judge', 'examiner'])
+  const baseline = await go(ARGS)
+  assert.equal(planWriter(run).prompt, planWriter(baseline).prompt)
+  assert.ok(!planWriter(run).prompt.includes('Mapa del código'))
+})
+
+test('R4: the map step runs on the cheapest rung, as aether:mapper, with a schema that asks for a map, and with no write tool', async () => {
+  const run = await go(ARGS, { ops: mapOps(15), mapper: () => ({ map: MAP_TEXT }) })
+  const call = run.calls.find((c) => c.label === 'plan: map')
+  const rung = require('../plugins/aether/lib/ladder.js').loadLadder().rungs[0]
+  assert.deepEqual([call.model, call.effort], [rung.model, rung.effort])
+  assert.deepEqual([call.model, call.effort], front('mapper'))
+  assert.equal(call.role, 'mapper')
+  assert.deepEqual(call.schema.required, ['map'])
+  const tools = fs.readFileSync(path.join(PLUGIN, 'agents', 'mapper.md'), 'utf8').match(/^tools: (.+)$/m)[1]
+  assert.ok(!/Write|Edit|Bash/.test(tools))
+})
+
+for (const [name, mapper] of [['rejects', () => null], ['answers empty', () => ({ map: '' })], ['throws', () => { throw new Error('boom') }]]) {
+  test(`R6: a map that ${name} leaves the plan written without a map, the result of the same shape, and the log says it`, async () => {
+    const run = await go(ARGS, { ops: mapOps(15), mapper })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    assert.equal(run.result.status, 'approved')
+    assert.ok(!planWriter(run).prompt.includes('Mapa del código'))
+    assert.ok(run.logs.some((line) => /plan: map: .*the plan is written without a map/.test(line)), run.logs.join('\n'))
+    const baseline = await go(ARGS)
+    assert.deepEqual(Object.keys(run.result).sort(), Object.keys(baseline.result).sort())
+  })
+}
+
+for (const [name, mapper] of [['answers no map', () => ({})], ['answers a non-string map', () => ({ map: 5 })]]) {
+  test(`R6: a map that ${name} leaves the plan written without a map, the result of the same shape, and the log says it`, async () => {
+    const run = await go(ARGS, { ops: mapOps(15), mapper })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    assert.equal(run.result.status, 'approved')
+    assert.equal(run.calls.filter((c) => c.label === 'plan: map').length, 1)
+    assert.ok(!planWriter(run).prompt.includes('Mapa del código'))
+    assert.ok(run.logs.some((line) => /plan: map: .*the plan is written without a map/.test(line)), run.logs.join('\n'))
+    const baseline = await go(ARGS)
+    assert.deepEqual(Object.keys(run.result).sort(), Object.keys(baseline.result).sort())
+  })
+}
+
+for (const [name, requirements] of [['fails', { raw: { exitCode: 1, stdout: '{}\n' } }], ['returns an error', { error: 'boom' }]]) {
+  test(`R6: a requirements step that ${name} writes the plan without a map and the log says it`, async () => {
+    const ops = (call, fallback) => (call.command.verb === 'requirements' ? requirements : fallback(call))
+    const run = await go(ARGS, { ops, mapper: () => { throw new Error('the mapper must not run') } })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    assert.equal(run.result.status, 'approved')
+    assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'judge', 'examiner'])
+    assert.equal(run.calls.filter((c) => c.label === 'plan: map').length, 0)
+    assert.ok(!planWriter(run).prompt.includes('Mapa del código'))
+    assert.ok(run.logs.some((line) => /plan: map: .*the plan is written without a map/.test(line)), run.logs.join('\n'))
+  })
+}
+
 test('the plan Judge reads what check printed, and the author of each document is the model that wrote it', async () => {
   const warn = { ...CHECK_OK, warnings: ['R3 has no task that serves it.'] }
   let docs = {}
@@ -392,7 +465,7 @@ test('every ops prompt is one the mod runs without a model, and every payload go
   const run = await go({ ...ARGS, superdelegation: 'on', harnesses: 'agy,codex' })
   const failed = await go({ ...ARGS, superdelegation: 'on', harnesses: 'agy,codex' }, { examiner: () => null })
   const ops = [...run.calls, ...failed.calls].filter((c) => c.role === 'ops')
-  assert.deepEqual([...new Set(ops.map((c) => c.command.verb))].sort(), ['check', 'recover', 'seat-start', 'seat-wait', 'store'])
+  assert.deepEqual([...new Set(ops.map((c) => c.command.verb))].sort(), ['check', 'recover', 'requirements', 'seat-start', 'seat-wait', 'store'])
   for (const c of ops) {
     const parsed = parseOpsPrompt(c.prompt)
     assert.ok(parsed, c.prompt)

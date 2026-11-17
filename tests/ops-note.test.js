@@ -59,7 +59,7 @@ test('run workflow: a reply with no JSON line keeps the unreadable error (issue 
 
 const FEATURE = 'specs/007-demo'
 const ARGS = { feature: FEATURE, session: 'sess-1', repoRoot: '/repo', superdelegation: 'off', harnesses: 'agy' }
-const ROLES = ['writer', 'judge', 'examiner', 'ops']
+const ROLES = ['writer', 'judge', 'examiner', 'mapper', 'ops']
 
 const COMMAND = /^cd '[^']*' && (?:PATH='[^']*':"\$PATH" )?(aether-lane|aether-plan|aether-exam) ([a-z-]+)(.*)$/m
 function commandOf(prompt) {
@@ -84,6 +84,7 @@ function handlers() {
       if (verb === 'seat-wait') return { done: true, exitCode: 3, value: { unavailable: 'no-external', seat: rest[0].split('-')[0] } }
       if (verb === 'seat-stop') return { stopped: true }
       if (verb === 'check') return CHECK_OK
+      if (verb === 'requirements') return { requirements: 8, threshold: 15, map: false }
       if (verb === 'store') return { stored: '/data/exams/007-demo' }
       throw new Error(`unexpected ops command: ${call.command.line}`)
     },

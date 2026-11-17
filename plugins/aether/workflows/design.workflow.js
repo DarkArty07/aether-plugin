@@ -10,7 +10,8 @@ export const meta = {
 }
 
 // The design executor (spec 005, R1 to R3; spec 009, R5). The full design runs in order: the Writer writes the spec,
-// the Judge reviews it, the Writer writes the plan and the tasks, aether-plan check passes, the Judge reviews them,
+// the Judge reviews it, a read-only map of the code is drawn when the approved spec reaches the map threshold,
+// the Writer writes the plan and the tasks, aether-plan check passes, the Judge reviews them,
 // and the Examiner writes the exam. A short design runs only the Judge's rounds on one document, with the Writer to
 // correct it. Every round of the Judge, the Writer (its drafts and its corrections) and the Examiner is a seat round:
 // `aether-lane seat-start` picks the pair with the same function as the swarm. The design seats use the author's
@@ -72,6 +73,10 @@ const REFERENCE = {
   writer: { model: 'sonnet', effort: 'high' },
   examiner: { model: 'opus', effort: 'high' },
 }
+
+// The pair of the code map before the plan Writer: a copy of the first rung of config/ladder.json, the cheapest
+// pair that serves, like REFERENCE copies lib/seats.js.
+const MAP_PAIR = { model: 'haiku', effort: 'high' }
 
 // --- schemas: copies of lib/lane-schemas.js (JUDGE_SCHEMA to EXAMINER_SCHEMA) and run.workflow.js (OPS_SCHEMA) ------
 
@@ -167,6 +172,15 @@ const OPS_SCHEMA = {
   properties: {
     exitCode: { type: 'integer' },
     stdout: { type: 'string', description: 'the standard output, exactly as printed' },
+  },
+}
+
+// The answer of the code map: one line per requirement of the spec, with the file and line the plan will touch.
+const MAP_SCHEMA = {
+  type: 'object',
+  required: ['map'],
+  properties: {
+    map: { type: 'string' },
   },
 }
 
@@ -781,8 +795,15 @@ function specWriterMessage() {
   return lines(`Write the spec of ${feature}: ${SPEC}, from the owner's intent card ${INTENT}.`)
 }
 
-function planWriterMessage() {
-  return lines(`Write the plan and the tasks of ${feature}: ${PLAN} and ${TASKS}, from the approved spec ${SPEC}.`, ...planBinLines())
+// What the mapper maps: the approved spec, requirement by requirement, to the file and line the plan will touch.
+function mapMessage() {
+  return lines(`Map the approved spec ${SPEC} to the code: one line per requirement, with the file and line where the plan will touch it, what the plan reuses, and the tests that pin it.`)
+}
+
+function planWriterMessage(map = null) {
+  const base = lines(`Write the plan and the tasks of ${feature}: ${PLAN} and ${TASKS}, from the approved spec ${SPEC}.`, ...planBinLines())
+  if (map === null) return base
+  return lines(base, '', '## Mapa del código', '', map, '', 'Las líneas son posiciones de lectura: confírmalas antes de editar.')
 }
 
 // What a document's Judge reviews, by document. How it reviews each kind is in judge.md.
@@ -906,6 +927,35 @@ async function planCheck() {
   return { ok: out.ok === true, errors: listOf(out.errors), printed: JSON.stringify(out) }
 }
 
+// The code map before the plan Writer (R3 to R6): a read-only count of the spec's requirements, and, when the spec
+// reaches the map threshold, one mapper round whose text the plan Writer gets in its message. The step is a plain
+// agent call, never an aether-delegate task, and writes nothing. Any failure is logged and the plan is written
+// without a map: the result keeps its shape.
+async function planMap() {
+  const counted = await ops(`aether-plan requirements ${SPEC}`, { phase: 'Plan', label: 'plan: requirements' })
+  if (counted.error) {
+    log(`plan: map: aether-plan requirements did not run: ${counted.error}; the plan is written without a map`)
+    return null
+  }
+  if (counted.map !== true) return null
+  let answer = null
+  try {
+    answer = await call('mapper', MAP_PAIR.model, MAP_PAIR.effort, mapMessage(), { phase: 'Plan', label: 'plan: map', schema: MAP_SCHEMA })
+  } catch (err) {
+    log(`plan: map: the mapper call threw: ${message(err)}; the plan is written without a map`)
+    return null
+  }
+  if (answer === null) {
+    log('plan: map: the mapper ended without an answer; the plan is written without a map')
+    return null
+  }
+  if (!fits(MAP_SCHEMA, answer) || typeof answer.map !== 'string' || answer.map.trim() === '') {
+    log('plan: map: the mapper answered without a map; the plan is written without a map')
+    return null
+  }
+  return answer.map
+}
+
 // The check after a Writer's step: when it fails, the same step runs once more with the errors (`retry(step, text)`),
 // and a second failure ends the design. Resolves to { printed, retried } or { end }.
 async function checkedAfter(step, text, retry) {
@@ -1019,8 +1069,11 @@ async function full() {
   if (specReviewed.end) return specReviewed.end
 
   // 3. The plan and the tasks, which aether-plan check must pass; a failed check gets one more Writer round with the errors.
+  // Before the Writer, the code map when the approved spec reaches the map threshold (planMap logs its own failure
+  // and hands back null, and the plan is then written without a map).
   const writePlan = (step, text) => seatRound({ seat: 'writer', doc: 'plan', step, text, schema: WRITER_SCHEMA, phase: 'Plan', writes: 'plan' })
-  const planText = planWriterMessage()
+  const map = await planMap()
+  const planText = planWriterMessage(map)
   const plan = await writePlan('write', planText)
   if (plan.failed) return failure('plan-writer', plan.failed, plan).end
   const checked = await checkedAfter('write', planText, writePlan)
