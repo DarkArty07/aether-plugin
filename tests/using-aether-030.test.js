@@ -110,11 +110,11 @@ test('The verdict names aether-delegate approve for an edit, and the rules say o
   assert.equal(muse.length, 1)
 })
 
-test('a read-only delegate is approved with the plain verdict, which still names approve (R29)', () => {
+test('a read-only delegate whose checks pass is closed by the system, and is judged with verdict only for fix or infeasible (R26)', () => {
   const verdict = text.slice(text.indexOf('**The verdict.**'), text.indexOf('**Climbing.**'))
-  const other = verdict.slice(verdict.indexOf('For the other cases'))
+  const other = verdict.slice(verdict.indexOf('Otherwise'))
   assert.match(other, /`aether-delegate verdict --task <id> --verdict approve\|fix\|infeasible`/)
-  assert.match(other, /A read-only delegate did not edit, so `aether-delegate approve` refuses it and `approve` on that line closes it/)
+  assert.match(other, /A read-only delegate whose checks pass is closed by the system; use verdict with it only for fix or infeasible, and before it is closed; when a check fails on files another writer changed, verdict --verdict approve --ignore '<glob>'\./)
   assert.match(other, /`fix` and `infeasible` stay on that line for an edit too/)
 })
 

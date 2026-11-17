@@ -138,7 +138,11 @@ ${CLAUDE_PLUGIN_ROOT}/bin/aether-wt decline <runId> <task> --reason "<why>"
 
   The commit must be in the integration branch. The report then counts the unit as `adopted`, not `blocked`. When that launch's review already ran, it did not see this commit: give an `aether:reviewer` the package of the whole run (`aether-wt diff <runId> --final`). When it is `deferred`, the run's own review covers what you adopted (see "Final review deferred").
 - **Patches:** `<runDir>/patches/<task>.patch` holds a unit's unmerged work. Read it before you apply it with `git apply`.
-- **Final review findings:** handle them as a final review is handled.
+- **Final review findings:** handle them as a final review is handled. This rule serves the final reviewer and the reviewer of a delegate alike.
+  - ready is approved.
+  - ready-with-fixes is approved when no finding is important or critical; when one is, fix the critical and important findings, and the minor ones are deferred.
+  - Minor findings are not worked, with ready or with ready-with-fixes: there is no exception.
+  - A not-ready is not approved before you write the reason: in the run's diary (.aether/autonomy/<run id>/diary.md) or, outside a run, in your next answer to the owner. There is no command and no flag for it.
   - Re-grade each finding by its effect.
   - Fix the critical and important ones: a short fix yourself on the integration branch, with its test, when it fits the direct path; a longer one through a delegate task or a relaunch; a design-level one through the Writer and `/aether:design` in short mode.
   - Defer the minor ones: list them in the report, or in a run in the brief. They are not worked.
