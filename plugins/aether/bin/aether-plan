@@ -5,7 +5,6 @@
 // and counts a spec's requirements against the map threshold.
 // Calls lib/plan-compile.js, lib/plan-design.js, lib/plan-number.js or lib/plan-requirements.js.
 
-const fs = require('node:fs')
 const path = require('node:path')
 const argv = process.argv.slice(2)
 const verb = argv[0]
@@ -23,27 +22,8 @@ if (verb === 'next-spec') {
   const { main } = require(path.join(__dirname, '..', 'lib', 'plan-compile.js'))
   main(argv, { cwd: process.cwd(), stdout: process.stdout })
 } else if (verb === 'requirements') {
-  const { loadThreshold, requirementsResult } = require(path.join(__dirname, '..', 'lib', 'plan-requirements.js'))
-  const fail = (errors) => {
-    process.stdout.write(JSON.stringify({ ok: false, errors, warnings: [] }) + '\n')
-    process.exit(1)
-  }
-  const specArg = argv[1]
-  if (!specArg || argv.length > 2) fail([USAGE])
-  const specPath = path.resolve(specArg)
-  let specText
-  try {
-    specText = fs.readFileSync(specPath, 'utf8')
-  } catch {
-    fail([`spec not found: ${specPath}`])
-  }
-  let threshold
-  try {
-    threshold = loadThreshold()
-  } catch (err) {
-    fail([err.message])
-  }
-  process.stdout.write(JSON.stringify(requirementsResult(specText, threshold)) + '\n')
+  const { main } = require(path.join(__dirname, '..', 'lib', 'plan-requirements.js'))
+  main(argv, { cwd: process.cwd(), stdout: process.stdout })
 } else {
   process.stdout.write(JSON.stringify({ ok: false, errors: [USAGE], warnings: [] }) + '\n')
   process.exit(1)

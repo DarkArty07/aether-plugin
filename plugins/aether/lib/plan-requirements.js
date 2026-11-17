@@ -40,4 +40,32 @@ function requirementsResult(specText, threshold) {
   return { requirements, threshold, map: requirements >= threshold }
 }
 
-module.exports = { countRequirements, loadThreshold, requirementsResult }
+const USAGE = 'usage: aether-plan requirements <spec.md>'
+
+function fail(errors, stdout) {
+  stdout.write(JSON.stringify({ ok: false, errors, warnings: [] }) + '\n')
+  process.exit(1)
+}
+
+// The `requirements` verb: read-only; prints one JSON line and exits 0, or a JSON
+// error and exits 1 on a missing spec or an unreadable threshold. It writes nothing.
+function main(argv, { cwd = process.cwd(), stdout = process.stdout } = {}) {
+  const specArg = argv[1]
+  if (!specArg || argv.length > 2) fail([USAGE], stdout)
+  const specPath = path.resolve(cwd, specArg)
+  let specText
+  try {
+    specText = fs.readFileSync(specPath, 'utf8')
+  } catch {
+    fail([`spec not found: ${specPath}`], stdout)
+  }
+  let threshold
+  try {
+    threshold = loadThreshold()
+  } catch (err) {
+    fail([err.message], stdout)
+  }
+  stdout.write(JSON.stringify(requirementsResult(specText, threshold)) + '\n')
+}
+
+module.exports = { countRequirements, loadThreshold, requirementsResult, main }
