@@ -35,9 +35,11 @@ Node.js 22 with no dependencies. The workflow's tests run its script in a harnes
 - `skills`: ten cases for the skills the model may pick by itself. Seven ask for the work of one of them (art-direction, constitution, specify, plan, tasks, models and skills), and three ask for something unrelated that must load none. Their `llm` graders call a judge.
 
 ```
-claude plugin eval plugins/aether --tag dormido --allow-tools Write --model haiku --max-cost-usd 3 --no-publish
-claude plugin eval plugins/aether --tag skills --allow-tools Write --model haiku --max-cost-usd 2 --no-publish
+claude plugin eval plugins/aether --tag dormido --allow-tools Write --model sonnet --max-cost-usd 3 --no-publish
+claude plugin eval plugins/aether --tag skills --allow-tools Write --model sonnet --judge-model sonnet --max-cost-usd 10 --no-publish
 ```
+
+Run them on the Lead's model, Sonnet (`agents/lead.md`), and judge on it too: the owner holds a finding measured on another model to be inadequate («cualqueir hallasgo que no se haya hehcom con ese modelo es inadecuado», 2026-11-17, issue #313). `claude plugin eval` has no effort option, so a run uses the model's default effort, not the Lead's `xhigh`. On 2026-11-17 the `skills` tag on Sonnet cost US$ 4.51.
 
 A run spends the account's plan or API credit, and its results go to a `results/` folder beside the cases, which git ignores. A case cannot start its session as `aether:lead`, so the suite does not evaluate Aether mode itself.
 
