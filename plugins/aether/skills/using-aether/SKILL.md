@@ -131,9 +131,9 @@ The ladder is computed by a fixed law over Artificial Analysis figures, the Pare
 - `AETHER-TASK: <id>`: the task's name. Launch the next attempt, a rise, with the same id, and the system adds the earlier work and the findings to its brief; a new id is a new task.
 - `AETHER-OWNS: <globs>` and `AETHER-TESTS: <command>`, when it edits. Without them the task is read-only: touching any checkout file fails it, and so does an empty answer.
 
-A delegate that edits on Claude works with `isolation: "worktree"`. When you judge it, pass that worktree's path with `--worktree`: without it or the result's checks, an `approve` is refused.
+A delegate that edits on Claude works with `isolation: "worktree"`. When you judge it, pass that worktree's path with `--worktree`: without it or the result's checks, an `approve` is refused. Pass `--ignore <glob>` for dirty files unrelated to the task.
 
-**The verdict.** For an edit, `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate approve --task <id>` gives the verdict, merges and runs the tests; on `main` or `master` it checks `aether-autonomy check merge-main` and never merges without it. For the other cases, `aether-delegate verdict --task <id> --verdict approve|fix|infeasible`; a verdict not through it does not count. A read-only delegate did not edit, so `aether-delegate approve` refuses it and `approve` on that line closes it. `fix` and `infeasible` stay on that line for an edit too. Pass `--ignore <glob>` for dirty files unrelated to the task.
+**The verdict.** For an edit, `aether-delegate approve --task <id>` judges, merges and tests it; on `main` or `master` it checks `aether-autonomy check merge-main` and never merges without it. Otherwise `aether-delegate verdict --task <id> --verdict approve|fix|infeasible`; no other verdict counts. A read-only delegate whose checks pass is closed by the system; use verdict with it only for fix or infeasible, and before it is closed; when a check fails on files another writer changed, verdict --verdict approve --ignore '<glob>'. `fix` and `infeasible` stay on that line for an edit too.
 - `fix` sends the work to the next rung in `config/ladder.json` with concrete findings, each `--finding 'file:line: what is missing'`; a finding with no file or no "what is missing" is refused.
 - `infeasible --reason <text>` declares the task out of reach of this model, and is refused without a reason.
 
@@ -180,6 +180,7 @@ Handle defined fallbacks immediately and log them in the diary, never asking the
 - Design round: `/aether:design` falls back to native, retries an empty answer once, returns the result.
 - Swarm merge failure, exhausted ladder or skipped unit: `aether:swarm`, §5.
 - Failed delegate: "The delegate ladder".
+- Act on a reviewer's verdict, final or of a delegate, with the rule of aether:swarm, «Final review findings».
 - Command leaves a dirty worktree: stash its changes and continue.
 
 If the same fallback fails twice at one step, apply "Autonomous runs"' repetition rule.
