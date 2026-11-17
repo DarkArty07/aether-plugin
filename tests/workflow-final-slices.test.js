@@ -120,7 +120,7 @@ test('every slice native when no pair exists at all: the result is as before, ap
 })
 
 test('a blocked slice fails the review and keeps the findings of the other slices', async (t) => {
-  const finding = { severity: 'important', title: 'a slice finding', file: 'src/t1/a.js:1', evidence: 'x' }
+  const finding = { severity: 'important', title: 'a slice finding', file: 'src/t1/a.js:1', evidence: 'x', fix: 'rename a' }
   const detail = 'the integration branch was rewound or rewritten during the lane call'
   const run = await runWorkflow(slicedRun(t), {
     lane: onSlices({ 'final-review-slice-1': [SONNET], 'final-review-slice-2': [SONNET] }, (call, fallback) => {

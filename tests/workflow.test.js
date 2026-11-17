@@ -437,7 +437,7 @@ test('a sliced final review with a silent slice fails and keeps the other findin
   const args = compile(makeRepo(t), plan([task(1), task(2), task(3), task(4)]))
   const run = await runWorkflow(args, {
     reviewer: (call, ready) =>
-      call.label.includes('slice 2/2') ? null : { verdict: 'ready-with-fixes', findings: [finding('a slice finding')], declined: [], summary: 'Mostly ready.' },
+      call.label.includes('slice 2/2') ? null : { verdict: 'ready-with-fixes', findings: [{ ...finding('a slice finding'), fix: 'rename a' }], declined: [], summary: 'Mostly ready.' },
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   assert.equal(run.result.finalReview.status, 'failed')
@@ -664,12 +664,29 @@ test('a final review with findings that are not an array, or an unknown verdict,
   assert.deepEqual(odd.events.slice(-2), ['start ops:sweep', 'end ops:sweep'])
 
   const mixed = await runWorkflow(threeTasks(t), {
-    reviewer: () => ({ verdict: 'ready-with-fixes', findings: ['a stray line', finding('naming drift')], declined: [], summary: 'Mostly fine.' }),
+    reviewer: () => ({ verdict: 'ready-with-fixes', findings: ['a stray line', { ...finding('naming drift'), fix: 'rename b' }], declined: [], summary: 'Mostly fine.' }),
   })
   assert.equal(mixed.error, null, mixed.error && mixed.error.stack)
-  assert.deepEqual(mixed.result.finalReview.findings, [finding('naming drift')])
+  assert.deepEqual(mixed.result.finalReview.findings, [{ ...finding('naming drift'), fix: 'rename b' }])
   assert.equal(mixed.result.finalReview.verdict, 'ready-with-fixes')
   assert.equal(mixed.result.finalReview.summary, 'Mostly fine.')
+})
+
+test("the fix of each final-review finding reaches the run result's finalReview.findings", async (t) => {
+  const run = await runWorkflow(threeTasks(t), {
+    reviewer: () => ({
+      verdict: 'ready-with-fixes',
+      findings: [
+        { ...finding('first gap'), fix: 'change a.js to X' },
+        { ...finding('second gap'), fix: 'rename b' },
+      ],
+      declined: [],
+      summary: 'Mostly fine.',
+    }),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.finalReview.verdict, 'ready-with-fixes')
+  assert.deepEqual(run.result.finalReview.findings.map((f) => f.fix), ['change a.js to X', 'rename b'])
 })
 
 test('a dirty integration worktree or a failed merge command blocks the unit at once', async (t) => {

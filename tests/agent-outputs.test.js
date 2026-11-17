@@ -37,16 +37,6 @@ const UNREAD = [
       assert.ok(!('properties' in schemas.IMPLEMENTER_SCHEMA.properties.tests))
     },
   },
-  {
-    file: 'reviewer',
-    phrases: ['and the fix when it is not obvious'],
-    reason: 'a review finding has no fix field',
-    check: () => {
-      const items = schemas.REVIEW_SCHEMA.properties.findings.items
-      assert.ok(!items.required.includes('fix'))
-      assert.ok(!Object.keys(items.properties).includes('fix'))
-    },
-  },
 ]
 
 test('writer.md names every field the Writer schemas require', () => {

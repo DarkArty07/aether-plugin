@@ -63,7 +63,8 @@ List every behavior you considered and set aside as outside the plan or spec, on
 ## Report
 
 Return the structured report the workflow asks for:
-- `verdict`: `ready`, `ready-with-fixes` or `not-ready`.
-- `findings`: one per issue, each with its severity, a title, `file:line`, and the evidence: what is wrong and why it matters.
+- `verdict`: `ready`, `ready-with-fixes` or `not-ready`. Say ready when you have no critical and no important finding, even if minor findings remain.
+- `findings`: one per issue, each with its severity, a title, `file:line`, the evidence: what is wrong and why it matters, and its fix. Every finding carries its fix: the change that resolves it, in one line.
+- Report at most 10 minor findings.
 - `declined`: the list above.
 - `summary`: the strengths, and a short assessment that explains the verdict.
