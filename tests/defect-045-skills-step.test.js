@@ -130,8 +130,29 @@ test('R23: a reviewer that ends without an answer, answers something invalid or 
   }
 })
 
+test('R25: a partial search failure still reviews and installs the valid candidate and keeps pending', async () => {
+  const find = {
+    ok: false,
+    candidates: [{ ...godot, code: { ok: true } }],
+    rejected: [],
+    pending: [{ source: 'someone/else', author: 'someone' }],
+    errors: ['topic containers: invalid response: no skill token'],
+  }
+  const run = await go(ARGS, {
+    ops: skillsOps(find),
+    'skill-reviewer': reviewByName({ 'godot-helper': { verdict: 'approved', reasons: [] } }),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'approved')
+  const lines = run.calls.filter((c) => c.command).map((c) => c.command.line)
+  assert.ok(lines.includes(`aether-plan skills install ${FEATURE} godot-helper-1a2b`))
+  assert.deepEqual(run.result.skills.installed.map((s) => s.name), ['godot-helper'])
+  assert.deepEqual(run.result.skills.pending, [{ source: 'someone/else', author: 'someone' }])
+  assert.ok(run.logs.some((line) => line.startsWith('skills: ') && line.includes('topic containers: invalid response: no skill token')), run.logs.join('\n'))
+})
+
 test('R25: find that does not run, answers ok:false or has errors is logged and the design still completes spec, plan, tasks and exam', async () => {
-  for (const find of [{ error: 'no network' }, { ok: false, errors: ['boom'] }, FIND([], { errors: ['timeout'] })]) {
+  for (const find of [{ error: 'no network' }, { ok: false, errors: ['boom'] }, { ok: false, topics: [], candidates: [], rejected: [], pending: [], errors: ['timeout'] }]) {
     const run = await go(ARGS, { ops: skillsOps(find) })
     assert.equal(run.error, null, run.error && run.error.stack)
     assert.equal(run.result.status, 'approved')

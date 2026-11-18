@@ -1016,9 +1016,10 @@ function skillReviewMessage(candidate) {
 // The skills step (R22 to R25): after the spec is approved and before the
 // plan map, the flow searches the skills the design may reuse, has the
 // skill-reviewer review at most one candidate per topic and three per design,
-// and installs what it approves. A search that does not run or reports an
-// error is logged and the design goes on with what it has (a search that
-// reports errors still reports its pending list), never a failure. A
+// and installs what it approves. A search that does not run is logged and
+// the design goes on with nothing; a search that printed its JSON is logged
+// for its errors and the design goes on with its candidates, rejected and
+// pending, never a failure. A
 // rejection of the search's own code stage is logged and listed with its
 // reason. A reviewer that ends without an answer, answers without an approved
 // verdict, or fails, drops the candidate's folder (fail closed). A failed
@@ -1034,16 +1035,8 @@ async function skillsStep() {
     empty()
     return
   }
-  if (found.ok !== true) {
-    log(`skills: the search answered ok: false: ${listOf(found.errors).join(' ')}; the design goes on`)
-    empty()
-    return
-  }
   if (listOf(found.errors).length > 0) {
     log(`skills: the search reported errors: ${listOf(found.errors).join(' ')}; the design goes on`)
-    const pending = (Array.isArray(found.pending) ? found.pending : []).filter(isObject).map((entry) => ({ source: entry.source, author: entry.author }))
-    skills = { installed: [], rejected: [], pending }
-    return
   }
   const wanted = []
   const seenTopics = new Set()

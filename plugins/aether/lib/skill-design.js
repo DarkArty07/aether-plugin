@@ -176,7 +176,7 @@ function writeState(dataDir, feature, state) {
 
 // The deterministic code stage (R23 a, b, c): no model runs before it.
 // Reads every file of the folder; a failing skill is rejected, never installed.
-function codeReview(dir, { topic, installedNames = [] } = {}) {
+function codeReview(dir, { topic, installedNames = [], acceptedKeys = [] } = {}) {
   const problems = []
   const folderName = path.basename(dir)
   const entries = installLib.listEntries(dir)
@@ -236,6 +236,9 @@ function codeReview(dir, { topic, installedNames = [] } = {}) {
   }
   const claimed = front.name || folderName
   if (claimed && installedNames.includes(claimed)) problems.push(`it duplicates the installed skill "${claimed}"`)
+  if (acceptedKeys.length > 0 && matchesKeys(front.name, front.description, acceptedKeys)) {
+    problems.push(`SKILL.md duplicates an already accepted topic: "${front.name || folderName}" matches a covered topic of this run`)
+  }
   return { ok: problems.length === 0, problems }
 }
 
@@ -268,7 +271,7 @@ function contentProblems(text, rel) {
   for (const needle of ['~/.ssh', '~/.aws', 'id_rsa', 'id_ed25519', 'credentials']) {
     if (lower.includes(needle)) at(needle)
   }
-  if (/\.env(?![a-z0-9_])/i.test(text)) at('.env')
+  if (/(?<![\w)\]])\.env(?![a-z0-9_])/i.test(text)) at('.env')
   if (/\.pem(?![a-z0-9_])/i.test(text)) at('a key file')
   for (const needle of ['.claude/settings.json', '.claude/hooks', 'trusted.json', 'grants.json', 'run.json']) {
     if (lower.includes(needle)) problems.push(`${needle} in ${rel}: the skill touches a protected path`)
@@ -276,10 +279,13 @@ function contentProblems(text, rel) {
   if (/(^|\s)-g(\s|$)/.test(text) || lower.includes('--global') || lower.includes('~/.agents/skills') || lower.includes('~/.claude/skills')) {
     problems.push(`a global install in ${rel}: the skill is installed per project, never global`)
   }
-  if (/curl[\s\S]{0,300}\|\s*(sh|bash|sudo\b)/i.test(text) || /wget[\s\S]{0,300}\|\s*(sh|bash|sudo\b)/i.test(text)) {
+  if (/\bcurl\b[\s\S]{0,300}\|\s*(sh|bash|zsh|node|perl|ruby|python3?|sudo)\b/i.test(text) || /\bwget\b[\s\S]{0,300}\|\s*(sh|bash|zsh|node|perl|ruby|python3?|sudo)\b/i.test(text)) {
     problems.push(`remote download piped to a shell in ${rel}: the skill downloads and executes remote code`)
   }
-  if (/\beval\s*\(/.test(text)) problems.push(`eval in ${rel}: the skill evaluates remote input`)
+  if (/\b(sh|bash|zsh)\b\s+-c\s+[\s\S]{0,300}\b(curl|wget)\b/i.test(text) || /\b(sh|bash|zsh)\b\s*<\s*\([\s\S]{0,300}\b(curl|wget)\b/i.test(text) || /\beval\b[\s("'`$]{0,20}\b(curl|wget)\b/i.test(text)) {
+    problems.push(`remote download executed by a shell in ${rel}: the skill downloads and executes remote code (piped or passed to a shell)`)
+  }
+  if (/(?<![\w.])eval\s*\(/.test(text)) problems.push(`eval in ${rel}: the skill evaluates remote input`)
   if (/curl[^\n]*(-\-\s*data|-d\s|--data\b|-F\s|--upload-file\b)/i.test(text) || /\bgit\b[^\n]*\|\s*curl/i.test(text)) {
     problems.push(`an upload in ${rel}: the skill exfiltrates repository data`)
   }
@@ -369,10 +375,14 @@ function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now, 
       const trusted = new Set(readTrusted(dataDir))
       if (!author || !trusted.has(author)) {
         if (queued < 1) {
+          if (!/^[A-Za-z0-9._~:/-]+$/.test(item.source)) {
+            result.errors.push(`topic ${topic.id}: invalid source "${item.source}": not queued`)
+            continue
+          }
           const command = `npx skills@1.9.0 add ${item.source} --skill ${item.name}`
           const entry = { source: item.source, author, topic: topic.id, command, reason: 'author not in trusted.json' }
           result.pending.push(entry)
-          const already = readPending(pendingRoot).some((line) => line && line.class === 'skill-install' && line.source === item.source)
+          const already = readPending(pendingRoot).some((line) => line && line.class === 'skill-install' && line.source === item.source && line.command === command)
           if (!already) appendPending(pendingRoot, { class: 'skill-install', source: item.source, author, command, reason: 'author not in trusted.json' })
           queued += 1
         }
@@ -386,7 +396,7 @@ function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now, 
       const skillDir = path.join(downloaded.dir, '.agents', 'skills', item.name)
       let review = null
       try {
-        review = codeReview(skillDir, { topic, installedNames: [...names] })
+        review = codeReview(skillDir, { topic, installedNames: [...names], acceptedKeys: [...acceptedKeys] })
       } catch (err) {
         review = { ok: false, problems: [`the code stage failed: ${String((err && err.message) || err)}`] }
       }
