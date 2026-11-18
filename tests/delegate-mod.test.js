@@ -311,6 +311,33 @@ test('a read-only delegate on Claude goes through the model untouched, and its l
   assert.ok(run.init.timeoutMs <= 15000)
 })
 
+test('a read-only answer the turn cut off records its stop reason, while end_turn keeps its argv (defect 045)', async () => {
+  const { $, calls } = make({ begin: [{ ...PLAN, answerOf: { task: 't1', attempt: 1 } }], answer: [{ recorded: true }] })
+  const delegates = createDelegates()
+  await delegates.toolCall($, EV, recorder().next, CTX)
+  delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+  const { result } = await collect(delegates.step($, { index: 1, agentId: 'agent-1', turnId: 't' }, () => streamed({ answer: 'half an answer', stopReason: 'max_tokens' }), CTX))
+  assert.equal(result.stopReason, 'max_tokens')
+  const run = calls.runs.at(-1)
+  assert.deepEqual(run.argv.slice(2, 4), ['answer', '--session'])
+  assert.deepEqual(run.argv.slice(run.argv.indexOf('--session'), run.argv.indexOf('--task')), ['--session', 's1', '--stop-reason', 'max_tokens'])
+  assert.deepEqual(run.argv.slice(run.argv.indexOf('--task')), ['--task', 't1', '--attempt', '1', '--text', 'half an answer'])
+})
+
+test('a stop reason that is empty or spaced is recorded without --stop-reason, so the CLI does not refuse the answer (defect 045)', async () => {
+  for (const stopReason of ['', 'a b']) {
+    const { $, calls } = make({ begin: [{ ...PLAN, answerOf: { task: 't1', attempt: 1 } }], answer: [{ recorded: true }] })
+    const delegates = createDelegates()
+    await delegates.toolCall($, EV, recorder().next, CTX)
+    delegates.bind($, { ...EV, model: 'haiku', effort: 'high' }, 'agent-1', CTX)
+    await collect(delegates.step($, { index: 1, agentId: 'agent-1', turnId: 't' }, () => streamed({ answer: 'an answer', stopReason }), CTX))
+    const run = calls.runs.at(-1)
+    assert.deepEqual(run.argv.slice(2, 4), ['answer', '--session'], stopReason)
+    assert.equal(run.argv.includes('--stop-reason'), false, stopReason)
+    assert.deepEqual(run.argv.slice(run.argv.indexOf('--task')), ['--task', 't1', '--attempt', '1', '--text', 'an answer'], stopReason)
+  }
+})
+
 test('a failing answer record never breaks the step of a read-only delegate on Claude', async () => {
   const { $ } = make({ begin: [{ ...PLAN, answerOf: { task: 't1', attempt: 1 } }], answer: [new Error('boom')] })
   const delegates = createDelegates()

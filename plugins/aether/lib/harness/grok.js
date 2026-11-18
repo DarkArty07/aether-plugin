@@ -11,6 +11,14 @@ const { defaultLogFile, readGrokQuota } = require('./grok-quota.js')
 // Grok's answer is the first of these fields that holds a string.
 const ANSWER_FIELDS = ['result', 'response', 'text', 'output']
 
+// The stop reason grok's JSON output reports, or null when the output holds none
+// worth carrying: only a non-empty string other than `end_turn` counts.
+function stopReasonOf(data) {
+  if (data === null) return null
+  const reason = data.stopReason
+  return typeof reason === 'string' && reason !== '' && reason !== 'end_turn' ? reason : null
+}
+
 // Grok prints one JSON object: its answer is the first string among ANSWER_FIELDS, and its usage is the usage
 // object. Every other field is outside the answer, where a quota line may sit; without an object, all of the output
 // is outside it. Checked against grok 1.0.41 (Grok Build) on 2026-10-13: a run prints `text`, `usage` with
@@ -18,7 +26,7 @@ const ANSWER_FIELDS = ['result', 'response', 'text', 'output']
 // `text` joins the words of every turn without a separator, so the JSON of the answer is the last object in it.
 function readGrok(stdout) {
   const data = extractJsonObject(stdout)
-  if (data === null) return { answer: '', usage: usageOf({}), outside: stdout }
+  if (data === null) return { answer: '', usage: usageOf({}), outside: stdout, stopReason: null }
   const field = ANSWER_FIELDS.find((name) => typeof data[name] === 'string')
   const usage = data.usage ?? {}
   return {
@@ -34,6 +42,7 @@ function readGrok(stdout) {
       .filter(([key]) => key !== field)
       .flatMap(([, value]) => stringsIn(value))
       .join('\n'),
+    stopReason: stopReasonOf(data),
   }
 }
 
@@ -71,7 +80,10 @@ function createGrok({ command = 'grok', groups = {}, exec = defaultExec, env = p
     },
 
     parse(raw, { required = [] } = {}) {
-      return parseRun(raw, readGrok, required)
+      const parsed = parseRun(raw, readGrok, required)
+      const { stopReason } = readGrok(typeof raw?.stdout === 'string' ? raw.stdout : '')
+      if (stopReason !== null) parsed.stopReason = stopReason
+      return parsed
     },
 
     // Each call reports its own usage, not a running total, so the current usage is the turn's.

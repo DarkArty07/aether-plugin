@@ -305,6 +305,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
   let result
   let usage = { ...NO_USAGE }
   let quotaAfter = null
+  let stopReason = null
   const limit = { killed: false }
   let timeoutSeconds = null
   let snapshot = null
@@ -347,6 +348,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     }
     const parsed = cli.parse({ stdout: readTextOrEmpty(stdoutFile), stderr: readTextOrEmpty(stderrFile), exitCode }, { required: DELEGATE_SCHEMA.required })
     usage = usageOf(parsed.usage)
+    if (typeof parsed.stopReason === 'string' && parsed.stopReason !== '') stopReason = parsed.stopReason
     const changes = worktreeChanges(worktree, start)
     if (changes.files.length > 0 || changes.moved) {
       const what = changes.files.length > 0 ? `changed ${changes.files.join(', ')}` : `moved HEAD from ${start} to ${changes.head}`
@@ -381,6 +383,7 @@ async function runDelegate({ cwd, id, harness, rung, task, config, dataDir, adap
     quotaAfter,
     quotaSpent: quotaSpent(quotaBefore, quotaAfter),
     timedOut: limit.killed,
+    ...(stopReason !== null ? { stopReason } : {}),
     ...(result.status === 'violation' ? { changed: result.changed } : {}),
     ...(snapshot === null ? {} : { tree: top, uncommitted: snapshot.uncommitted, envHeldBack: snapshot.envHeldBack }),
   })

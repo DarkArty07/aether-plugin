@@ -305,6 +305,41 @@ test('the quota goes through the saved reading: the one before is served from it
   assert.equal(s.usageCalls().length, 3, 'the reading before came from the saved one: only the reading after started agy')
 })
 
+// A fake grok adapter whose parse() reports the given result: runDelegate must carry its stopReason, if any.
+function fakeGrokAdapter(parsed) {
+  return {
+    name: 'grok',
+    schemaInPrompt: true,
+    installed: () => true,
+    modelArg: ({ model }) => model,
+    quota: () => ({ groups: { grok: { unknown: true, windows: {} } } }),
+    argv: () => [process.execPath, '-e', ''],
+    parse: () => parsed,
+  }
+}
+const grokRung = { model: 'grok-4.7', effort: 'high', group: 'grok' }
+const runWithAdapter = (s, adapter, id) => delegate.runDelegate({
+  cwd: s.repo.dir, id, harness: 'grok', rung: grokRung, task: { description: 'audit the retry wrapper', prompt: 'Audit.' }, config: s.config, dataDir: s.dataDir, adapter,
+})
+
+test('runDelegate carries stopReason from a grok parse that reports a cut-off answer (defect 045)', async (t) => {
+  const s = setup(t)
+  const adapter = fakeGrokAdapter({ clean: true, reason: null, structured: { answer: 'cut' }, usage: {}, stopReason: 'length' })
+  const out = await runWithAdapter(s, adapter, `d-stop-length-${PID}`)
+  assert.equal(out.status, 'ok', out.detail)
+  assert.equal(out.text, 'cut')
+  assert.equal(out.stopReason, 'length')
+})
+
+test('runDelegate omits stopReason when the grok parse reports none (defect 045)', async (t) => {
+  const s = setup(t)
+  const adapter = fakeGrokAdapter({ clean: true, reason: null, structured: { answer: 'full' }, usage: {} })
+  const out = await runWithAdapter(s, adapter, `d-stop-none-${PID}`)
+  assert.equal(out.status, 'ok', out.detail)
+  assert.equal(out.text, 'full')
+  assert.equal(Object.hasOwn(out, 'stopReason'), false)
+})
+
 test('quotaSpent is what each window lost between two readings of the same reset', () => {
   const win = (remaining, resetsAt = '2026-10-17T00:00:00Z') => ({ remaining, resetsAt })
   const before = { windows: { weekly: win(0.95), '5h': win(0.9, '2026-10-15T05:00:00Z') } }
