@@ -102,14 +102,15 @@ Herramienta `skills@1.9.0`, el 2026-11-18. Fuente: su `--help` y llamadas reales
 
 En `findForDesign` (`plugins/aether/lib/skill-design.js`), para cada tema no cubierto:
 
-1. `trusted.json` se lee una vez por llamada, no una vez por candidato. Los autores van en orden alfabético. Solo se consulta un autor que cumpla `^[a-z0-9][a-z0-9-]{0,38}$`; cualquier otro se anota en `errors` y no se consulta. Por tema se consultan como mucho los 5 primeros autores válidos; cada uno de los demás se anota en `errors` como `trusted author <autor> not searched: limit 5`.
+1. `trusted.json` se lee una vez por llamada, no una vez por candidato. Los autores van en orden alfabético. Solo se consulta un autor que cumpla `^[a-z0-9][a-z0-9-]{0,38}$`; cualquier otro no se consulta y se anota en `skipped`. Por tema se consultan como mucho los 5 primeros autores válidos; cada uno de los demás se anota en `skipped` como `trusted author <autor> not searched: limit 5`. `skipped` es una lista nueva del resultado de `findForDesign` (`[]` también en los resultados vacíos); no entra en `errors`, así que un `trusted.json` con más de 5 autores o con una entrada inválida no vuelve `ok: false` cada búsqueda (`result.ok` sigue siendo `errors.length === 0`, línea 423). El flujo (`design.workflow.js`, línea 1090) la muestra en su registro junto a los errores, sin tratarla como fallo.
 2. Por cada autor de confianza corre `find <consulta> --owner <autor>`. De esa salida solo cuentan las skills cuya fuente es de ese autor.
 3. Después corre la búsqueda general de hoy, `find <consulta>`.
 4. Los resultados se procesan en ese orden con las reglas actuales, sin cambios: relevancia por `matchesKeys`, nombre y fuente seguros, 1 skill aceptada por tema, 1 pendiente por tema, 3 por diseño y duplicados. Un par `fuente@nombre` ya visto en el mismo tema se salta.
 5. Una búsqueda cuya salida no trae ningún `owner/repo@skill` cuenta como «sin resultados». El tema anota `topic <id>: invalid response: no skill token` solo cuando ninguna de sus búsquedas trajo uno.
 6. Una búsqueda que falla o que vence anota su error como hoy y termina las búsquedas de ese tema. `find <consulta> --owner <autor>` sin coincidencias sale con 0 (E5), así que no termina nada: solo cuenta como «sin resultados» (punto 5).
 7. Cuando un tema ya tiene su skill aceptada, sus búsquedas restantes no corren: ni los demás autores ni la búsqueda general, y no se encola ninguna sugerencia de otro autor para ese tema. Hoy el bucle ya se detiene en `accepted >= 1`; esto lo extiende a las búsquedas que siguen. La sugerencia de otro autor (1 pendiente por tema) solo se encola cuando el tema no logró ninguna skill aceptada, y solo la puede traer la búsqueda general, porque las búsquedas por autor solo cuentan skills de autores de confianza.
-8. Cota de espera. Cada búsqueda vence a los `FIND_TIMEOUT_MS` (15 s). Con N autores consultados por tema (N ≤ 5), un tema hace como mucho N+1 búsquedas, 15·(N+1) s, y un diseño de 3 temas 45·(N+1) s: 270 s con N = 5, dentro de los 600 s de `OPS_TIMEOUT_MS`. Sin red, la primera búsqueda que vence termina el tema (punto 6), así que son 15 s por tema, 45 s en total. Las descargas (`ADD_TIMEOUT_MS`, 60 s) son aparte y llegan a 3 por diseño.
+8. Intentos de descarga. Una descarga es un intento aunque falle, o aunque la etapa de código rechace la skill. Se permite 1 intento por tema y 3 por diseño, cuenten o no como aceptados; hoy (líneas 398-413) un fallo o un rechazo hace `continue` sin subir `accepted`, y el siguiente resultado de confianza descargaría otra vez sin límite. Tras el intento de un tema, ese tema deja de procesar resultados: la skill aceptada es su única salida, y si el intento falla o se rechaza, el tema queda sin skill y el error o el rechazo se anotan como hoy. Los dos topes son constantes de `skill-design.js`, junto a `MAX_PER_DESIGN`.
+9. Cota de espera. Cada búsqueda vence a los `FIND_TIMEOUT_MS` (15 s) y cada descarga a los `ADD_TIMEOUT_MS` (60 s). Con N autores consultados por tema (N ≤ 5), un tema hace como mucho N+1 búsquedas y un diseño de 3 temas 3·(N+1) búsquedas, más 3 intentos de descarga como máximo. Búsquedas + intentos × 60 s ≤ 600 s: 15·18 + 3·60 = 270 + 180 = 450 s con N = 5, dentro de los 600 s de `OPS_TIMEOUT_MS`, porque la descarga corre en la misma llamada de `ops` que las búsquedas (`design.workflow.js`, línea 1083). Sin red, la primera búsqueda que vence termina el tema (punto 6): 15 s por tema, 45 s en total, y sin resultados no hay descargas.
 
 ### Cambio C: la descarga espera su revisión dentro del proyecto
 
@@ -132,12 +133,13 @@ En `findForDesign` (`plugins/aether/lib/skill-design.js`), para cada tema no cub
 - La tarjeta de la evidencia: con el tema `pdf` y un registro falso que distingue `--owner`, la skill `pdf` de `anthropics` queda como candidata aunque la búsqueda general no la devuelva.
 - Las búsquedas de un tema corren en orden: una por autor de confianza, en orden alfabético, y después la general. `trusted.json` se lee una vez.
 - En una búsqueda por autor, una skill de otro autor no cuenta.
-- Un autor de `trusted.json` que no cumple el patrón no se consulta y queda en `errors`.
+- Un autor de `trusted.json` que no cumple el patrón no se consulta y queda en `skipped`, no en `errors`.
 - Un tema con búsquedas sin resultados y una con resultados no anota error; uno sin ningún resultado anota `invalid response: no skill token` una sola vez.
 - Una búsqueda que vence termina las búsquedas de su tema, y el tema siguiente sí se busca.
 - Un tema con su skill aceptada por la búsqueda de un autor no hace la búsqueda general ni otra búsqueda por autor (se cuentan las llamadas) y no encola ninguna sugerencia; un tema sin skill aceptada y con un resultado de autor desconocido en la búsqueda general encola exactamente 1 pendiente.
 - Una búsqueda por autor sin coincidencias, con salida `No skills found ...` y estado 0, no anota error y deja correr las búsquedas siguientes.
-- Con 7 autores válidos en `trusted.json` se hacen 5 búsquedas por autor más la general, y los otros 2 quedan en `errors` como `not searched: limit 5`.
+- Con 7 autores válidos en `trusted.json` se hacen 5 búsquedas por autor más la general, y los otros 2 quedan en `skipped` como `not searched: limit 5`, no en `errors`: `ok` sigue en `true`.
+- Un tema cuya descarga falla, y otro cuya skill rechaza la etapa de código, hacen 1 sola descarga cada uno aunque la búsqueda traiga más resultados de confianza; con 3 temas se cuentan como mucho 3 llamadas `add` en el diseño, y una cuarta no ocurre. La cota del punto 9 se escribe en la prueba como constantes (búsquedas, intentos, tiempos).
 - La carpeta de revisión queda bajo `.aether/tmp/skill-review/` del worktree, `/.aether/` queda en `.git/info/exclude`, y `git status` del proyecto no la muestra.
 - Tras la descarga, una entrada `.claude` y un enlace de primer nivel que deje el registro falso ya no están.
 - La etapa de código rechaza una skill con `CLAUDE.md`, `AGENTS.md` o una carpeta `.claude` en una subcarpeta profunda de `.agents/skills/<nombre>/`.
@@ -150,23 +152,23 @@ En `findForDesign` (`plugins/aether/lib/skill-design.js`), para cada tema no cub
 
 ### Pruebas visibles que reescribe la enmienda
 
-- **Ubicación de la carpeta:** `tests/skill-install.test.js` (líneas 52-53 y 69) y `tests/skill-design.test.js` (líneas 234-235, 297, 420-423, 445-448, 460-462 y 549). Las llamadas a `discardForDesign` de las líneas 420 y 423 pasan `cwd: w.repo.dir`. Las aserciones «fuera del proyecto» de las líneas 53 y 235 pasan a «dentro de `.aether/tmp/skill-review/` del worktree y fuera de `.agents/skills/` y `.claude/skills/`».
+- **Ubicación de la carpeta:** `fetchForReview` recibe la raíz como parámetro `root` (junto a `reviewRoot` y `reviewDir`) y sin ella falla con error en lugar de usar `process.cwd()`, para no escribir en el checkout de la prueba. `tests/skill-install.test.js`: las llamadas de las líneas 50 y 66 pasan `root: repo.dir` (la de la línea 66 hoy no crea `repo`: se le añade `makeRepo`), y se reescriben las líneas 52-53 y 69. `tests/skill-design.test.js` (líneas 234-235, 297, 420-423, 445-448, 460-462 y 549). Las llamadas a `discardForDesign` de las líneas 420 y 423 pasan `cwd: w.repo.dir`. Las aserciones «fuera del proyecto» de las líneas 53 y 235 pasan a «dentro de `.aether/tmp/skill-review/` del worktree y fuera de `.agents/skills/` y `.claude/skills/`».
 - **Candidatos de las pruebas del flujo:** `tests/defect-045-skills-step.test.js` (líneas 31-32 y 173) y `tests/defect-046-skill-topics.test.js` (línea 365) dan a cada candidato su `dir` nuevo y su `files`.
 - **Registro falso:** el de `tests/skill-design.test.js` (líneas 60-110) y el de `tests/defect-046-skill-topics.test.js` (líneas 92-154) separan `--owner` de la consulta y registran los dos.
 - **Conteos y consultas:** `tests/skill-design.test.js` (línea 203) y `tests/defect-046-skill-topics.test.js` (líneas 192, 223, 258 y 282) cuentan una búsqueda por autor de confianza más la general. Las aserciones de cero búsquedas no cambian.
-- **Errores y tiempo:** `tests/skill-design.test.js` (líneas 382-412, 559 y 563-597) siguen la regla nueva de «sin resultados» y de la búsqueda que vence.
+- **Errores y tiempo:** `tests/skill-design.test.js` (líneas 382-412, 559 y 563-597) siguen la regla nueva de «sin resultados» y de la búsqueda que vence, y la de 1 intento de descarga por tema si alguna espera una segunda descarga en el mismo tema.
 - **Agentes:** `tests/defect-046-skill-topics.test.js` (líneas 51-60), `tests/agents.test.js` (líneas 78-90) y `tests/defect-045-skill-agent.test.js` conservan lo que fijan y suman las frases nuevas.
 
 ### Documentos de la enmienda
 
-- `docs/decisions.md`, A137: una actualización fechada el 2026-11-18 con «si adelante», los tres cambios y la evidencia E1 a E4. El rango `A1–A137` no cambia.
+- `docs/decisions.md`, A137: una actualización fechada el 2026-11-18 con «si adelante», los tres cambios y la evidencia E1 a E5. El rango `A1–A137` no cambia.
 - `docs/guide/design-seats.md`, `docs/guide/project-files-and-skills.md` y `docs/es/guias/archivos-skills-y-continuidad.md`: una frase cada uno. Dice que la búsqueda consulta primero a cada autor de confianza, y que la descarga espera su revisión en `.aether/tmp/skill-review/` dentro del proyecto y se borra al terminar.
 - `tests/defect-046-docs.test.js` fija esas frases.
 
 ### Supuestos de la enmienda
 
 - La limpieza por proyecto de `.aether/tmp/` borra también carpetas con más de 24 horas. La construcción lo comprueba en `plugins/aether/lib/tree-clean.js` y lo reporta si no es así.
-- El tope de 200 archivos por skill y el de 5 autores por tema son valores reversibles que elegí donde la intención calla; ambos viven como constantes de `skill-install.js` y `skill-design.js`.
+- El tope de 200 archivos por skill, el de 5 autores por tema y el de 1 intento de descarga por tema (3 por diseño) son valores reversibles que elegí donde la intención calla; viven como constantes de `skill-install.js` y `skill-design.js`. El de 5 autores se aparta de «cada autor de confianza»: no muerde con los 2 autores de hoy, y el dueño puede confirmarlo o quitarlo.
 - El examen oculto de la spec 045 cuenta una búsqueda por diseño y mira la carpeta de revisión en el directorio de datos. Esas comprobaciones quedan obsoletas con esta enmienda; el Lead las juzga contra este diseño, sin borrar ese examen.
 
 ### Verificación real
