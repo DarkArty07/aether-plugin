@@ -27,8 +27,9 @@ test('R27: the sentences that repeat the old rule say the new case', () => {
   assert.ok(!read('AGENTS.md').includes('Only a verdict that goes through `aether-delegate verdict` counts, and an `approve` with a failed check is refused.'))
 })
 
-test('R28: no reviewer is added to Haiku edits, and an existing test shows approve runs the task tests before merging', () => {
+test('R28: no reviewer is added to Haiku edits, and the refusal on a failed check of the verdict is pinned', () => {
   assert.match(row, /no reviewer/i)
   const approve = read('tests/delegate-approve.test.js')
   assert.match(approve, /runs? the (task's )?tests|test command|npm test|testCommand/i)
+  assert.ok(approve.includes('a failed delegate check refuses the approve, as verdict does'), 'the case that refuses an approve with a failed check')
 })

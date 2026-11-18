@@ -57,7 +57,7 @@ A Lead startup says in its notes how many calibration proposals the last reading
 
 At most once a day, when a Lead session closes, Aether lists the models each active harness offers and compares them with the lane table: a model the table has in none of its parts is new, and one the table has but the harness no longer lists is retired. The reading calls no model and spends no quota; a harness that fails or does not answer in time is skipped with its reason noted, and neither the close nor the next startup waits for it. A second reading the same day calls no harness. The next startup names the new models and the retired ones not yet reported in one line, and `/aether:doctor` shows the whole comparison — the new and retired models per harness, when each was read, and why one could not be read — without writing anything.
 
-The limits are in the capture: Codex is read from the cache file its CLI writes, so the reading is as fresh as the last Codex run; Muse has no capture means without a model call and is never read, which `/aether:doctor` reports as its reason.
+The limits are in the capture: Codex is read from the cache file its CLI writes, so the reading is as fresh as the last Codex run; Muse is read over `muse serve` (`model/list`) with no model call and no quota, last in the round, like the other harnesses.
 
 ## What is kept, and for how long
 
