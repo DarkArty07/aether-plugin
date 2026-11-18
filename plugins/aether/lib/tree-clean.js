@@ -103,7 +103,8 @@ function getMaxMtime(dirPath) {
   return max
 }
 
-function cleanTmpEntry(entryPath, limitMs, now, removed, mainRoot) {
+function cleanTmpEntry(entryPath, limitMs, now, removed, mainRoot, assertSafe = null) {
+  const assert = assertSafe === null ? (target) => assertSafeToDelete(target, mainRoot) : assertSafe
   let stat
   try {
     stat = fs.lstatSync(entryPath)
@@ -112,7 +113,7 @@ function cleanTmpEntry(entryPath, limitMs, now, removed, mainRoot) {
   }
   if (!stat.isDirectory()) {
     if ((now - stat.mtimeMs) > limitMs) {
-      assertSafeToDelete(entryPath, mainRoot)
+      assert(entryPath)
       try {
         fs.unlinkSync(entryPath)
         removed.push({ path: entryPath, why: 'expired' })
@@ -123,7 +124,7 @@ function cleanTmpEntry(entryPath, limitMs, now, removed, mainRoot) {
 
   const maxMtime = getMaxMtime(entryPath)
   if ((now - maxMtime) > limitMs) {
-    assertSafeToDelete(entryPath, mainRoot)
+    assert(entryPath)
     try {
       fs.rmSync(entryPath, { recursive: true, force: true })
       removed.push({ path: entryPath, why: 'expired' })
@@ -138,16 +139,29 @@ function cleanTmpEntry(entryPath, limitMs, now, removed, mainRoot) {
     return
   }
   for (const child of children) {
-    cleanTmpEntry(path.join(entryPath, child), limitMs, now, removed, mainRoot)
+    cleanTmpEntry(path.join(entryPath, child), limitMs, now, removed, mainRoot, assert)
   }
   try {
     const remaining = fs.readdirSync(entryPath)
     if (remaining.length === 0 && (now - fs.statSync(entryPath).mtimeMs) > limitMs) {
-      assertSafeToDelete(entryPath, mainRoot)
+      assert(entryPath)
       fs.rmSync(entryPath, { recursive: true, force: true })
       removed.push({ path: entryPath, why: 'expired' })
     }
   } catch {}
+}
+
+// The skill-review sweep deletes only entries under one worktree's
+// `.aether/tmp/skill-review/`, which lives outside `mainRoot/.aether` for a linked
+// worktree, so `isSafeToDelete` cannot check it. This admits strictly entries inside
+// that folder, never the folder itself. Symlinks read as entries, never as directories
+// (`lstatSync`), so they are unlinked, never followed.
+function assertInsideSkillReview(target, reviewDir) {
+  const resolvedTarget = path.resolve(target)
+  const resolvedReview = path.resolve(reviewDir)
+  if (resolvedTarget === resolvedReview || !containsPath(resolvedReview, resolvedTarget)) {
+    throw new Error(`Refusing to delete outside skill-review: ${target}`)
+  }
 }
 
 function getFirstLevelMaxMtime(folder) {
@@ -194,6 +208,8 @@ function cleanProject(cwd, { now = Date.now(), dataDir = run.dataDir(), force = 
   const removed = []
   const kept = []
 
+  const registeredList = readRegisteredWorktrees(mainRoot)
+
   // 1. Clean tmp folders, unless a run is open: its work may still need them.
   if (openRun !== true) {
     const tmpLimitMs = TMP_HOURS * 3600 * 1000
@@ -213,6 +229,35 @@ function cleanProject(cwd, { now = Date.now(), dataDir = run.dataDir(), force = 
         cleanTmpEntry(path.join(root, name), tmpLimitMs, now, removed, mainRoot)
       }
     }
+
+    // 1b. Skill-review leftovers in every registered worktree, the main checkout
+    // included: an interrupted design leaves its `.aether/tmp/skill-review/<id>/`
+    // behind in the worktree where it ran. Same 24-hour rule, same open-run
+    // condition. A missing worktree folder reads as no entries and is skipped.
+    for (const wt of registeredList) {
+      const reviewDir = path.join(wt, '.aether', 'tmp', 'skill-review')
+      try {
+        if (!fs.lstatSync(reviewDir).isDirectory()) continue
+      } catch {
+        continue
+      }
+      let names = []
+      try {
+        names = fs.readdirSync(reviewDir)
+      } catch {
+        continue
+      }
+      const assertReview = (target) => assertInsideSkillReview(target, reviewDir)
+      for (const name of names) {
+        cleanTmpEntry(path.join(reviewDir, name), tmpLimitMs, now, removed, mainRoot, assertReview)
+      }
+      try {
+        if (fs.readdirSync(reviewDir).length === 0) {
+          fs.rmdirSync(reviewDir)
+          removed.push({ path: reviewDir, why: 'expired' })
+        }
+      } catch {}
+    }
   }
 
   // 2. Clean seats and delegates folders
@@ -223,8 +268,6 @@ function cleanProject(cwd, { now = Date.now(), dataDir = run.dataDir(), force = 
     path.join(mainRoot, '.aether', 'seats'),
     path.join(mainRoot, '.aether', 'delegates'),
   ]
-
-  const registeredList = readRegisteredWorktrees(mainRoot)
 
   for (const parent of workParents) {
     if (!fs.existsSync(parent)) continue
