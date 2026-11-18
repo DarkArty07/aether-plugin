@@ -128,10 +128,10 @@ function judgeLine(id) {
   return `Judge it: aether-delegate verdict --task ${id} --verdict approve|fix|infeasible`
 }
 
-// The judge line of a read-only result whose checks pass: the answer below already closed the task (spec 044, D11),
-// so the Lead only judges again when the answer itself is wrong.
-function readOnlyClosedLine(id) {
-  return `Closed by the system as approved: the read-only checks passed. When the answer is wrong, reopen it: aether-delegate verdict --task ${id} --verdict fix|infeasible`
+// The closing line of a read-only result whose checks pass: the answer already closed the task (spec 044, R23),
+// so redoing it needs a new task.
+function readOnlyClosedLine() {
+  return 'Closed by the system as approved. To redo it, launch a new AETHER-TASK.'
 }
 
 function checksLine(checks) {
@@ -318,7 +318,7 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
   } catch {
     // The Lead still reads the answer in the text.
   }
-  const text = [chain.attribution, '', answer, '', checksLine(checks), checks.ok ? readOnlyClosedLine(external.id) : judgeLine(external.id)].filter((part) => part !== null && part !== undefined).join('\n')
+  const text = [chain.attribution, '', answer, '', checksLine(checks), checks.ok ? readOnlyClosedLine() : judgeLine(external.id)].filter((part) => part !== null && part !== undefined).join('\n')
   return { result: { ok: true, status: chain.status ?? 'ok', text, checks, reason: null }, entry: { ...none, answer: saved } }
 }
 
