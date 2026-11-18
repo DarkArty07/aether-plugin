@@ -174,7 +174,7 @@ const lastOf = (entries, test) => {
   return { entry: null, index: -1 }
 }
 
-// The verdict inputs the ladder judges: an automatic approval a later verdict reopened (spec 044, D11) no longer
+// The verdict inputs the ladder judges: an automatic approval a later verdict reopened (spec 044, R26) no longer
 // closes the task, so the task behaves exactly as if the read-only attempt were still open at that attempt. With
 // `reopen`, the task's last verdict itself is the automatic approval being reopened, so it is dropped too.
 function effectiveVerdictInputs(entries, reopen = false) {
@@ -184,7 +184,7 @@ function effectiveVerdictInputs(entries, reopen = false) {
 }
 
 // The task's last verdict when it is the system's own closing of a read-only attempt (auto: true) with no launch
-// after it: still reopenable by fix or infeasible (spec 044, D11). Null otherwise.
+// after it: still reopenable by fix or infeasible (spec 044, R26). Null otherwise.
 function reopenableAuto(entries) {
   const lastVerdict = lastOf(entries, (e) => e.kind === 'verdict')
   if (!lastVerdict.entry || lastVerdict.entry.verdict !== 'approved' || lastVerdict.entry.auto !== true) return null
