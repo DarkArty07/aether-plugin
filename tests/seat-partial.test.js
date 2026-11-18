@@ -170,26 +170,8 @@ function seatDirOf(repo, id) {
   return path.join(repo.dir, '.aether', 'work', 'seats', id)
 }
 
-// Kills the runner the moment `file` appears. pair.json is written before the signal handler is installed,
-// and git worktree add (which comes next) is slower than this loop, so the handler has not run.
-function killWhenAppears(file, pidFile) {
-  const deadline = Date.now() + 20000
-  while (Date.now() < deadline) {
-    if (!fs.existsSync(file)) continue
-    const pid = Number.parseInt(fs.readFileSync(pidFile, 'utf8'), 10)
-    if (!(pid > 0)) return null
-    try { process.kill(-pid, 'SIGKILL') } catch { /* the group is already gone */ }
-    try { process.kill(pid, 'SIGKILL') } catch { /* the runner is already gone */ }
-    const until = Date.now() + 2000
-    while (Date.now() < until) {
-      try { process.kill(pid, 0) } catch { return pid }
-    }
-    return pid
-  }
-  return null
-}
-
-// A kill during git worktree add can leave a lock. Drop it so the next try can use the repository.
+// A kill before the worktree is added leaves no worktree behind, but a stale lock would still block
+// the next try. Drop the locks a killed runner can leave so the next try can use the repository.
 function releaseRepo(repo, id) {
   const gitDir = path.join(repo.dir, '.git')
   fs.rmSync(path.join(seatDirOf(repo, id), 'wt'), { recursive: true, force: true })
@@ -480,7 +462,7 @@ test('seat-wait reports whether the Writer round started from a partial, and a s
   assert.ok(carried.prompt.includes(CONTINUATION))
 })
 
-test('a stale partial from an earlier round is not loaded when the next round is killed before its signal handler, and the committed document stays (issue 68)', (t) => {
+test('a stale partial from an earlier round is not loaded when the next round is killed before its signal handler, and the committed document stays (issue 68)', async (t) => {
   const committed = 'COMMITTED-BY-NATIVE\n'
   const { command, witness } = scriptedCommand(t, [
     lines(`FAKE-AGY: write ${SPEC} PARTIAL-SPEC`, 'FAKE-AGY: exit-error boom'),
@@ -497,12 +479,57 @@ test('a stale partial from an earlier round is not loaded when the next round is
   repo.git('add', '-A')
   repo.git('commit', '-q', '-m', 'the native writer committed the document')
 
+  // Deterministic seam (test-only): a `git` shim first on PATH blocks the runner at the
+  // `git rev-parse HEAD` right after pair.json is written (lib/seats.js), before the signal
+  // handler is installed. No scheduling race: the marker proves the runner is parked there.
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim().split('\n').pop()
+  const shimDir = tempDir(t, 'aether-seat-git-shim-')
+  const armed = path.join(shimDir, 'armed')
+  const marker = path.join(shimDir, 'marker')
+  const shim = [
+    '#!/bin/sh',
+    `REAL_GIT=${JSON.stringify(realGit)}`,
+    `ARMED=${JSON.stringify(armed)}`,
+    `MARKER=${JSON.stringify(marker)}`,
+    'if [ "$1" = "rev-parse" ] && [ "$2" = "HEAD" ] && [ -f "$ARMED" ]; then',
+    '  dir="$PWD"',
+    '  while [ "$dir" != "/" ]; do',
+    '    if [ -d "$dir/.aether/work/seats" ]; then',
+    '      if find "$dir/.aether/work/seats" -name pair.json -newer "$ARMED" -print -quit 2>/dev/null | grep -q .; then',
+    '        : > "$MARKER"',
+    '        exec sleep 3600',
+    '      fi',
+    '      break',
+    '    fi',
+    '    dir=$(dirname "$dir")',
+    '  done',
+    'fi',
+    'exec "$REAL_GIT" "$@"',
+    '',
+  ].join('\n')
+  fs.writeFileSync(path.join(shimDir, 'git'), shim)
+  fs.chmodSync(path.join(shimDir, 'git'), 0o755)
+  const shimEnv = { ...env, PATH: `${shimDir}${path.delimiter}${process.env.PATH}` }
+
   const digest = writeMessage(repo, roundNext)
-  const started = runBin(LANE_BIN, ['seat-start', 'writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--superdelegation', 'on', '--harnesses', 'agy', '--digest', digest], repo.dir, env)
+  fs.writeFileSync(armed, 'armed\n')
+  const started = runBin(LANE_BIN, ['seat-start', 'writer', '--session', 's1', '--feature', FEATURE, '--doc', 'spec', '--superdelegation', 'on', '--harnesses', 'agy', '--digest', digest], repo.dir, shimEnv)
   assert.equal(started.status, 0, started.stdout + started.stderr)
   const id = started.json.id
   const dir = seatDirOf(repo, id)
-  assert.ok(killWhenAppears(path.join(dir, 'pair.json'), path.join(dir, 'pid')), 'pair.json appeared')
+  const markerDeadline = Date.now() + 20000
+  while (!fs.existsSync(marker) && Date.now() < markerDeadline) await new Promise((r) => setTimeout(r, 25))
+  assert.ok(fs.existsSync(marker), 'the shim parked the runner at rev-parse HEAD, before the signal handler')
+  const pid = Number.parseInt(fs.readFileSync(path.join(dir, 'pid'), 'utf8'), 10)
+  assert.ok(pid > 0, 'the seat pid file names the runner')
+  try { process.kill(-pid, 'SIGKILL') } catch { /* the group is already gone */ }
+  try { process.kill(pid, 'SIGKILL') } catch { /* the runner is already gone */ }
+  fs.rmSync(armed, { force: true })
+  const goneUntil = Date.now() + 5000
+  while (Date.now() < goneUntil) {
+    try { process.kill(pid, 0) } catch { break }
+    await new Promise((r) => setTimeout(r, 25))
+  }
   assert.equal(fs.existsSync(path.join(dir, 'continued.json')), false, 'killed before the signal handler: continued.json is written after it is installed')
   assert.equal(fs.existsSync(path.join(dir, 'partial.json')), false, 'the handler did not save a partial')
   const stopped = runBin(LANE_BIN, ['seat-stop', id], repo.dir, env)
