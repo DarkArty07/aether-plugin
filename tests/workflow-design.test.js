@@ -14,7 +14,7 @@ const FEATURE = 'specs/007-demo'
 const SCOPE = 'Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.'
 const ARGS = { feature: FEATURE, session: 'sess-1', repoRoot: '/repo', superdelegation: 'off', harnesses: 'agy' }
 const SHORT = { ...ARGS, mode: 'short', document: `${FEATURE}/design.md`, intent: 'Understanding: add a retry. Owner: «hazlo robusto»', author: 'opus' }
-const ROLES = ['writer', 'judge', 'examiner', 'mapper', 'ops']
+const ROLES = ['writer', 'judge', 'examiner', 'mapper', 'skill-reviewer', 'ops']
 
 let parseOpsPrompt
 let PAYLOAD_PATH
@@ -55,6 +55,7 @@ function handlers() {
       if (verb === 'seat-stop') return { stopped: true }
       if (verb === 'check') return CHECK_OK
       if (verb === 'requirements') return { requirements: 8, threshold: 15, map: false }
+      if (verb === 'skills' && rest[0] === 'find') return { ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] }
       if (verb === 'store') return { stored: '/data/exams/007-demo' }
       if (verb === 'recover') return { feature: rest[0], tests: [] }
       throw new Error(`unexpected ops command: ${call.command.line}`)
@@ -599,7 +600,7 @@ test('every ops prompt is one the mod runs without a model, and every payload go
   const run = await go({ ...ARGS, superdelegation: 'on', harnesses: 'agy,codex' })
   const failed = await go({ ...ARGS, superdelegation: 'on', harnesses: 'agy,codex' }, { examiner: () => null })
   const ops = [...run.calls, ...failed.calls].filter((c) => c.role === 'ops')
-  assert.deepEqual([...new Set(ops.map((c) => c.command.verb))].sort(), ['check', 'recover', 'requirements', 'seat-start', 'seat-wait', 'store'])
+  assert.deepEqual([...new Set(ops.map((c) => c.command.verb))].sort(), ['check', 'recover', 'requirements', 'seat-start', 'seat-wait', 'skills', 'store'])
   for (const c of ops) {
     const parsed = parseOpsPrompt(c.prompt)
     assert.ok(parsed, c.prompt)
