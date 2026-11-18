@@ -376,7 +376,7 @@ function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now }
       result.candidates.push({ id: downloaded.id, topic: topic.id, name: item.name, source: item.source, author, hash: downloaded.hash, dir: downloaded.dir, code: { ok: true } })
       runNames.add(item.name)
       runPairs.add(`${item.source}@${item.name}`)
-      for (const key of keys) acceptedKeys.add(fold(key))
+      for (const key of keys) acceptedKeys.add(String(key).toLowerCase().normalize('NFD').replace(/\p{M}/gu, ''))
       accepted += 1
     }
   }
