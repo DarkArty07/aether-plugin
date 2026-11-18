@@ -110,6 +110,19 @@ test('copyReviewed never overwrites and never writes under home', (t) => {
   assert.equal(fs.existsSync(path.join(home, '.agents', 'skills')), false)
 })
 
+test('copyReviewed refuses a name that is not a safe path segment and writes nothing', async (t) => {
+  for (const name of ['../godot-x', 'a/godot', '-godot']) {
+    await t.test(name, () => {
+      const repo = makeRepo(t)
+      const from = writeSkill(tempDir(t, 'aether-review-'), 'godot-helper')
+      const r = installLib.copyReviewed({ from, name, hash: computedHash(from), projectRoot: repo.dir, home: tempDir(t, 'aether-home-') })
+      assert.equal(r.ok, false)
+      assert.ok(r.errors.length > 0)
+      assert.equal(fs.existsSync(path.join(repo.dir, '.agents')), false, 'nothing is written to the project')
+    })
+  }
+})
+
 test('skill-install.js runs no git command and no global install flag', () => {
   const text = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'aether', 'lib', 'skill-install.js'), 'utf8')
   for (const needle of ['git add', 'git commit', '-g', '--global']) {

@@ -11,6 +11,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { repoPaths } = require('./git.js')
+const runLib = require('./run.js')
 const { checkSkillFile } = require('./skill-brief.js')
 const { loadSkillsConfig, readInstalls, recordInstall } = require('./skill-registry.js')
 const { authorOf, readTrusted } = require('./skill-rules.js')
@@ -27,6 +28,16 @@ function worktreeOf(cwd) {
     return repoPaths(cwd || '.').worktree
   } catch {
     return path.resolve(cwd || '.')
+  }
+}
+
+// The owner's list lives in the main checkout, even when the Lead designs
+// from a linked worktree; intent.md is still read from the worktree.
+function pendingRootOf(cwd) {
+  try {
+    return repoPaths(cwd || '.').mainRoot
+  } catch {
+    return worktreeOf(cwd || '.')
   }
 }
 
@@ -287,9 +298,11 @@ function contentProblems(text, rel) {
   return problems
 }
 
-function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now } = {}) {
+function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now, timeoutMs } = {}) {
   void now
   const projectRoot = worktreeOf(cwd || '.')
+  const pendingRoot = pendingRootOf(cwd || '.')
+  const findTimeoutMs = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : installLib.FIND_TIMEOUT_MS
   const empty = (errors) => ({ ok: false, topics: [], candidates: [], rejected: [], pending: [], errors })
   let cfg = config || null
   if (!cfg) {
@@ -312,7 +325,7 @@ function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now }
   const acceptedKeys = new Set()
   for (const topic of topics) {
     if (!coveredIds.has(topic.id)) continue
-  for (const key of topicKeys(topic)) acceptedKeys.add(String(key).toLowerCase().normalize('NFD').replace(/\p{M}/gu, ''))
+    for (const key of topicKeys(topic)) acceptedKeys.add(String(key).toLowerCase().normalize('NFD').replace(/\p{M}/gu, ''))
   }
   const result = { ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] }
   const { cmd, prefix } = installLib.skillsBin(env)
@@ -323,7 +336,7 @@ function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now }
     const query = topicQuery(topic)
     let response = null
     try {
-      response = run(cmd, [...prefix, 'find', query], { cwd: projectRoot, timeoutMs: installLib.FIND_TIMEOUT_MS, env })
+      response = run(cmd, [...prefix, 'find', query], { cwd: projectRoot, timeoutMs: findTimeoutMs, env })
     } catch (err) {
       result.errors.push(`topic ${topic.id}: search failed: ${String((err && err.message) || err)}`)
       continue
@@ -344,20 +357,25 @@ function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now }
     }
     const keys = topicKeys(topic)
     let accepted = 0
+    let queued = 0
     for (const item of parsed) {
       if (accepted >= 1 || result.candidates.length >= MAX_PER_DESIGN) break
       if (!item.name || !item.source) continue
+      if (!SKILL_ID.test(item.name)) continue
       if (!matchesKeys(item.name, item.description, keys)) continue
       if (runNames.has(item.name) || runPairs.has(`${item.source}@${item.name}`)) continue
       if (matchesKeys(item.name, item.description, [...acceptedKeys])) continue
       const author = authorOf(item.source)
       const trusted = new Set(readTrusted(dataDir))
       if (!author || !trusted.has(author)) {
-        const command = `npx skills@1.9.0 add ${item.source} --skill ${item.name}`
-        const entry = { source: item.source, author, topic: topic.id, command, reason: 'author not in trusted.json' }
-        result.pending.push(entry)
-        const already = readPending(projectRoot).some((line) => line && line.class === 'skill-install' && line.source === item.source)
-        if (!already) appendPending(projectRoot, { class: 'skill-install', source: item.source, author, command, reason: 'author not in trusted.json' })
+        if (queued < 1) {
+          const command = `npx skills@1.9.0 add ${item.source} --skill ${item.name}`
+          const entry = { source: item.source, author, topic: topic.id, command, reason: 'author not in trusted.json' }
+          result.pending.push(entry)
+          const already = readPending(pendingRoot).some((line) => line && line.class === 'skill-install' && line.source === item.source)
+          if (!already) appendPending(pendingRoot, { class: 'skill-install', source: item.source, author, command, reason: 'author not in trusted.json' })
+          queued += 1
+        }
         continue
       }
       const downloaded = installLib.fetchForReview({ source: item.source, name: item.name, env, runner, dataDir })
@@ -366,7 +384,12 @@ function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now }
         continue
       }
       const skillDir = path.join(downloaded.dir, '.agents', 'skills', item.name)
-      const review = codeReview(skillDir, { topic, installedNames: [...names] })
+      let review = null
+      try {
+        review = codeReview(skillDir, { topic, installedNames: [...names] })
+      } catch (err) {
+        review = { ok: false, problems: [`the code stage failed: ${String((err && err.message) || err)}`] }
+      }
       if (!review.ok) {
         installLib.removeDir(downloaded.dir)
         result.rejected.push({ name: item.name, source: item.source, topic: topic.id, reasons: review.problems })
@@ -407,6 +430,9 @@ function installForDesign({ cwd, feature, id, home, dataDir, env, now } = {}) {
   if (!review || review.feature !== feature || typeof review.name !== 'string' || typeof review.hash !== 'string') {
     return { ok: false, errors: [`unknown skill id "${id}" for feature "${feature}": no review for it`] }
   }
+  if (!SKILL_ID.test(review.name)) {
+    return { ok: false, errors: [`the review of "${id}" names an invalid skill "${review.name}": not installed`] }
+  }
   const from = path.join(dir, '.agents', 'skills', review.name)
   let stat = null
   try {
@@ -419,20 +445,23 @@ function installForDesign({ cwd, feature, id, home, dataDir, env, now } = {}) {
   if (!copied.ok) return copied
   const target = path.join(projectRoot, '.agents', 'skills', review.name)
   recordInstall(dataDir, { time: typeof now === 'number' ? now : Date.now(), session: null, source: review.source, scope: 'project', repo: projectRoot, name: review.name, path: target, hash: copied.hash })
+  const warnings = []
   const lockFile = path.join(projectRoot, 'skills-lock.json')
-  try {
-    if (fs.existsSync(lockFile)) {
+  if (fs.existsSync(lockFile)) {
+    try {
       const lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'))
       lock.skills = (lock.skills && typeof lock.skills === 'object') ? lock.skills : {}
       lock.skills[review.name] = { ...(lock.skills[review.name] || {}), source: review.source, computedHash: copied.hash }
       if (typeof lock.version !== 'number') lock.version = 1
       fs.writeFileSync(lockFile, JSON.stringify(lock, null, 2) + '\n')
+    } catch (err) {
+      warnings.push(`skills-lock.json was not updated: ${String((err && err.message) || err)}`)
     }
-  } catch {}
+  }
   installLib.removeDir(dir)
   state.installed.push(id)
   writeState(dataDir, feature, state)
-  return { ok: true, name: review.name, hash: copied.hash, path: target, committed: false }
+  return { ok: true, name: review.name, hash: copied.hash, path: target, committed: false, warnings }
 }
 
 function discardForDesign({ id, dataDir } = {}) {
@@ -475,17 +504,13 @@ function main(argv, { cwd = process.cwd(), stdout = process.stdout, env = proces
     return 1
   }
   const home = (env && env.HOME) || process.env.HOME || os.homedir()
-  const dataDir = (env && env.AETHER_DATA_DIR) || process.env.AETHER_DATA_DIR || null
+  const dataDir = runLib.dataDir(env || process.env)
   const [sub, first, second] = rest
   const shape =
     (sub === 'find' && rest.length === 2 && validFeature(first)) ||
     (sub === 'install' && rest.length === 3 && validFeature(first) && SKILL_ID.test(second || '')) ||
     (sub === 'discard' && rest.length === 2 && SKILL_ID.test(first || ''))
   if (!shape) return fail()
-  if (!dataDir) {
-    stdout.write(JSON.stringify({ ok: false, errors: ['no data directory: set AETHER_DATA_DIR'] }) + '\n')
-    return 0
-  }
   let result = null
   if (sub === 'find') {
     result = findForDesign({ cwd, feature: first, home, dataDir, env })

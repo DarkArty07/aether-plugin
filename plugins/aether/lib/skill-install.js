@@ -157,6 +157,9 @@ function copyTree(from, to) {
 // touches the index, never writes under home.
 function copyReviewed({ from, name, hash, projectRoot, home } = {}) {
   void home
+  if (typeof name !== 'string' || !ID_PATTERN.test(name)) {
+    return { ok: false, errors: [`the skill name "${name}" is not a safe id: not installed`] }
+  }
   const target = path.join(projectRoot, '.agents', 'skills', name)
   const link = path.join(projectRoot, '.claude', 'skills', name)
   for (const existing of [target, link]) {

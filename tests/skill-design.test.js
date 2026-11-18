@@ -453,6 +453,185 @@ test('discard removes the review folder; an unknown id is an error line, not a c
   assert.equal(via.json.ok, false)
 })
 
+test('skills find resolves the data dir without AETHER_DATA_DIR, from CLAUDE_CONFIG_DIR', (t) => {
+  const repo = makeRepo(t)
+  const feature = 'specs/001-quest'
+  writeIntent(repo.dir, feature, GODOT_INTENT)
+  const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
+  const cfg = tempDir(t, 'aether-cfg-')
+  const dataDir = path.join(cfg, 'plugins', 'data', 'aether-inline')
+  putTrusted(dataDir, [GODOT_AUTHOR])
+  const env = { ...fake.env, CLAUDE_CONFIG_DIR: cfg }
+  delete env.AETHER_DATA_DIR
+  assert.equal('AETHER_DATA_DIR' in env, false, 'the test really omits AETHER_DATA_DIR')
+  const r = runBin(PLAN_BIN, ['skills', 'find', feature], repo.dir, env)
+  assert.equal(r.status, 0, r.stdout + r.stderr)
+  assert.equal(r.json.ok, true, r.stdout)
+  assert.equal(r.json.candidates.length, 1)
+  const reviewRoot = path.join(dataDir, 'skills', 'review')
+  assert.ok(fs.existsSync(path.join(reviewRoot, 'godot-helper', 'review.json')), 'the review lands under the CLAUDE_CONFIG_DIR data dir')
+  assert.ok(fs.existsSync(path.join(reviewRoot, 'specs-001-quest.json')), 'the state file lands under the CLAUDE_CONFIG_DIR data dir')
+})
+
+test('R23: a registry name that is not a safe id is never downloaded and writes nothing', async (t) => {
+  for (const name of ['../godot-x', 'a/godot', '-godot']) {
+    await t.test(name, () => {
+      const w = setup(t)
+      const fake = fakeRegistry(t, { find: `${GODOT_SOURCE}@${name}  5 installs of a godot helper\n`, skills: {} })
+      const r = callFind(w, fake, { intent: GODOT_INTENT })
+      assert.deepEqual(r.candidates, [])
+      assert.equal(fake.counts().add, 0, 'the CLI is never called')
+      assert.equal(fs.existsSync(path.join(w.repo.dir, '.agents')), false, 'nothing is written to the project')
+      const reviewRoot = path.join(w.data, 'skills', 'review')
+      const leftovers = fs.existsSync(reviewRoot) ? fs.readdirSync(reviewRoot).filter((file) => !file.endsWith('.json')) : []
+      assert.deepEqual(leftovers, [], 'no review folder is left behind')
+    })
+  }
+})
+
+test('install refuses a review whose name is not a safe id and writes nothing outside .agents/skills', (t) => {
+  const w = setup(t)
+  const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
+  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  assert.equal(r.candidates.length, 1)
+  const [candidate] = r.candidates
+  fs.cpSync(path.join(candidate.dir, '.agents', 'skills', 'godot-helper'), path.join(candidate.dir, '.agents', 'evil-x'), { recursive: true })
+  const reviewFile = path.join(candidate.dir, 'review.json')
+  const review = JSON.parse(fs.readFileSync(reviewFile, 'utf8'))
+  review.name = '../evil-x'
+  fs.writeFileSync(reviewFile, JSON.stringify(review))
+  const installed = design.installForDesign({ cwd: w.repo.dir, feature: w.feature, id: candidate.id, home: fake.home, dataDir: w.data, env: fake.env })
+  assert.equal(installed.ok, false)
+  assert.ok(installed.errors.length > 0)
+  assert.equal(fs.existsSync(path.join(w.repo.dir, '.agents', 'evil-x')), false, 'nothing escapes .agents/skills')
+  assert.equal(fs.existsSync(path.join(w.repo.dir, '.agents', 'skills', 'evil-x')), false, 'nothing is installed')
+})
+
+test('R24: from a linked worktree the pending entry lands in the main checkout', (t) => {
+  const w = setup(t)
+  const fake = fakeRegistry(t, { find: 'stranger/rogue@rogue-helper  3 installs of a godot helper\n', skills: {} })
+  const wtParent = tempDir(t, 'aether-wt-parent-')
+  const wtDir = path.join(wtParent, 'wt-link')
+  const added = spawnSync('git', ['worktree', 'add', wtDir], { cwd: w.repo.dir, encoding: 'utf8' })
+  assert.equal(added.status, 0, added.stderr)
+  t.after(() => { spawnSync('git', ['worktree', 'remove', '--force', wtDir], { cwd: w.repo.dir }) })
+  writeIntent(wtDir, w.feature, GODOT_INTENT)
+  const r = design.findForDesign({ cwd: wtDir, feature: w.feature, home: fake.home, dataDir: w.data, env: fake.env })
+  assert.equal(r.ok, true, JSON.stringify(r))
+  assert.equal(r.pending.length, 1)
+  assert.equal(readPending(w.repo.dir).length, 1, 'the entry lands in the main checkout')
+  assert.equal(fs.existsSync(path.join(wtDir, '.aether', 'pending.jsonl')), false, 'nothing lands in the worktree')
+})
+
+test('R23: install records skills-lock.json and warns when the lock cannot be updated', async (t) => {
+  await t.test('with a lock file', () => {
+    const w = setup(t)
+    const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
+    const lockFile = path.join(w.repo.dir, 'skills-lock.json')
+    fs.writeFileSync(lockFile, JSON.stringify({ version: 1, skills: { 'other-skill': { source: 'x/y', computedHash: 'z' } } }, null, 2) + '\n')
+    const r = callFind(w, fake, { intent: GODOT_INTENT })
+    const installed = design.installForDesign({ cwd: w.repo.dir, feature: w.feature, id: r.candidates[0].id, home: fake.home, dataDir: w.data, env: fake.env })
+    assert.equal(installed.ok, true, JSON.stringify(installed))
+    assert.deepEqual(installed.warnings, [])
+    const lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'))
+    assert.deepEqual(lock.skills['other-skill'], { source: 'x/y', computedHash: 'z' }, 'other entries are unchanged')
+    assert.equal(lock.skills['godot-helper'].source, GODOT_SOURCE)
+    assert.equal(lock.skills['godot-helper'].computedHash, installed.hash)
+  })
+  await t.test('without a lock file', () => {
+    const w = setup(t)
+    const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
+    const r = callFind(w, fake, { intent: GODOT_INTENT })
+    const installed = design.installForDesign({ cwd: w.repo.dir, feature: w.feature, id: r.candidates[0].id, home: fake.home, dataDir: w.data, env: fake.env })
+    assert.equal(installed.ok, true, JSON.stringify(installed))
+    assert.equal(fs.existsSync(path.join(w.repo.dir, 'skills-lock.json')), false, 'no lock file is created')
+  })
+  for (const [title, content] of [['an unreadable lock', null], ['a lock that is not JSON', 'not json{\n']]) {
+    await t.test(title, () => {
+      const w = setup(t)
+      const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
+      const lockFile = path.join(w.repo.dir, 'skills-lock.json')
+      if (content === null) fs.mkdirSync(lockFile)
+      else fs.writeFileSync(lockFile, content)
+      const r = callFind(w, fake, { intent: GODOT_INTENT })
+      const installed = design.installForDesign({ cwd: w.repo.dir, feature: w.feature, id: r.candidates[0].id, home: fake.home, dataDir: w.data, env: fake.env })
+      assert.equal(installed.ok, true, JSON.stringify(installed))
+      assert.ok(installed.warnings.length > 0, 'the lock failure is reported, not a silent success')
+    })
+  }
+})
+
+test('R23: a SKILL.md directory fails the code stage without a crash and the review folder is removed', (t) => {
+  const w = setup(t)
+  const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
+  const srcSkill = path.join(fake.dir, 'src', 'godot-helper')
+  fs.rmSync(path.join(srcSkill, 'SKILL.md'))
+  fs.mkdirSync(path.join(srcSkill, 'SKILL.md'), { recursive: true })
+  fs.writeFileSync(path.join(srcSkill, 'SKILL.md', 'note.md'), 'Build Godot scenes with GDScript triggers.\n')
+  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  assert.equal(r.candidates.length, 0)
+  assert.equal(r.rejected.length, 1)
+  assert.ok(r.rejected[0].reasons.length > 0, 'reasons is non-empty')
+  assert.equal(fs.existsSync(path.join(w.data, 'skills', 'review', 'godot-helper')), false, 'the review folder is gone')
+  assert.equal(fs.existsSync(path.join(w.repo.dir, '.agents')), false, 'the project is untouched')
+})
+
+test('R25: a slow search fails fast with an injectable timeout', (t) => {
+  const w = setup(t)
+  const fake = fakeRegistry(t, { find: { mode: 'slow' } })
+  const started = Date.now()
+  const r = callFind(w, fake, { intent: GODOT_INTENT, findArgs: { timeoutMs: 500 } })
+  assert.equal(r.ok, false)
+  assert.match(r.errors.join('\n'), /timed out/)
+  assert.ok(Date.now() - started < 10000, 'it fails fast instead of waiting out the production limit')
+})
+
+test('R23: the registry call gets no stdin, so a CLI prompt cannot wait for an answer', (t) => {
+  const w = setup(t)
+  const dir = tempDir(t, 'aether-stdin-')
+  const home = tempDir(t, 'aether-stdin-home-')
+  const src = writeSkill(path.join(dir, 'src'), 'godot-helper', {})
+  const marker = path.join(dir, 'stdin.txt')
+  const bin = path.join(dir, 'skills-fake')
+  fs.writeFileSync(bin, `#!/usr/bin/env node
+'use strict'
+const fs = require('node:fs')
+const path = require('node:path')
+const probe = () => {
+  try {
+    const chunk = fs.readFileSync(0)
+    fs.writeFileSync(process.env.SKILLS_STDIN_MARKER, chunk.length === 0 ? 'eof-at-once' : 'got-' + chunk.length)
+  } catch (err) {
+    fs.writeFileSync(process.env.SKILLS_STDIN_MARKER, 'error:' + (err && err.code))
+  }
+}
+const args = process.argv.slice(2)
+if (args[0] === 'find') { probe(); process.stdout.write(${JSON.stringify(GODOT_FIND)}) }
+else if (args[0] === 'add') {
+  probe()
+  fs.cpSync(process.env.SKILLS_STDIN_SRC, path.join(process.cwd(), '.agents', 'skills', 'godot-helper'), { recursive: true })
+} else process.exit(2)
+`)
+  fs.chmodSync(bin, 0o755)
+  const env = { AETHER_SKILLS_BIN: bin, HOME: home, SKILLS_STDIN_MARKER: marker, SKILLS_STDIN_SRC: src }
+  writeIntent(w.repo.dir, w.feature, GODOT_INTENT)
+  const r = design.findForDesign({ cwd: w.repo.dir, feature: w.feature, home, dataDir: w.data, env })
+  assert.equal(r.ok, true, JSON.stringify(r))
+  assert.equal(r.candidates.length, 1)
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'eof-at-once')
+})
+
+test('R24: untrusted candidates queue at most one pending entry per topic', (t) => {
+  const w = setup(t)
+  const fake = fakeRegistry(t, {
+    find: ['stranger/one@godot-one  3 installs of a godot helper', 'stranger/two@godot-two  4 installs of a godot helper'].join('\n') + '\n',
+    skills: {},
+  })
+  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  assert.equal(r.pending.length, 1)
+  assert.equal(readPending(w.repo.dir).length, 1)
+})
+
 test('the skills verb prints one JSON line per call and exits 0; a bad skills call prints its own usage with exit 1', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
