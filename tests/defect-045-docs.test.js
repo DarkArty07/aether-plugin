@@ -79,8 +79,8 @@ test('R26: A136 amends A125 clause 2 with both owner quotes', () => {
   for (const t of ['A125', 'Repartir e instalar', 'nuevamente no veo que el lead instale skills por su propia cuenta', 'trusted', 'intent.md']) assert.ok(a.includes(t), t)
 })
 
-test('R27: the decision range is A1–A136 in the index and in both pins', () => {
-  for (const f of ['docs/index.md', 'tests/docs-032.test.js', 'tests/docs-facts.test.js']) assert.ok(read(f).includes('A1–A136'), f)
+test('R27: the decision range is A1–A137 in the index and in both pins', () => {
+  for (const f of ['docs/index.md', 'tests/docs-032.test.js', 'tests/docs-facts.test.js']) assert.ok(read(f).includes('A1–A137'), f)
 })
 
 test('R28: the hole of agy, codex and muse is written down for the owner', () => {

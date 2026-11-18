@@ -76,7 +76,7 @@ Skills loaded into an agent context must stay focused:
 
 ### Automatic delivery
 
-The system hands the matching project skills to delegates and to the units of a plan by itself: up to 3 per task, the ones named by hand first. The `add AETHER-SKILLS:` notice is no longer needed for them: a manual `AETHER-SKILLS:` name still wins and stays strict, and the automatic matches fill the free places. `/aether:design` installs the reviewed skills of trusted authors in the project only (never global, not committed) and leaves the rest on the owner's list.
+The system hands the matching project skills to delegates and to the units of a plan by itself: up to 3 per task, the ones named by hand first. The `add AETHER-SKILLS:` notice is no longer needed for them: a manual `AETHER-SKILLS:` name still wins and stays strict, and the automatic matches fill the free places. In `/aether:design`, the read-only Haiku agent `skill-scout` reads the intent card and returns up to 3 search topics, on any subject. `/aether:design` installs the reviewed skills of trusted authors in the project only (never global, not committed) and leaves the rest on the owner's list.
 
 ### In Plans (`tasks.md`)
 In `tasks.md`, specify skills using the `Skills:` field in the task's Aether metadata block:
