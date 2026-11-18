@@ -12,6 +12,8 @@ test('R27: A132 exists after A131, quotes the owner, replaces the A85 sentence f
   assert.ok(row, 'a row A132')
   assert.ok(decisions.indexOf('| A131 |') < decisions.indexOf('| A132 |'))
   assert.ok(row.includes('Si a todo trabja autonomamente en resolverlo'))
+  assert.ok(row.includes('hazlo neotnces'), 'A132 quotes the owner\'s words of 2026-11-18')
+  assert.match(row, /reopen/, 'A132 records that fix or infeasible reopen the automatic approval')
   assert.match(row, /read-only delegate/)
   assert.match(row, /closes? (it|the delegate) as approved|closed by the system/)
   assert.match(row, /A85/)

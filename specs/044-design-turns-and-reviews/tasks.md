@@ -306,7 +306,7 @@ Also, in `tests/workflow-final-slices.test.js` (or `tests/workflow.test.js`, whe
   - `A not-ready is not approved before you write the reason: in the run's diary (.aether/autonomy/<run id>/diary.md) or, outside a run, in your next answer to the owner. There is no command and no flag for it.`
   - `This rule serves the final reviewer and the reviewer of a delegate alike.`
 - `skills/using-aether/SKILL.md`, paragraph «Verify before you relay» (part 2): one line pointer: `Act on a reviewer's verdict, final or of a delegate, with the rule of aether:swarm, «Final review findings».`
-- `skills/using-aether/SKILL.md`, paragraph «The verdict»: replace the sentence `A read-only delegate did not edit, so `aether-delegate approve` refuses it and `approve` on that line closes it.` by: `A read-only delegate whose checks pass is closed by the system; use verdict with it only for fix or infeasible, and before it is closed; when a check fails on files another writer changed, verdict --verdict approve --ignore '<glob>'.` (the paragraph at the same size or smaller).
+- `skills/using-aether/SKILL.md`, paragraph «The verdict»: replace the sentence `A read-only delegate did not edit, so `aether-delegate approve` refuses it and `approve` on that line closes it.` by: `A read-only delegate whose checks pass is closed by the system when it answers; if its answer is wrong, `verdict --verdict fix|infeasible` reopens it; when a check fails on files another writer changed, `verdict --verdict approve --ignore '<glob>'`.` (changed 2026-11-18, «hazlo neotnces») (the paragraph at the same size or smaller).
 - If the two changes do not fit the margin of part 2 (328 characters) shorten another sentence of the same paragraph without dropping a rule; or put the pointer in part 3.
 
 **Tests (write first):**
@@ -348,7 +348,7 @@ test('R17: the bootstrap carries only a pointer to the rule', () => {
 
 test('R26: the verdict paragraph says the system closes a read-only delegate whose checks pass', () => {
   assert.ok(!using.includes('A read-only delegate did not edit, so `aether-delegate approve` refuses it'))
-  assert.ok(using.includes('A read-only delegate whose checks pass is closed by the system; use verdict with it only for fix or infeasible, and before it is closed; when a check fails on files another writer changed, verdict --verdict approve --ignore \'<glob>\'.'))
+  assert.ok(using.includes('A read-only delegate whose checks pass is closed by the system when it answers; if its answer is wrong, `verdict --verdict fix|infeasible` reopens it; when a check fails on files another writer changed, `verdict --verdict approve --ignore \'<glob>\'`.'))
 })
 ```
 
@@ -521,7 +521,7 @@ New file `tests/delegate-auto-close.test.js` (follow the setup of `tests/delegat
 3. Empty answer (Claude) or a result with a failed check (external): no `verdict` line; the task is listed by `unverdictedDelegates`.
 4. Red check by files another writer changed: no automatic closing, and `aether-delegate verdict --task <id> --verdict approve --ignore '<glob>'` still approves it (the flow of `tests/delegate-task.test.js` 426 and 446 stays green).
 5. An editing delegate (a launch with edits): `closeReadOnly` returns `{ closed: false }` and the task still needs `aether-delegate verdict`.
-6. R26: `verdict --verdict fix` and `--verdict infeasible` on an open read-only delegate are accepted; after the automatic closing, the same call is refused by the ladder with the reason that the task is approved.
+6. R26 (changed 2026-11-18, «hazlo neotnces»): `verdict --verdict fix` and `--verdict infeasible` on an open read-only delegate are accepted; after the automatic closing and with no later launch, the same calls reopen the approval (`fix` rises one rung with its findings, `infeasible` needs its reason), and `approve` on the closed task is refused and writes nothing.
 7. A second call of `closeReadOnly` on a closed task writes nothing (one `verdict` line only).
 
 Changed in the same task: the cases of `tests/delegate-mod.test.js` (409 to 422), `tests/delegate-report.test.js` (192 to 194, 306 to 319) and `tests/continuity-hook.test.js` (59) that today expect the Lead's verdict for a read-only delegate that came out right now expect it already closed; the same cases with a failed check or an editing delegate keep expecting the verdict.
@@ -562,6 +562,8 @@ test('R27: A132 exists after A131, quotes the owner, replaces the A85 sentence f
   assert.ok(row, 'a row A132')
   assert.ok(decisions.indexOf('| A131 |') < decisions.indexOf('| A132 |'))
   assert.ok(row.includes('Si a todo trabja autonomamente en resolverlo'))
+  assert.ok(row.includes('hazlo neotnces'), 'A132 quotes the owner\'s words of 2026-11-18')
+  assert.match(row, /reopen/, 'A132 records that fix or infeasible reopen the automatic approval')
   assert.match(row, /read-only delegate/)
   assert.match(row, /closes? (it|the delegate) as approved|closed by the system/)
   assert.match(row, /A85/)
