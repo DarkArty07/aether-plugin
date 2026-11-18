@@ -477,15 +477,22 @@ function main(argv, { cwd = process.cwd(), stdout = process.stdout, env = proces
   const home = (env && env.HOME) || process.env.HOME || os.homedir()
   const dataDir = (env && env.AETHER_DATA_DIR) || process.env.AETHER_DATA_DIR || null
   const [sub, first, second] = rest
+  const shape =
+    (sub === 'find' && rest.length === 2 && validFeature(first)) ||
+    (sub === 'install' && rest.length === 3 && validFeature(first) && SKILL_ID.test(second || '')) ||
+    (sub === 'discard' && rest.length === 2 && SKILL_ID.test(first || ''))
+  if (!shape) return fail()
+  if (!dataDir) {
+    stdout.write(JSON.stringify({ ok: false, errors: ['no data directory: set AETHER_DATA_DIR'] }) + '\n')
+    return 0
+  }
   let result = null
-  if (sub === 'find' && rest.length === 2 && validFeature(first)) {
+  if (sub === 'find') {
     result = findForDesign({ cwd, feature: first, home, dataDir, env })
-  } else if (sub === 'install' && rest.length === 3 && validFeature(first) && SKILL_ID.test(second || '')) {
+  } else if (sub === 'install') {
     result = installForDesign({ cwd, feature: first, id: second, home, dataDir, env })
-  } else if (sub === 'discard' && rest.length === 2 && SKILL_ID.test(first || '')) {
-    result = discardForDesign({ id: first, dataDir })
   } else {
-    return fail()
+    result = discardForDesign({ id: first, dataDir })
   }
   stdout.write(JSON.stringify(result) + '\n')
   return 0
