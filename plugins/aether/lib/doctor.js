@@ -312,7 +312,7 @@ function modelsCheck({ dataDir = null, harnesses = [], result = undefined, super
       if (name === 'codex') parts.push('cache is as fresh as the last codex run')
       lines.push(`${name}: ${parts.join('; ')}`)
     } else if (entry.status === 'no-capture') {
-      lines.push(`${name}: ${entry.reason || 'no capture means without a model call'} (${readAt})`)
+      lines.push(`${name}: ${entry.reason || `no capture configured for ${name}`} (${readAt})`)
     } else if (entry.status === 'not-installed') {
       lines.push(`${name}: not installed (${entry.reason || `${cliOf(name)} not found on PATH`}; ${readAt})`)
     } else {
