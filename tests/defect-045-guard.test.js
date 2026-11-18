@@ -49,6 +49,11 @@ const READS = [
   '/usr/bin/find ~/.claude/plugins/data -name trusted.json',
   'gh issue create --title t --body "mentions .claude/settings.json and skills/trusted.json"',
   'gh pr comment 3 --body "the .claude/hooks folder and skills/trusted.json"',
+  'find .claude/hooks -type f',
+  "find .claude/hooks -name '*.sh' | wc -l",
+  'find .claude -name settings.json | grep hooks',
+  'gh issue view 3 --json body',
+  'gh pr view 3 | head -20',
 ]
 const WRITES = [
   'echo {} > .claude/settings.json',
@@ -67,6 +72,32 @@ test('R4: reads that only name Claude settings or the trusted list are not refus
 test('R4: a write, redirection or deletion on those targets is still refused', (t) => {
   const w = world(t)
   for (const command of WRITES) assert.notEqual(w.bash(command), null, command)
+})
+test('R4: a find or gh read redirected with >& to those targets is still refused', (t) => {
+  const w = world(t)
+  const REDIRECT_WRITES = [
+    'find . >& .claude/settings.json',
+    'find . >&.claude/settings.json',
+    'gh issue view 3 >& .claude/settings.json',
+    'find . >& skills/trusted.json',
+    'find . >&skills/trusted.json',
+    'gh issue view 3 >& skills/trusted.json',
+    `find . >& ${w.data}/skills/trusted.json`,
+    `gh issue view 3 >& ${w.data}/skills/trusted.json`,
+  ]
+  for (const command of REDIRECT_WRITES) assert.notEqual(w.bash(command), null, command)
+})
+test('R4: a find piped to an unknown writer, or through an unresolved redirect, still refuses', (t) => {
+  const w = world(t)
+  const PIPED_UNKNOWN = [
+    'find .claude/settings.json | xargs tee </dev/null',
+    'find .claude/hooks -type f | xargs perl -pi -e s/a/b/',
+    'find .claude/settings.json | while read f; do echo x > "$f"; done',
+    'echo \'{}\' > "$(find .claude/settings.json)"',
+    'echo \'{}\' > "$(find skills/trusted.json)"',
+    `echo '{}' > "$(find ${w.data}/skills/trusted.json)"`,
+  ]
+  for (const command of PIPED_UNKNOWN) assert.notEqual(w.bash(command), null, command)
 })
 test('R4: a read-only find piped to a writer still refuses (!writes clause)', (t) => {
   const w = world(t)

@@ -24,7 +24,6 @@ const {
   nameOf,
   redirectTargets,
   segmentsOf,
-  unquotedRedirection,
   scriptOf,
   shellReadsStdin,
   skipOptions,
@@ -623,12 +622,8 @@ function protectedMention(command, cwd = process.cwd(), agentType) {
   // quotes is text, not a redirection (issue 180): only an unquoted one counts. The text after a
   // `>` read inside an unterminated quote starts with its space, which the matchers must not see.
   for (const segment of segments) {
-    for (let i = 0; i < segment.length; i++) {
-      const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
-      if (after !== null) {
-        const target = (after || segment[i + 1] || '').trim()
-        if (name(target) || patternMention(target) || directoryMention(target, agentType)) return target
-      }
+    for (const target of redirectTargets(segment)) {
+      if (name(target) || patternMention(target) || directoryMention(target, agentType)) return target
     }
   }
   if (exempt) return null
@@ -659,7 +654,7 @@ function claudeConfigWrite(command) {
   const segments = commandSegments(command)
   const writes = segmentsWrite(segments)
   for (const segment of segments) {
-    for (const target of segmentTargets(segment, writes)) {
+    for (const target of segmentTargets(segment, writes, segments)) {
       const configTarget = claudeConfigPath(target)
       if (configTarget) return configTarget
     }
@@ -707,6 +702,11 @@ function spelledWord(word) {
 
 // The find actions that write: a find without any of them only reads. gh issue and gh pr only read too.
 const FIND_WRITE_ACTIONS = new Set(['-delete', '-exec', '-execdir', '-ok', '-okdir', '-fprint', '-fprint0', '-fprintf', '-fls'])
+
+// The commands that only read their input, so a find or gh read piped through them stays a read. Anything
+// else — xargs, tee, perl, sed, while, echo — may carry a found path to a write, so when in doubt the guard
+// refuses: a find or gh segment that shares its line with one of those is read in full.
+const KNOWN_READERS = new Set(['grep', 'egrep', 'fgrep', 'head', 'tail', 'wc', 'sort', 'uniq', 'cut', 'cat', 'jq', 'less', 'more'])
 
 // The index of the command xargs runs, past its options: an option value or an echo argument
 // named rm is not the verb (as tidyTargetsOf reads them).
@@ -758,11 +758,35 @@ function namedOf(segment) {
   return unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
 }
 
+// Whether a segment only reads its input: a read-only find or gh read, or one of the known readers.
+function isKnownReaderSegment(segment) {
+  const named = namedOf(segment)
+  if (named.length === 0) return false
+  return isReadOnlySegment(named) || KNOWN_READERS.has(named[0])
+}
+
+// Whether any redirection of the line points at an empty or variable target: a target that is empty, or that
+// holds `$` or a backtick. Such a target may name a protected path only at runtime (as in `> "$f"` or
+// `> "$(find …)"`), so no find or gh read of the line is exempted.
+function hasUnresolvedRedirect(segments) {
+  for (const segment of segments) {
+    for (const target of redirectTargets(segment)) {
+      if (target === '' || target.includes('$') || target.includes('`')) return true
+    }
+  }
+  return false
+}
+
 // The targets a segment can write: a read-only segment (a find with none of its writing actions, or gh issue
 // and gh pr, read through its wrappers) contributes only its redirection targets, and only when nothing else
-// in the line writes; every other segment is read as writeTargets reads it.
-function segmentTargets(segment, writes) {
-  if (!writes && isReadOnlySegment(namedOf(segment))) return redirectTargets(segment)
+// in the line writes, every other segment of the line only reads, and no redirection of the line points at
+// an empty or variable target; every other segment is read as writeTargets reads it.
+function segmentTargets(segment, writes, segments = []) {
+  const readOnly = !writes && isReadOnlySegment(namedOf(segment))
+  const exempt = readOnly
+    && segments.every((other) => other === segment || isKnownReaderSegment(other))
+    && !hasUnresolvedRedirect(segments)
+  if (exempt) return redirectTargets(segment)
   return writeTargets(segment)
 }
 
@@ -981,7 +1005,7 @@ function trustedWrite(command, cwd = process.cwd(), env = process.env) {
   const segments = commandSegments(command)
   const writes = segmentsWrite(segments)
   for (const segment of segments) {
-    for (const target of segmentTargets(segment, writes)) {
+    for (const target of segmentTargets(segment, writes, segments)) {
       if (isTrustedTarget(target, cwd, env)) return target
     }
   }

@@ -36,6 +36,17 @@ test('the four functions read a few command lines as the guard tests expect', ()
   assert.deepEqual(parse.redirectTargets(segment), ['f'])
 })
 
+test('redirectTargets reads >& redirections and skips file-descriptor duplications', () => {
+  const [spaced] = parse.commandSegments('echo x >& f')
+  assert.deepEqual(parse.redirectTargets(spaced), ['f'])
+  const [attached] = parse.commandSegments('echo x >&f')
+  assert.deepEqual(parse.redirectTargets(attached), ['f'])
+  const [dup] = parse.commandSegments('echo x 2>&1')
+  assert.deepEqual(parse.redirectTargets(dup), [])
+  const [stderr] = parse.commandSegments('echo x >&2')
+  assert.deepEqual(parse.redirectTargets(stderr), [])
+})
+
 test('guard.js still exports the same four names', () => {
   for (const name of ['commandSegments', 'dropWrappers', 'nameOf', 'redirectTargets']) {
     assert.equal(typeof guard[name], 'function', `guard.js exports ${name}`)
