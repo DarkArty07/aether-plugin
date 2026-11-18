@@ -18,7 +18,7 @@ const { planWarnings } = require('./plan-warnings.js')
 const { ruleWarnings } = require('./plan-rules.js')
 const { isGlob, matchesAny } = require('./globs.js')
 const { repoPaths, currentBranch, head } = require('./git.js')
-const { resolveSkill, loadSkills, recordUse } = require('./skill-brief.js')
+const { resolveSkill, selectSkills, recordUse } = require('./skill-brief.js')
 const run = require('./run.js')
 const autonomy = require('./autonomy.js')
 const lanes = require('./lanes.js')
@@ -256,13 +256,14 @@ function check(planArg, { cwd = process.cwd(), stdout = process.stdout, env = pr
   const graph = buildGraph(parsed)
   const trace = traceability(parsed, specRequirements(parsed.spec, planPath, cwd))
   const errors = [...parsed.errors, ...graph.errors, ...trace.errors]
+  const checkDataDir = run.dataDir(env)
   for (const t of (parsed.allTasks || parsed.tasks)) {
     if (t.skills && t.skills.length > 0) {
       if (t.skills.length > 3) {
         errors.push(`Task ${t.number}: Skills lists ${t.skills.length} skills (at most 3).`)
       }
       for (const name of t.skills) {
-        if (!resolveSkill(name, { cwd, home: env.HOME || os.homedir() })) {
+        if (!resolveSkill(name, { cwd, home: env.HOME || os.homedir(), dataDir: checkDataDir })) {
           errors.push(`Task ${t.number}: skill "${name}" does not exist.`)
         }
       }
@@ -382,18 +383,24 @@ function compile(planArg, rest, { cwd = process.cwd(), stdout = process.stdout, 
   const errors = [...parsed.errors, ...graph.errors, ...rules.errors]
   if (errors.length) fail(errors, [...parsed.warnings, ...graph.warnings], stdout)
 
+  // Each unit's skills: the manual Skills: names first (a missing or invalid
+  // manual skill fails the compile as before), then the automatic matches of
+  // the task's text and its Owns, read through the install records so a skill
+  // installed without a commit in another worktree still reaches the brief.
+  const compileDataDir = run.dataDir(env)
   const loadedSkills = new Map()
   const skillErrors = []
   for (const t of parsed.tasks) {
     const id = `task-${t.number}`
     if (!graph.tasks[id]) continue
-    if (t.skills && t.skills.length > 0) {
-      const res = loadSkills(t.skills, { cwd: repo.worktree, home: env.HOME || os.homedir() })
-      if (!res.ok) {
-        skillErrors.push(res.error)
-      } else {
-        loadedSkills.set(id, res.skills)
-      }
+    const res = selectSkills({
+      cwd: repo.worktree, manual: t.skills || [], text: { prompt: t.text || '', description: '', owns: t.owns || [] },
+      home: env.HOME || os.homedir(), dataDir: compileDataDir,
+    })
+    if (!res.ok) {
+      skillErrors.push(res.error)
+    } else if (res.skills.length > 0) {
+      loadedSkills.set(id, res.skills)
     }
   }
   if (skillErrors.length > 0) fail(skillErrors, [...parsed.warnings, ...graph.warnings], stdout)

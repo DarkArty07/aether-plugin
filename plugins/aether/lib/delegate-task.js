@@ -33,8 +33,8 @@ const { startRenewal } = require('./router-renewal.js')
 const { slowPairIds } = require('./router-slow.js')
 const { readDelegateSettings } = require('./session.js')
 const { matchesAny } = require('./globs.js')
-const { loadSkills, skillsSection, parseSkillNames, matchDelegateSkills } = require('./skill-brief.js')
-const { recordNotice, recordUse } = require('./skill-registry.js')
+const { selectSkills, skillsSection, parseSkillNames } = require('./skill-brief.js')
+const { recordUse } = require('./skill-registry.js')
 const { validAlternates } = require('./delegate-chain.js')
 
 const ID_RE = /^[A-Za-z0-9_-]+$/
@@ -641,12 +641,15 @@ async function begin(input, deps = {}) {
     if (refusal) return autonomyRefusedPlan(r, ctx, refusal)
     if (next.status !== 'open') return refusedPlan(r, ctx, next.status)
 
-    let loadedSkills = null
-    if (brief.skills.length > 0) {
-      const res = loadSkills(brief.skills, { cwd: r.cwd, home: r.home, pluginRoot: r.pluginRoot })
-      if (!res.ok) return skillRefusedPlan(r, ctx, res.error)
-      loadedSkills = res.skills
-    }
+    // The manual AETHER-SKILLS names first, then the automatic project-skill
+    // matches of the task's description, prompt and AETHER-OWNS. A launch never
+    // fails because of an automatic skill; a manual one stays strict.
+    const selected = selectSkills({
+      cwd: r.cwd, manual: brief.skills, text: { prompt, description, owns: brief.owns },
+      home: r.home, pluginRoot: r.pluginRoot, dataDir: r.dataDir,
+    })
+    if (!selected.ok) return skillRefusedPlan(r, ctx, selected.error)
+    const loadedSkills = selected.skills.length > 0 ? selected.skills : null
 
     // The tree the copy is of, and whether the copy can hold what the brief names (spec 033, D4 and D5). Both are decided
     // here, before a pair is picked or a quota is read. A task that edits ignores AETHER-TREE: it is checked by AETHER-OWNS.
@@ -758,15 +761,6 @@ async function begin(input, deps = {}) {
         recordUse(r.dataDir, { session, kind: 'delegate', task: id, skills: launch.skills, time, repo })
       } catch {
         // A failed skill-use record is skipped so it cannot abort a launch already written to the log.
-      }
-    }
-    if (brief.skills.length === 0) {
-      // A suggestion is advisory: a project whose skills cannot be read gets none and the launch goes on (R15).
-      let matched = []
-      try { matched = matchDelegateSkills(r.cwd, { prompt, description, owns: brief.owns }) } catch { matched = [] }
-      if (matched.length > 0) {
-        notes.push(`Aether delegate task ${id}: project skill(s) ${matched.join(', ')} match this brief; add AETHER-SKILLS: ${matched.slice(0, 3).join(', ')} if it helps.`)
-        for (const name of matched) recordNotice(r.dataDir, { time, session, repo, kind: 'delegate-skill', name })
       }
     }
     if (launchKind === 'first') {
