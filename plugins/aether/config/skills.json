@@ -24,7 +24,9 @@
     "para", "como", "esta", "este", "estos", "estas", "sobre", "desde", "entre", "cuando",
     "donde", "todo", "todos", "toda", "todas", "pero", "tiene", "hace", "cada", "solo",
     "también", "tambien", "porque", "hasta", "sus", "una", "uno", "unos", "unas",
-    "proyecto", "repositorio"
+    "proyecto", "repositorio",
+    "readme", "landing", "docs", "documentation", "documentacion", "guide", "guia",
+    "spec", "plan", "config", "json", "new"
   ],
   "topics": [
     {

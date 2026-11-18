@@ -163,6 +163,10 @@ test('matchDelegateSkills matches the full name, every long kebab part, and owns
   )
   assert.deepEqual(
     sb.matchDelegateSkills(dir, { prompt: 'Ajusta el audio del trailer', description: '', owns: [] }),
+    [],
+  )
+  assert.deepEqual(
+    sb.matchDelegateSkills(dir, { prompt: 'Ajusta el audio y los fx del trailer', description: '', owns: [] }),
     ['audio-fx'],
   )
   assert.deepEqual(
