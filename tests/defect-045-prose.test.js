@@ -19,8 +19,8 @@ test('R9: swarm says the approval goes by the Lead re-grade and how a delegate r
   const swarm = fs.readFileSync(path.join(PLUGIN, 'skills', 'swarm', 'SKILL.md'), 'utf8')
   const start = swarm.indexOf('Final review findings')
   const section = swarm.slice(start, swarm.indexOf('- **Leftovers:**', start))
-  assert.ok(section.includes("The approval goes by your re-grade of each finding below, not by the reviewer's grades."))
-  assert.ok(section.includes("`aether-delegate verdict --verdict fix --finding '<file:line: what is missing>'`"))
+  assert.ok(section.includes("The approval of ready-with-fixes goes by your re-grade of each finding below, not by the reviewer's grades."))
+  assert.ok(section.includes("`aether-delegate verdict --task <id> --verdict fix --finding '<file:line: what is missing>'`"))
 })
 
 test('R9: the pointer sits under Verify before you relay and approve keeps its plugin path', () => {
