@@ -163,8 +163,8 @@ test('the text of a read-only result says the system closed it when its checks p
   const chain = async () => ({ ok: true, status: 'ok', text: 'the answer', attribution: 'Aether: the answer is from grok-4.7 at high', attempts: [], journaled: true })
   const result = await dr.runTask({ id: 't1', cwd: repo.dir, dataDir }, { runChain: chain })
   assert.equal(result.checks.ok, true)
-  assert.match(result.text, /Closed by the system as approved: the read-only checks passed/)
-  assert.match(result.text, /aether-delegate verdict --task t1 --verdict fix\|infeasible/)
+  assert.ok(result.text.includes('Closed by the system as approved. To redo it, launch a new AETHER-TASK.'))
+  assert.doesNotMatch(result.text, /reopen/i)
   assert.doesNotMatch(result.text, /Judge it:/)
 
   const other = world(t, { edits: false, owns: [], tests: null })
