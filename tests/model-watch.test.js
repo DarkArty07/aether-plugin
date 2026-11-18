@@ -232,12 +232,123 @@ test('R8: runWatch, noticeLine, and markNoticed never modify pairs.json, prices.
   assert.deepEqual(after, before)
 })
 
+test('R15: muse is read last and never affects another harness', async (t) => {
+  const dir = tempDir(t)
+  const seen = []
+  const res = await runWatch({
+    dataDir: dir,
+    mainRoot: dir,
+    harnesses: ['muse', 'grok', 'agy'],
+    now: 1700000000000,
+    table: TABLE,
+    config: CONFIG,
+    listModels: async (name) => {
+      seen.push(name)
+      return { status: 'ok', ids: name === 'agy' ? ['a1'] : name === 'grok' ? ['g1'] : ['m1'] }
+    },
+  })
+  assert.deepEqual(seen, ['grok', 'agy', 'muse'])
+  assert.equal(res.harnesses.muse.status, 'ok')
+  assert.equal(res.harnesses.grok.status, 'ok')
+  assert.equal(res.harnesses.agy.status, 'ok')
+})
+
+test('R15: a failed, timed-out or missing muse leaves the other harnesses ok and the grok notice intact', async (t) => {
+  for (const museRes of [{ status: 'timeout' }, { status: 'failed', reason: 'x' }, { status: 'not-installed' }]) {
+    const dir = tempDir(t)
+    const res = await runWatch({
+      dataDir: dir,
+      mainRoot: dir,
+      harnesses: ['muse', 'grok', 'agy'],
+      now: 1700000000000,
+      table: TABLE,
+      config: CONFIG,
+      listModels: async (name) => {
+        if (name === 'muse') return museRes
+        if (name === 'agy') return { status: 'ok', ids: ['a1'] }
+        return { status: 'ok', ids: ['g1', 'g2'] }
+      },
+    })
+    assert.equal(res.harnesses.muse.status, museRes.status, JSON.stringify(museRes))
+    assert.equal(res.harnesses.grok.status, 'ok', JSON.stringify(museRes))
+    assert.equal(res.harnesses.agy.status, 'ok', JSON.stringify(museRes))
+    assert.deepEqual(res.harnesses.grok.new, ['g2'], JSON.stringify(museRes))
+    assert.ok(noticeLine(res).includes('new models in grok: g2'), JSON.stringify(museRes))
+  }
+})
+
+test('R15: with totalSeconds exhausted by grok, muse is skipped and never called', async (t) => {
+  const dir = tempDir(t)
+  let museCalls = 0
+  const res = await runWatch({
+    dataDir: dir,
+    mainRoot: dir,
+    harnesses: ['muse', 'grok'],
+    now: 1700000000000,
+    table: TABLE,
+    config: { ...CONFIG, totalSeconds: 0.3 },
+    listModels: async (name) => {
+      if (name === 'muse') {
+        museCalls += 1
+        return { status: 'ok', ids: ['m1'] }
+      }
+      await new Promise((r) => setTimeout(r, 400))
+      return { status: 'ok', ids: ['g1'] }
+    },
+  })
+  assert.equal(res.harnesses.grok.status, 'ok')
+  assert.equal(res.harnesses.muse.skipped, 'total-timeout')
+  assert.equal(museCalls, 0)
+})
+
+test('R16: a muse difference names the new and the retired ids', async (t) => {
+  const dir = tempDir(t)
+  const table = { harnesses: { muse: { models: ['muse-wonder-1.0', 'muse-spark-1.2'] } } }
+  const res = await runWatch({
+    dataDir: dir,
+    mainRoot: dir,
+    harnesses: ['muse'],
+    now: 1700000000000,
+    table,
+    config: CONFIG,
+    listModels: async () => ({ status: 'ok', ids: ['muse-wonder-1.0', 'muse-ember-1.0'] }),
+  })
+  assert.equal(res.harnesses.muse.status, 'ok')
+  assert.deepEqual(res.harnesses.muse.new, ['muse-ember-1.0'])
+  assert.deepEqual(res.harnesses.muse.retired, ['muse-spark-1.2'])
+  const line = noticeLine(res)
+  assert.ok(line.includes('muse-ember-1.0') && line.includes('muse-spark-1.2'), line)
+})
+
+test('R27: runWatch with muse over the real tree never modifies pairs, prices or harness-models', async (t) => {
+  const dir = tempDir(t)
+  const files = [
+    path.join(PLUGIN, 'config', 'pairs.json'),
+    path.join(PLUGIN, 'config', 'prices.json'),
+    path.join(PLUGIN, 'config', 'models', 'harness-models.json'),
+  ]
+  const before = files.map(sha1)
+
+  await runWatch({
+    dataDir: dir,
+    mainRoot: dir,
+    harnesses: ['muse', 'grok'],
+    now: Date.now(),
+    listModels: async () => ({ status: 'ok', ids: ['m1'] }),
+  })
+
+  assert.deepEqual(files.map(sha1), before)
+})
+
 test('aether-observe models-read worker exits 0 and writes result.json', (t) => {
   const dir = tempDir(t)
   const binDir = tempDir(t)
   const fakeAgy = path.join(binDir, 'agy')
   fs.writeFileSync(fakeAgy, '#!/bin/sh\necho "m1"\n')
   fs.chmodSync(fakeAgy, 0o755)
+  const fakeMuse = path.join(binDir, 'muse')
+  fs.writeFileSync(fakeMuse, '#!/bin/sh\nexit 1\n')
+  fs.chmodSync(fakeMuse, 0o755)
 
   const bin = path.join(PLUGIN, 'bin', 'aether-observe')
   const r = spawnSync('node', [bin, 'models-read'], {
@@ -248,13 +359,14 @@ test('aether-observe models-read worker exits 0 and writes result.json', (t) => 
       AETHER_DATA_DIR: dir,
       AETHER_LANE_HARNESSES: 'agy,muse',
     },
-    timeout: 5000,
+    // Generous: the worker boots node and two fakes, which is slow on a loaded box.
+    timeout: 15000,
   })
   assert.equal(r.status, 0)
   const parsed = JSON.parse(r.stdout.trim())
   assert.equal(parsed.harnesses.agy.status, 'ok')
   assert.deepEqual(parsed.harnesses.agy.new, ['m1'])
-  assert.equal(parsed.harnesses.muse.status, 'no-capture')
+  assert.equal(parsed.harnesses.muse.status, 'failed', 'the fake muse exits before it answers initialize')
 })
 
 test('runWatch with real listModels kills hanging child on totalSeconds and skips remaining', async (t) => {

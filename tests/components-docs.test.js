@@ -121,7 +121,7 @@ test('components.md declares the library families, the orchestrator of each and 
   assert.ok(section, 'a section "Library families"')
   assert.match(section, /^\| Family \| Prefix \| Members \| Orchestrator or table \|$/m)
   for (const family of ['lane', 'router', 'delegate', 'observe', 'seat', 'spend', 'plan', 'session', 'harness', 'model']) assert.match(section, new RegExp(`^\\| ${family} \\|`, 'm'), family)
-  assert.match(section, /^\| model \| `model-` \|.*`model-listing\.js`.*`model-watch\.js`/m)
+  assert.match(section, /^\| model \| `model-` \|.*`model-listing\.js`.*`model-watch\.js`.*`muse-models\.js`/m)
   assert.match(section, /^\| router \| `router-` \|.*\| `none` \|/m)
   assert.match(section, /^Loose modules \(no family\):.*`common\.js`/m)
 })

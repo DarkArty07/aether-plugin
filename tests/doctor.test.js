@@ -799,19 +799,21 @@ test('models: with superdelegation off a failed reading is an info; with it on i
   assert.equal(byId(report(box, { env: withModels(box, dir, 'grok') }), 'models').status, 'warn')
 })
 
-test('models: codex names its cache limit and muse its missing capture, without a warning', (t) => {
+test('models: codex names its cache limit and a muse reading shows the full comparison', (t) => {
   const box = sandbox(t)
   const dir = tempDir(t, 'aether-data-')
   writeResult(dir, {
     codex: { new: ['codex-new-1'], retired: [] },
-    muse: { status: 'no-capture', reason: 'no capture means without a model call' },
+    muse: { status: 'ok', new: ['muse-ember-1.0'], retired: [] },
   })
   const r = report(box, { env: withModels(box, dir, 'codex,muse') })
   const entry = byId(r, 'models')
   assert.equal(entry.status, 'info', entry.detail)
   assert.ok(entry.detail.includes('codex-new-1'), entry.detail)
   assert.ok(entry.detail.includes('cache is as fresh as the last codex run'), entry.detail)
-  assert.ok(entry.detail.includes('muse') && entry.detail.includes('no capture means'), entry.detail)
+  assert.ok(entry.detail.includes('muse: new models: muse-ember-1.0; retired: none; readAt'), entry.detail)
+  assert.ok(!entry.detail.includes('no capture means'), entry.detail)
+  assert.ok(!JSON.stringify(r).includes('no capture means'), 'no check of the report names the retired reason')
   assert.equal(r.ok, true)
 })
 

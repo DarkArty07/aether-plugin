@@ -121,9 +121,9 @@ test('listModels: handles ok, failed, timeout, not-installed, no-capture, and co
   })
   assert.equal(missing.status, 'not-installed')
 
-  const muse = await listModels('muse', { env: { PATH: agyBin } })
-  assert.equal(muse.status, 'no-capture')
-  assert.equal(muse.reason, 'no capture means without a model call')
+  const museMissing = await listModels('muse', { env: { PATH: agyBin } })
+  assert.equal(museMissing.status, 'not-installed')
+  assert.ok(museMissing.reason.includes('not found on PATH'), museMissing.reason)
 
   for (const name of ['claude', 'cursor']) {
     const res = await listModels(name, { env: { PATH: agyBin } })
@@ -141,18 +141,76 @@ test('listModels: handles ok, failed, timeout, not-installed, no-capture, and co
   assert.deepEqual(codex, { status: 'ok', ids: ['gpt-6.1-sol', 'gpt-6.1-terra'] })
 })
 
-test('model-watch.json captureVia only uses ["models"] or a cache file (R1)', () => {
+test('model-watch.json captureVia only uses ["models"], a cache file or the muse serve reading (R1)', () => {
   const cfg = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'config', 'model-watch.json'), 'utf8'))
   assert.equal(cfg.perHarnessSeconds, 10)
   assert.equal(cfg.totalSeconds, 30)
   for (const [name, entry] of Object.entries(cfg.captureVia)) {
     if (entry === null) continue
+    if (entry.msp === true) {
+      assert.equal(name, 'muse', 'only muse is read over serve')
+      continue
+    }
     if (entry.args) {
       assert.deepEqual(entry.args, ['models'], `${name} args`)
     } else {
       assert.equal(typeof entry.file, 'string', `${name} file`)
     }
   }
+  assert.deepEqual(cfg.captureVia.muse, { msp: true })
   assert.equal(Object.hasOwn(cfg.captureVia, 'claude'), false)
   assert.equal(Object.hasOwn(cfg.captureVia, 'cursor'), false)
+})
+
+test("listModels: muse over serve returns the ids, and not-installed without the command (R14)", async (t) => {
+  const dir = tempDir(t)
+  const configPath = path.join(dir, 'model-watch.json')
+  fs.writeFileSync(configPath, JSON.stringify({
+    perHarnessSeconds: 2,
+    totalSeconds: 10,
+    captureVia: { muse: { msp: true } },
+  }))
+  const lanesConfigPath = path.join(dir, 'lanes.json')
+  fs.writeFileSync(lanesConfigPath, JSON.stringify({ harnesses: {} }))
+
+  const binDir = tempDir(t)
+  const fake = path.join(binDir, 'muse')
+  fs.writeFileSync(fake, `#!/usr/bin/env node
+'use strict'
+let buf = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', (chunk) => {
+  buf += chunk
+  let idx
+  while ((idx = buf.indexOf('\\n')) >= 0) {
+    const line = buf.slice(0, idx)
+    buf = buf.slice(idx + 1)
+    if (!line.trim()) continue
+    let msg
+    try { msg = JSON.parse(line) } catch { continue }
+    if (msg.method === 'initialize') {
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'muse' } } }) + '\\n')
+    } else if (msg.method === 'model/list') {
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 2, result: { models: [{ modelId: 'muse-wonder-1.0' }, { modelId: 'muse-ember-1.0' }] } }) + '\\n')
+    }
+  }
+})
+`)
+  fs.chmodSync(fake, 0o755)
+
+  const found = await listModels('muse', {
+    env: { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH}` },
+    configPath,
+    lanesConfigPath,
+    timeoutMs: 5000,
+  })
+  assert.deepEqual(found, { status: 'ok', ids: ['muse-wonder-1.0', 'muse-ember-1.0'] })
+
+  const missing = await listModels('muse', {
+    env: { PATH: tempDir(t) },
+    configPath,
+    lanesConfigPath,
+  })
+  assert.equal(missing.status, 'not-installed')
+  assert.ok(missing.reason.includes('not found on PATH'), missing.reason)
 })
