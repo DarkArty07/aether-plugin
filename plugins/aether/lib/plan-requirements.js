@@ -27,6 +27,9 @@ function loadThreshold(configPath = path.join(__dirname, '..', 'config', 'design
   } catch (err) {
     throw new Error(`threshold config is not JSON: ${configPath}: ${err.message}`)
   }
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    throw new Error(`threshold config ${configPath} is not an object`)
+  }
   const threshold = data.mapMinRequirements
   if (typeof threshold !== 'number' || !Number.isInteger(threshold) || threshold <= 0) {
     throw new Error(`threshold config ${configPath} needs mapMinRequirements as a positive integer`)
@@ -51,7 +54,11 @@ function fail(errors, stdout) {
 // error and exits 1 on a missing spec or an unreadable threshold. It writes nothing.
 function main(argv, { cwd = process.cwd(), stdout = process.stdout } = {}) {
   const specArg = argv[1]
-  if (!specArg || argv.length > 2) fail([USAGE], stdout)
+  if (!specArg) {
+    const { USAGE: SHARED_USAGE } = require('./plan-compile.js')
+    fail([SHARED_USAGE], stdout)
+  }
+  if (argv.length > 2) fail([USAGE], stdout)
   const specPath = path.resolve(cwd, specArg)
   let specText
   try {
