@@ -142,49 +142,70 @@ kill "${pids[@]}"; echo "cores=$n command=node --test --test-name-pattern=killed
 
 **Tests (write first):**
 
-New file `tests/defect-045-stop-reason.test.js`, reusing the fixture of `tests/delegate-auto-close.test.js` that launches a read-only task through `begin` and returns `{ dataDir, cwd, session, task }` (export it there or copy it):
+New file `tests/defect-045-stop-reason.test.js`. `launchReadOnly` is async, because `begin` is: it copies the fixture of `tests/delegate-auto-close.test.js` (`world`, `call`, `BRIEF`; a test file exports nothing) and awaits the launch of a read-only task on a real throwaway repo, so that `closeReadOnly` sees a clean checkout:
 
 ```js
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+const { tempDir, makeRepo } = require('./helpers.js')
+const task = require('../plugins/aether/lib/delegate-task.js')
 const { recordAnswer } = require('../plugins/aether/lib/delegate-run.js')
 const { unverdictedDelegates } = require('../plugins/aether/lib/delegate-report.js')
+const { unverdictedStopMessage } = require('../plugins/aether/lib/continuity-hook.js')
 const log = require('../plugins/aether/lib/delegate-log.js')
 
+const BIN = path.join(__dirname, '..', 'plugins', 'aether', 'bin', 'aether-delegate')
+const NATIVE = { lanes: false, harnesses: [], deadlines: { quotaMs: 1 } }
+
+async function launchReadOnly(t, id = 'ro-stop') {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  let n = 0
+  const deps = { dataDir, cwd: repo.dir, now: () => 1000 + (n += 1), settings: NATIVE, newId: () => `gen-${n}`, pickPair: async () => ({ pick: null, quota: [] }) }
+  await task.begin({ session: 's1', event: { subagent_type: 'general-purpose', description: 'd', prompt: `AETHER-TASK: ${id}\nDo the work.` } }, deps)
+  return { dataDir, cwd: repo.dir, session: 's1', task: id, env: { ...process.env, AETHER_DATA_DIR: dataDir } }
+}
+const answer = (w, stopReason, text) => recordAnswer({ task: w.task, attempt: 1, text, session: w.session, cwd: w.cwd, dataDir: w.dataDir, now: () => 5000, stopReason })
+const pending = (w) => unverdictedDelegates({ dataDir: w.dataDir, session: w.session })
+const verdicts = (w) => log.readEntries(w.dataDir, { task: w.task }).filter((e) => e.kind === 'verdict')
+
 for (const stopReason of ['max_tokens', 'length', 'incomplete', 'refusal', 'content_filter', 'something-else']) {
-  test(`Claude: a read-only answer that stopped on ${stopReason} stays pending`, (t) => {
-    const w = launchReadOnly(t)
-    const r = recordAnswer({ task: w.task, attempt: 1, text: 'half an answer', session: w.session, cwd: w.cwd, dataDir: w.dataDir, stopReason })
-    assert.equal(r.recorded, true)
-    assert.deepEqual(unverdictedDelegates({ dataDir: w.dataDir, session: w.session }).map((x) => x.task), [w.task])
-    assert.equal(log.readEntries(w.dataDir, { task: w.task }).some((e) => e.kind === 'verdict'), false)
+  test(`Claude: a read-only answer that stopped on ${stopReason} stays pending`, async (t) => {
+    const w = await launchReadOnly(t)
+    assert.equal(answer(w, stopReason, 'half an answer').recorded, true)
+    assert.deepEqual(pending(w).map((x) => x.task), [w.task])
+    assert.deepEqual(verdicts(w), [])
   })
 }
 
 for (const stopReason of ['end_turn', undefined, null]) {
-  test(`Claude: a read-only answer with stop reason ${String(stopReason)} is closed as A132 decided`, (t) => {
-    const w = launchReadOnly(t)
-    recordAnswer({ task: w.task, attempt: 1, text: 'a full answer', session: w.session, cwd: w.cwd, dataDir: w.dataDir, stopReason })
-    const verdict = log.readEntries(w.dataDir, { task: w.task }).find((e) => e.kind === 'verdict')
-    assert.equal(verdict.auto, true)
-    assert.deepEqual(unverdictedDelegates({ dataDir: w.dataDir, session: w.session }), [])
+  test(`Claude: a read-only answer with stop reason ${String(stopReason)} is closed as A132 decided`, async (t) => {
+    const w = await launchReadOnly(t)
+    answer(w, stopReason, 'a full answer')
+    assert.equal(verdicts(w)[0].auto, true)
+    assert.deepEqual(pending(w), [])
   })
 }
 
-test('the Stop notice names a task left pending by a cut-off answer', (t) => {
-  const w = launchReadOnly(t)
-  recordAnswer({ task: w.task, attempt: 1, text: 'cut', session: w.session, cwd: w.cwd, dataDir: w.dataDir, stopReason: 'max_tokens' })
-  const { unverdictedStopMessage } = require('../plugins/aether/lib/continuity-hook.js')
-  assert.ok(unverdictedStopMessage(unverdictedDelegates({ dataDir: w.dataDir, session: w.session }), false).includes(w.task))
+test('the Stop notice names a task left pending by a cut-off answer', async (t) => {
+  const w = await launchReadOnly(t)
+  answer(w, 'max_tokens', 'cut')
+  assert.ok(unverdictedStopMessage(pending(w), false).includes(w.task))
 })
 
-test('aether-delegate answer --stop-reason leaves the task pending (CLI)', (t) => {
-  const w = launchReadOnly(t)
-  const out = runBin(DELEGATE_BIN, ['answer', '--session', w.session, '--stop-reason', 'refusal', '--task', w.task, '--attempt', '1', '--text', 'no'], w.cwd, w.env)
-  assert.equal(JSON.parse(out.stdout).recorded, true)
-  assert.equal(unverdictedDelegates({ dataDir: w.dataDir, session: w.session }).length, 1)
+test('aether-delegate answer --stop-reason leaves the task pending (CLI)', async (t) => {
+  const w = await launchReadOnly(t)
+  const out = spawnSync(process.execPath, [BIN, 'answer', '--session', w.session, '--stop-reason', 'refusal', '--task', w.task, '--attempt', '1', '--text', 'no'], { cwd: w.cwd, encoding: 'utf8', env: w.env })
+  assert.equal(JSON.parse(out.stdout.trim()).recorded, true)
+  assert.equal(pending(w).length, 1)
+  assert.deepEqual(verdicts(w), [])
 })
 ```
 
-Add, in the same file, the other-harness cases: `parse()` of grok with output `{"result":"{\"answer\":\"x\"}","stopReason":"max_tokens"}` and exit 0 returns `clean: true` and `stopReason: 'max_tokens'`; with `"stopReason":"end_turn"` or with no field the returned object has no `stopReason` key (`Object.hasOwn(parsed, 'stopReason') === false`); `agy`, `codex` and `muse` `parse()` never return it. A `runTask` with a fake `runChain` that returns `{ ok: true, status: 'ok', text: 'cut', attribution: 'a', stopReason: 'length', attempts: [], changed: [] }` writes a result whose `text` has the judge line (`judgeLine`) and not the automatic-close line, and leaves the task pending; the same fake chain with no `stopReason` closes it as `tests/delegate-run.test.js` expects today. In `tests/delegate-mod.test.js` and `hooks/delegate.test.ts`, add a case where the model's result carries `stopReason: 'max_tokens'`: the argv of the `answer` call is `['answer', '--session', <s>, '--stop-reason', 'max_tokens', '--task', <t>, '--attempt', '1', '--text', <answer>]`; the `end_turn` case keeps its argv.
+Add, in the same file, the other-harness cases: `parse()` of grok with output `{"result":"{\"answer\":\"x\"}","stopReason":"max_tokens"}` and exit 0 returns `clean: true` and `stopReason: 'max_tokens'`; with `"stopReason":"end_turn"` or with no field the returned object has no `stopReason` key (`Object.hasOwn(parsed, 'stopReason') === false`); `agy`, `codex` and `muse` `parse()` never return it. A `runTask` (launched as test 1 of `tests/delegate-auto-close.test.js` does: copy its `EXTERNAL` settings, its `GROK` pick and its `world`, with a `makeRepo` repo as `cwd`, then `runTask({ id, session, cwd, dataDir }, { runChain })`) with a fake `runChain` that returns `{ ok: true, status: 'ok', text: 'cut', attribution: 'a', stopReason: 'length', attempts: [], changed: [] }` writes a result whose `text` has the judge line (`judgeLine`) and not the automatic-close line, and leaves the task pending; the same fake chain with no `stopReason` closes it as `tests/delegate-run.test.js` expects today. In `tests/delegate-mod.test.js` and `hooks/delegate.test.ts`, add a case where the model's result carries `stopReason: 'max_tokens'`: the argv of the `answer` call is `['answer', '--session', <s>, '--stop-reason', 'max_tokens', '--task', <t>, '--attempt', '1', '--text', <answer>]`; the `end_turn` case keeps its argv.
 
 **Acceptance:**
 - `node --test tests/defect-045-stop-reason.test.js tests/delegate-mod.test.js tests/delegate-run.test.js tests/delegate-auto-close.test.js tests/delegate-calls.test.js tests/delegate-chain.test.js tests/harness-grok.test.js tests/harness-agy.test.js tests/harness-codex.test.js` passes, and `npm run test:mod` passes for `hooks/delegate.test.ts`.
@@ -206,7 +227,7 @@ Add, in the same file, the other-harness cases: `parse()` of grok with output `{
 
 **Tests (write first):**
 
-New file `tests/defect-045-guard.test.js`, with the `world(t)` fixture of `tests/guard-skills.test.js` (export it there, or copy it); `claudeConfigWrite` and `trustedWrite` are exercised through `decideBash`:
+New file `tests/defect-045-guard.test.js`, with a copy of the `world(t)` fixture of `tests/guard-skills.test.js` (a test file exports nothing, so copy it); `claudeConfigWrite` and `trustedWrite` are exercised through `decideBash`:
 
 ```js
 const READS = [
@@ -224,7 +245,6 @@ const WRITES = [
   'rm -rf .claude/hooks',
   'sed -i s/a/b/ .claude/settings.json',
   'find .claude -name settings.json -delete',
-  'find ~/.claude/plugins/data -name trusted.json -exec rm {} ;',
   'echo {} > ~/.claude/plugins/data/skills/trusted.json',
   'gh issue create --body x > .claude/settings.json',
   'gh issue create --body "$(cp x .claude/settings.json)"',
@@ -237,11 +257,9 @@ test('R4: a write, redirection or deletion on those targets is still refused', (
   const w = world(t)
   for (const command of WRITES) assert.notEqual(w.bash(command), null, command)
 })
-test('R4: a read piped to a writer keeps the refusal', (t) => {
-  const w = world(t)
-  assert.notEqual(w.bash('find ~/.claude -name settings.json | xargs rm'), null)
-})
 ```
+
+The guard does not refuse today, and this task does not make it refuse, a `find` that hands its result to another command (`find ~/.claude/plugins/data -name trusted.json -exec rm {} ;` and `find ~/.claude -name settings.json | xargs rm` return `null` before and after): R4 asks only that reads pass and the refusals that exist stay, so those two commands are in neither list.
 
 In `tests/guard-skills.test.js`, extend the existing R29 and R30 loops (hallazgo #15): for each of `-execdir`, `-ok`, `-okdir`, `-fprint0`, `-fprintf` and `-fls` a `find <personal skills folder> -name SKILL.md <action> …` command is classed `skill-install`; `sudo find <folder> -name SKILL.md` and `/usr/bin/find <folder> -name SKILL.md` are reads (no class), and `sudo find <folder> -name SKILL.md -delete` is `skill-install`; a `gh issue comment 315 --body "$(cp x <folder>/y)"` and the same with `gh pr create` are flagged `skill-install` because the substitution is its own segment.
 
@@ -389,7 +407,7 @@ In `tests/agent-turns.test.js`, each assertion reads only the text between its h
 
 **Aether:**
 - Area: models
-- Owns: `plugins/aether/lib/muse-models.js`, `plugins/aether/lib/model-listing.js`, `plugins/aether/lib/model-watch.js`, `plugins/aether/lib/doctor.js`, `plugins/aether/config/model-watch.json`, `docs/reference/components.md`, `tests/muse-models.test.js`, `tests/defect-045-muse.test.js`, `tests/model-watch.test.js`, `tests/model-listing.test.js`, `tests/doctor.test.js`, `tests/session-start-model-watch.test.js`, `tests/components-docs.test.js`
+- Owns: `plugins/aether/lib/muse-models.js`, `plugins/aether/lib/model-listing.js`, `plugins/aether/lib/model-watch.js`, `plugins/aether/lib/doctor.js`, `plugins/aether/config/model-watch.json`, `docs/reference/components.md`, `tests/muse-models.test.js`, `tests/defect-045-muse.test.js`, `tests/model-watch.test.js`, `tests/model-listing.test.js`, `tests/doctor.test.js`, `tests/session-start-model-watch.test.js`, `tests/components-docs.test.js`, `tests/aether-observe.test.js`
 - Depends on: none
 - Serves: R13, R14, R15, R16, R27
 
@@ -432,10 +450,12 @@ test('R14: a PATH with no muse is not-installed', () => {})
 
 New file `tests/defect-045-muse.test.js`: the evidence file `specs/045-defect-issues/evidence/muse-model-list-2026-11-17.md` exists and its JSON block says `why: "listed"`, `usageSeen: false`, `turnSeen: false`, `quotaError: false`; the fake server of `tests/muse-models.test.js` answers with the five ids of that block (each as `modelId`) and the reader returns them in the same order (`muse-wonder-1.0`, `muse-wonder-full-1.0`, `muse-ember-1.0`, `muse-spark-1.3`, `muse-spark-1.2`); no test file of the task mentions `refreshMuseQuota` or `muse exec` as a call.
 
-In `tests/model-watch.test.js`: (1) with `harnesses: ['muse', 'grok', 'agy']` and an injected `listModels` spy, the calls are `grok`, `agy`, `muse` (muse last); (2) a `muse` that answers `{ status: 'timeout' }` or `{ status: 'failed', reason: 'x' }` or `{ status: 'not-installed' }` leaves `grok` and `agy` `ok` and the notice of `grok` intact, with `muse` recorded under its status; (3) with `totalSeconds: 1` and a `grok` spy that takes 900 ms, `muse` is skipped with `total-timeout` and `grok` is read; (4) a muse with new `muse-ember-1.0` and retired `muse-spark-1.2` (table `muse: { models: ['muse-wonder-1.0','muse-spark-1.2'] }`) gives `noticeLine` text that names both; (5) `harness-models.json`, `pairs.json` and `prices.json` have the same sha1 before and after a `runWatch` over the real tree. In `tests/model-listing.test.js`: `listModels('muse')` with `captureVia.muse = { msp: true }`, the fake `muse` on `PATH` and a lanes table that names no other command returns the ids; without the fake it is `not-installed`. In `tests/doctor.test.js`: a `muse` entry `{ status: 'ok', new: ['muse-ember-1.0'], retired: [] }` renders `muse: new models: muse-ember-1.0; retired: none; readAt …`, and the output never contains `no capture means`. `tests/components-docs.test.js` stays green with the new module declared.
+In `tests/model-watch.test.js`: (1) with `harnesses: ['muse', 'grok', 'agy']` and an injected `listModels` spy, the calls are `grok`, `agy`, `muse` (muse last); (2) a `muse` that answers `{ status: 'timeout' }` or `{ status: 'failed', reason: 'x' }` or `{ status: 'not-installed' }` leaves `grok` and `agy` `ok` and the notice of `grok` intact, with `muse` recorded under its status; (3) with `harnesses: ['muse', 'grok']`, `totalSeconds: 0.3` and a `grok` spy that waits 400 ms (longer than `totalSeconds`, because `runWatch` skips only when the elapsed time is at least `totalMs`), `grok` is read and `muse` is skipped with `total-timeout` and the `muse` spy is never called; (4) a muse with new `muse-ember-1.0` and retired `muse-spark-1.2` (table `muse: { models: ['muse-wonder-1.0','muse-spark-1.2'] }`) gives `noticeLine` text that names both; (5) `harness-models.json`, `pairs.json` and `prices.json` have the same sha1 before and after a `runWatch` over the real tree. In `tests/model-listing.test.js`: `listModels('muse')` with `captureVia.muse = { msp: true }`, the fake `muse` on `PATH` and a lanes table that names no other command returns the ids; without the fake it is `not-installed`. In `tests/doctor.test.js`: a `muse` entry `{ status: 'ok', new: ['muse-ember-1.0'], retired: [] }` renders `muse: new models: muse-ember-1.0; retired: none; readAt …`, and the output never contains `no capture means`. `tests/components-docs.test.js` stays green with the new module declared.
+
+Two existing tests pin the old `no-capture` state and would launch the real `muse serve` through the real `PATH` once `muse` is read: `tests/aether-observe.test.js` (the test that runs `models-read` with `AETHER_LANE_HARNESSES: 'muse'` and asserts `out.harnesses.muse.status === 'no-capture'`, line 32) and the test of `tests/model-watch.test.js` that runs `models-read` with `AETHER_LANE_HARNESSES: 'agy,muse'` (lines 249 and 257). Both are Task 8's and change in this task: each puts a fake `muse` executable first on `PATH` (a temporary folder with a `#!/bin/sh` script `muse` that exits 1 without printing, mode 755, in front of `process.env.PATH`; the fake agy of the second test already lives in such a folder) and asserts the new state, `harnesses.muse.status === 'failed'` (the fake exits before it answers `initialize`), instead of `no-capture`; the `agy` assertions of the second test stay. Neither test may reach the real `muse`.
 
 **Acceptance:**
-- `node --test tests/muse-models.test.js tests/defect-045-muse.test.js tests/model-watch.test.js tests/model-listing.test.js tests/doctor.test.js tests/session-start-model-watch.test.js tests/components-docs.test.js` passes; nothing calls the real `muse` or the network (run once with `PATH` stripped of the real `muse` to prove it).
+- `node --test tests/muse-models.test.js tests/defect-045-muse.test.js tests/model-watch.test.js tests/model-listing.test.js tests/doctor.test.js tests/session-start-model-watch.test.js tests/components-docs.test.js tests/aether-observe.test.js` passes; nothing calls the real `muse` or the network (run once with `PATH` stripped of the real `muse` to prove it).
 - `git diff --stat` shows no change under `config/models/`.
 
 ### Task 9: The automatic skill matcher with the closed rule of R20
@@ -451,7 +471,7 @@ In `tests/model-watch.test.js`: (1) with `harnesses: ['muse', 'grok', 'agy']` an
   1. **Domain signals of a skill**, from its `name` and `description`: (a) the exact name (any length, `pxl` included); (b) file extensions and patterns with a dot, taken from `description` before it is tokenized: a token that starts with `.`, continues with 1 to 5 alphanumerics and admits more segments of `.` plus 1 to 5 alphanumerics (`.px.js`, `.ipynb`, `.gd`, `.wgsl`), preceded by start of text, a space, a quote, a backtick or an opening parenthesis and followed by a space, a quote, a backtick, a comma, a semicolon, a closing parenthesis or the end of text (so the final dot of `landing page.`, `e.g.` and `i.e.` give no pattern), compared as a suffix of a path of `owns` or as a literal mention; (c) the parts of at least 2 characters of a hyphenated name that are not stop words; (d) the distinct words of **length ≥ 4** of `description` (and of `name`, once) that are not stop words.
   2. **`stopWords` of `config/skills.json`**: keep the current list and add only this closed list: `readme`, `landing`, `docs`, `documentation`, `documentacion`, `guide`, `guia`, `spec`, `plan`, `config`, `json`, `new`. Do not add `test` or `tests`.
   3. **Threshold**: a skill matches only when (i) its exact name appears as an independent token, or (ii) one of its dot patterns matches an `owns` path or the text, or (iii) its hyphenated name has at least 2 parts that are not stop words (length ≥ 2) and all of them appear in the task (one remaining part, such as `harness` in `new-harness`, is not enough), or (iv) at least `max(2, min(3, ceil(N × 0.25)))` distinct domain words (length ≥ 4) of the skill appear in the task, N being the skill's number of domain words; with N < 2 this condition never fires. This replaces the expectation of `tests/skill-brief.test.js:164-167` for `audio-fx`: it now needs `audio-fx` or both `audio` and `fx`; `ui-kit`, `save-game` and `diseno-web` keep passing because their cases name the skill or give all its parts.
-  4. **Order**: by strength of signal ((i) exact name, (ii) dot pattern, (iii) full compound name, (iv) more matched domain words, then the greater proportion), and, on a tie, alphabetical by `name`.
+  4. **Order**: by strength of signal ((i) exact name, (ii) dot pattern, (iii) full compound name, (iv) more matched domain words), and, on a tie, alphabetical by `name`. The order of (iv) counts the matched domain words only and does **not** break a tie by proportion: `tests/skill-brief.test.js:283-285` stays and expects the alphabetical order `backslash-flow, double-flow, escaped-flow, single-flow, space-flow` for five skills that match with 2 of 5, 2 of 5, 2 of 6, 2 of 6 and 2 of 7 domain words, and a proportion would put `backslash-flow`, `space-flow`, `double-flow`, `escaped-flow`, `single-flow` in another order. (This drops the words «y proporción» that R20 of the spec has in its order; the plan says so under `## Risks` and asks the Lead.)
 - The tests use the real skills of this repository: copy `.agents/skills/{pxl,new-harness,artificial-analysis}/SKILL.md` into a temporary project (`.agents/skills/<name>/`) so the real descriptions are exercised.
 
 **Tests (write first):**
@@ -517,23 +537,23 @@ Update `tests/skill-brief.test.js:164-167` as above and keep its other cases gre
 
 **Interfaces:**
 - `lib/skill-brief.js`, two new exports:
-  - `projectSkillRoots(cwd, { dataDir, home })` → the folders that hold project skills, in order: the integration tree (`git rev-parse --show-toplevel`), the main checkout, and the parent folder of every path of `<data dir>/skills/installs.jsonl` (`readInstalls`) whose record belongs to this repository (`canonicalRepo`) and whose folder still exists. `listProjectSkills` and `resolveSkill` read these roots, so a skill installed without a commit in a linked worktree reaches a compile in another worktree.
+  - `projectSkillRoots(cwd, { dataDir, home })` → the folders that hold project skills, in order: the integration tree (`git rev-parse --show-toplevel`), the main checkout (both as `getProjectRoots` returns them, which is `[cwd]` when `cwd` is not in a git repository), and the project root of every path of `<data dir>/skills/installs.jsonl` (`readInstalls`) whose record belongs to this repository (`canonicalRepo`) and whose folder still exists: for a recorded path `<root>/.agents/skills/<name>` or `<root>/.claude/skills/<name>` the root is `<root>`. `listProjectSkills` and `resolveSkill` read these roots, so a skill installed without a commit in a linked worktree reaches a compile in another worktree.
   - `selectSkills({ cwd, manual = [], text: { prompt, description, owns }, home, pluginRoot, dataDir })` → `{ ok: true, skills }` or `{ ok: false, error }`. The manual names (`AETHER-SKILLS:` of a delegate, `Skills:` of a task) come first and keep their strict validation (a missing or invalid manual skill is `{ ok: false, error }` as `loadSkills` returns today, and more than 3 manual names is the same error). Then the automatic matches of `matchDelegateSkills`, not already chosen, fill the free places up to 3 skills in all and 1,500 lines in all (`MAX_TOTAL_LINES`); an automatic skill that cannot be read, has an invalid `SKILL.md` (`checkSkillFile`), exceeds 500 lines or would exceed the total is skipped without aborting.
 - `lib/delegate-task.js` `begin`: the skills are `selectSkills({ manual: brief.skills, … })` of the task's description, prompt and `AETHER-OWNS`; their text is injected into the prompt the delegate receives, on Claude and on another harness, as today for manual skills (`skillsSection`); `launch.skills` and the `uses.jsonl` record (`kind: 'delegate'`) carry the names. The `delegate-skill` notice (`add AETHER-SKILLS: …`) and its `recordNotice` are no longer emitted for skills that were delivered. A task that matches nothing is unchanged (no `skills`, `plan.args.prompt` undefined). This replaces the expectations of `tests/delegate-skills.test.js:98-101` and `:134-136`.
 - `lib/plan-compile.js` `compile`: each unit's skills are `selectSkills({ manual: t.skills, … })` over the task's text and its `Owns`, using `projectSkillRoots`; the content goes in the compiled brief (`renderBrief`'s `skills`) and a `uses.jsonl` record (`kind: 'run'`) is written; a plan with no `Skills:` still compiles. `aether-plan check` keeps its errors for a `Skills:` line that names a missing skill or more than 3.
 
 **Tests (write first):**
 
-New file `tests/defect-045-skill-delivery.test.js`, with the `world(t)`, `skill(dir, name, { description })` and `call(...)` fixtures of `tests/delegate-skills.test.js`:
+New file `tests/defect-045-skill-delivery.test.js`. It copies the fixtures of `tests/delegate-skills.test.js` that it needs (`world`, `call`, `entries`, `uses`, and the requires of `task`, `log`, `reg` = `skill-registry.js`, `makeRepo` and `tempDir`; a test file exports nothing) and does **not** reuse that file's `skill(root, name, body)`: its signature is positional and its description is fixed to `Use for the work.`, which matches nothing. The new file defines its own `writeSkill(root, name, description, body = 3)` that writes `.agents/skills/<name>/SKILL.md` with that `description` in the front matter. `world(t)` is synchronous and its `cwd` is a plain temporary folder (not a repository), which `getProjectRoots` accepts; the cases that need a repository set `w.deps.cwd = makeRepo(t).dir` as the existing cases do. `begin` is async: every case is an `async` function that awaits it.
 
 ```js
 test('R18: begin hands a matching project skill to the delegate by itself and records it', async (t) => {
   const w = world(t)
-  skill(w.cwd, 'pxl', { description: 'Use when working with pxl: writing or editing a .px.js animation or a GIF.' })
+  writeSkill(w.cwd, 'pxl', 'Use when working with pxl: writing or editing a .px.js animation or a GIF.')
   const plan = await task.begin(call('AETHER-TASK: p1\nAETHER-OWNS: assets/brand/gifs/walk.px.js\nAdjust the walk cycle.'), w.deps)
   assert.ok(plan.args.prompt.includes('## Skills for this task') && plan.args.prompt.includes('### pxl'))
   assert.deepEqual(entries(w.dataDir, 'p1').find((e) => e.kind === 'launch').skills, ['pxl'])
-  assert.deepEqual(reg.readUses(w.dataDir).map((u) => [u.kind, u.task, u.skills]), [['delegate', 'p1', ['pxl']]])
+  assert.deepEqual(uses(w.dataDir).map((u) => [u.kind, u.task, u.skills]), [['delegate', 'p1', ['pxl']]])
   assert.deepEqual(reg.readNotices(w.dataDir), [], 'no delegate-skill notice for a skill that was delivered')
 })
 test('R18: an unrelated task gets no skill and its call is unchanged', () => {})           // 'Update the parser of JSON in src/json.js' + a pxl skill
@@ -545,9 +565,11 @@ test('R21: a manual AETHER-SKILLS name keeps priority and automatic matches fill
 test('R21: a manual skill that does not exist or is invalid is still rejected as today', () => {})
 test('R19: compile hands the skills to a unit with no Skills: line and records the use', () => {})   // aether-plan compile on a temp repo; brief of task-1 contains '### <skill>'; uses.jsonl has kind 'run'
 test('R19: a skill installed without a commit in linked worktree A reaches a compile in integration worktree B, by match and by a Skills: line', async (t) => {
-  // makeRepo; git worktree add A and B; put .agents/skills/gdscript-helper in A (not committed); recordInstall(dataDir,
-  // { name, path: <A>/.agents/skills/gdscript-helper, repo: <repo> }); compile in B a plan whose task-1 owns
-  // 'game/player.gd' (auto) and whose task-2 says 'Skills: gdscript-helper' (manual); both briefs carry the skill
+  // makeRepo; git worktree add A and B; put .agents/skills/gdscript-helper in A (not committed), described as
+  // 'Use for .gd files of the game: GDScript helpers'; reg.recordInstall(dataDir, { time: 1, session: 's1',
+  // source: 'vercel-labs/agent-skills', scope: 'project', repo: <repo.dir>, name: 'gdscript-helper',
+  // path: <A>/.agents/skills/gdscript-helper, hash: reg.computedHash(<that folder>) }); compile in B a plan whose
+  // task-1 owns 'game/player.gd' (auto) and whose task-2 says 'Skills: gdscript-helper' (manual); both briefs carry the skill
 })
 test('R19: an install record whose folder is gone is ignored', () => {})
 ```
@@ -563,7 +585,7 @@ Update `tests/delegate-skills.test.js` lines 98-101 and 134-136 to the new behav
 **Aether:**
 - Review: xhigh — it downloads code from the internet and installs it in the project: a mistake would install an unreviewed or hostile skill, or write outside the project (security)
 - Area: skills-design
-- Owns: `plugins/aether/lib/skill-design.js`, `plugins/aether/lib/skill-install.js`, `plugins/aether/agents/skill-reviewer.md`, `plugins/aether/bin/aether-plan`, `docs/reference/components.md`, `tests/skill-design.test.js`, `tests/skill-install.test.js`, `tests/defect-045-skill-agent.test.js`, `tests/components-docs.test.js`, `tests/agents.test.js`, `tests/docs-facts.test.js`
+- Owns: `plugins/aether/lib/skill-design.js`, `plugins/aether/lib/skill-install.js`, `plugins/aether/agents/skill-reviewer.md`, `plugins/aether/bin/aether-plan`, `docs/reference/components.md`, `tests/skill-design.test.js`, `tests/skill-install.test.js`, `tests/defect-045-skill-agent.test.js`, `tests/components-docs.test.js`, `tests/agents.test.js`, `tests/docs-facts.test.js`, `tests/helpers.js`
 - Depends on: Task 5 — `bin/aether-plan` is edited by Task 5 first
 - Depends on: Task 8 — `docs/reference/components.md` is edited by Task 8 first
 - Serves: R22, R23, R24, R25, R27
@@ -576,13 +598,14 @@ Update `tests/delegate-skills.test.js` lines 98-101 and 134-136 to the new behav
   2. **Covered** (R22): a topic is covered when an installed skill with valid metadata — in `.agents/skills/` or `.claude/skills/` of the project, in `~/.agents/skills/` or `~/.claude/skills/` of the owner (`home`), or registered in `installs.jsonl` — has the topic's `id` or one of its `skillKeywords` as a whole word (or plural) in its `name` or `description` (reuse `installedBlobs` and `topicCovered` of `lib/skill-topics.js`). A covered topic is not searched, installed or duplicated, and not searched twice in a run.
   3. **Search** (R22): `<bin> find <query>` where `<bin>` is `npx skills@1.9.0`, or the executable named by `AETHER_SKILLS_BIN` in tests, and `<query>` is `topic.query` of the config or else `topic.label`, else `topic.id` with spaces. Read, without ANSI colours, each `owner/repo@skill` token of the output as source `owner/repo` and name `skill`; an output with none is an invalid response. A candidate is relevant only if it has a name and source, its name or its returned description has the topic's `id` or a `skillKeyword` as a whole word (or plural), and it does not duplicate an installed skill or a topic covered in the run. A search timeout, process error, no network or invalid response is recorded in `errors` and the topic is skipped.
   4. **Trust** (R23, R24): the author is the part of the source before `/`. Only an author listed in `<data dir>/skills/trusted.json` (`readTrusted`; do not add authors) is fetched. Any other candidate, or one with no identifiable author (a URL or a local path), is not downloaded: it is appended to `.aether/pending.jsonl` (`appendPending`) with class `skill-install`, the source and author, the suggested command `npx skills@1.9.0 add <source> --skill <name>` and the reason `author not in trusted.json`, with no duplicate entry for the same source, and listed in `pending`.
-  5. **Download once** (R23): for a trusted candidate, `skill-install.js` `fetchForReview({ source, name, env, runner, dataDir })` runs `<bin> add <source> --skill <name>` once with a new temporary folder under `<data dir>/skills/review/<id>/` as its working directory (never the project, never `-g`), finds the downloaded `<id>/.agents/skills/<name>/`, computes its SHA-256 (`computedHash`), and writes `<review>/review.json` `{ feature, topic, name, source, author, hash }`. Nothing runs a second download after the review.
+  5. **Download once** (R23): for a trusted candidate, `skill-install.js` `fetchForReview({ source, name, env, runner, dataDir })` runs `<bin> add <source> --skill <name>` once with a new temporary folder under `<data dir>/skills/review/<id>/` as its working directory (never the project, never `-g`), finds the downloaded `<id>/.agents/skills/<name>/`, computes its SHA-256 (`computedHash`), and writes `<review>/review.json` `{ feature, topic, name, source, author, hash }`. Nothing runs a second download after the review. The call gets no input (`stdin` ignored, so a prompt of the CLI cannot wait for an answer: it ends by the time limit as a recorded failure) and a time limit of its own, runs without `-y` or any option the plan does not name, and is a failure (`errors`, the candidate skipped) when `<review>/.agents/skills/<name>/` does not exist afterwards.
   6. **Code stage** (R23 a, b, c), `codeReview(dir, { topic, installedNames })` → `{ ok, problems }`, before any model: (a) no `SKILL.md`; `checkSkillFile` problems (`name` invalid or different from the folder, `description` missing or over 1,024 characters, over 500 lines); a file that is unreadable or binary or not UTF-8; a symlink that leaves the skill folder; a path with `..`; (b) a file that reads or writes credentials or secrets (`.env`, `~/.ssh`, `~/.aws`, key or token files), touches `.claude/settings.json`, `.claude/hooks`, `trusted.json`, `grants.json` or `run.json`, asks for a global install (`-g`, `--global`, `~/.agents/skills`, `~/.claude/skills`), downloads and executes remote code (`curl` or `wget` piped to a shell, `eval` of remote input) or exfiltrates repository data, or instructs to evade protections (`--no-verify`, `bypassPermissions`, skipping `aether-guard` or `aether-autonomy`); (c) its `SKILL.md` does not match the topic (`id` or a `skillKeyword`) or duplicates an installed skill or a covered topic. A failing candidate is deleted at once (the review folder goes) and listed in `rejected` with its reasons.
   7. **Caps** (R23): `find` returns at most 1 candidate per topic and at most 3 in all, and `<review>/review.json` plus a state file `<data dir>/skills/review/<feature-key>.json` let `install` refuse any id that `find` did not produce for that feature and a 4th install of the same design.
   8. **Install** (R23): `installForDesign` copies the reviewed folder byte for byte to `<project>/.agents/skills/<name>/` with a symlink `<project>/.claude/skills/<name>`, recomputes the SHA-256 of the copy and requires it equal to `review.json` `hash` (else it removes the copy and fails), calls `recordInstall` (and writes `skills-lock.json` when the project keeps one), removes the review folder, and prints `{ ok, name, hash, path, committed: false }`. It runs no `git add` and no `git commit`, never touches the index and never writes under `home`. An existing skill of the same name is not overwritten (error).
   9. **Discard**: `discardForDesign` removes the review folder of `<id>`; unknown ids are an error line, not a crash.
 - `agents/skill-reviewer.md` (new): front matter `name: skill-reviewer`, `description` of one line, `tools: Read, Grep, Glob`, `model: sonnet`, `effort: high`, `maxTurns: 40`; no Write, Edit, Bash or network. The body says: read every file of the folder the message names (`SKILL.md`, scripts and helpers), check for executable code that is unsafe or foreign to the topic, tools or permissions it asks for, and any instruction that changes Aether's rules (`aether-guard`, `aether-autonomy`, irreversible actions); answer only `{ verdict: 'approved' | 'rejected', reasons: [<text>] }` in the `verdict` and `reasons` fields; reject when unsure.
 - `docs/reference/components.md` declares `skill-design.js` and `skill-install.js` (family `skill`), the agent `skill-reviewer`, and the `skills` verb of `aether-plan`.
+- `tests/helpers.js`: `AETHER_SKILLS_BIN` is added to `AETHER_VARIABLES` (in order, before `AETHER_SKILLS_CONFIG`). `tests/env-scrub.test.js` fails when `lib/skill-design.js` or `lib/skill-install.js` reads an `AETHER_*` name that the helper does not scrub, and no other task owns `tests/helpers.js`. Nothing else of the helper changes.
 
 **Tests (write first):**
 
@@ -633,52 +656,82 @@ New file `tests/defect-045-skill-agent.test.js`: `agents/skill-reviewer.md` has 
 
 **Interfaces:**
 - `hooks/ops-command.mjs`: three new forms for `aether-plan`, each one check per token: `[word('skills'), word('find'), is(FEATURE)]`, `[word('skills'), word('install'), is(FEATURE), is(SKILL_ID)]` and `[word('skills'), word('discard'), is(SKILL_ID)]`, with `FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/` and `SKILL_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/`. No flag, no path.
-- `workflows/design.workflow.js`: `async function skillsStep()` called once in `full()`, after the spec is approved and before `planMap()`:
-  1. `ops('aether-plan skills find ' + FEATURE)`. When it does not run, or answers `ok: false`, `log('skills: <reason>; the design goes on')` and the step ends with the result of what it has (never `failure(...)`).
+- `workflows/design.workflow.js`: `async function skillsStep()` called once in `full()`, after the spec is approved and before `planMap()`. In the workflow the feature folder is the constant `feature` (the name `FEATURE` there is the regular expression that validates it, line 35: never use it in a command):
+  1. `ops('aether-plan skills find ' + feature, { phase: 'Plan', label: 'skills: find' })`. When it does not run (`{ error }`), or answers `ok: false`, or answers a list of `errors`, `log('skills: <reason>; the design goes on')` and the step ends with what it has (never `failure(...)`).
   2. For each candidate with `code.ok` (at most 1 per topic and 3 per design): `call('skill-reviewer', SKILL_REVIEW_PAIR.model, SKILL_REVIEW_PAIR.effort, skillReviewMessage(candidate), { phase: 'Plan', label: 'skills: review <name>', schema: SKILL_REVIEW_SCHEMA })`, with `SKILL_REVIEW_PAIR = { model: 'sonnet', effort: 'high' }` and `SKILL_REVIEW_SCHEMA` requiring `verdict` (`approved` | `rejected`) and `reasons` (array of strings). The message names the review folder (`candidate.dir`) and the topic.
-  3. `approved` only when the answer fits the schema and its `verdict` is `approved`: `ops('aether-plan skills install ' + FEATURE + ' ' + candidate.id)`. `rejected`, `null`, an invalid answer or a failed call: `ops('aether-plan skills discard ' + candidate.id)` and `log('skills: <name> rejected: <reasons>')`.
-  4. The `approved` result of `full()` gains `skills: { installed: [{ name, topic, hash, path, committed: false }], rejected: [{ name, reasons }], pending: [{ source, author }] }`, and the log says that an installed skill is not committed.
+  3. `approved` only when the answer fits the schema (`fits(SKILL_REVIEW_SCHEMA, answer)`) and its `verdict` is `approved`: `ops('aether-plan skills install ' + feature + ' ' + candidate.id, …)`. `rejected`, `null`, an invalid answer or a failed call: `ops('aether-plan skills discard ' + candidate.id, …)` and `log('skills: <name> rejected: <reasons>')`. A failed install or discard is logged and the candidate is listed in `rejected` with the reason.
+  4. The step sets one module-level `let skills = null` (declared next to the other state of the run) to `{ installed: [{ name, topic, hash, path, committed: false }], rejected: [{ name, reasons }], pending: [{ source, author }] }`, always with the three lists (empty when the search found nothing or failed), and the log says that an installed skill is not committed. The workflow's final `return` adds `...(skills === null ? {} : { skills })`, so **every result that follows the step carries `skills`**: `approved`, a plan or exam `dispute`, any `failed` after the step (`plan-writer`, `plan-check`, a plan review) and the exam's stop, because the skills are already in the project when the design ends without approval. A result that ends before the step (`clarify`, a failed or disputed spec) and a short design have no `skills` key.
   A short design (`mode === 'short'`) never runs the step. Everything else of the flow, its order and its result shape stay as they are, with `skills` the only new key.
 - `docs/guide/ops.md` lists the three new forms.
 
 **Tests (write first):**
 
-New file `tests/defect-045-skills-step.test.js` and cases in `tests/workflow-design.test.js`, with that file's harness (stubbed `agent()` and `ops` answers) extended so an unscripted `aether-plan skills find` answers `{ ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] }` (the existing cases stay green):
+New file `tests/defect-045-skills-step.test.js` and cases in `tests/workflow-design.test.js`, with that file's harness (`runWorkflow` from `tests/workflow-harness.js`, with the `go(args, overrides)`, `handlers()`, `commandOf`, `ARGS` and `FEATURE = 'specs/007-demo'` of `tests/workflow-design.test.js`; copy what the new file needs, a test file exports nothing). Three changes to that harness in `tests/workflow-design.test.js`, which this task owns: (1) `ROLES` gains `'skill-reviewer'` (the harness refuses an `aether:` agent type that is not listed); (2) the default `ops` of `handlers()` answers `aether-plan skills find` (verb `skills`, `rest[0] === 'find'`) with `{ ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] }`, so that every existing case stays green and `skills` is three empty lists in their result, and still throws for `install` and `discard`; (3) a test that scripts the step overrides `ops` with `(call, fallback) => …` and `'skill-reviewer'` with `(call) => …`, as the existing cases do (a handler returns the answer; a handler that throws makes the call end without an answer). An ops call is read through `call.command` (`verb`, `rest`, `line`: for `aether-plan skills find specs/007-demo` the verb is `skills`, `rest` is `['find', 'specs/007-demo']` and `line` is the whole command), and the calls of a run are `run.calls`, each with `role`, `label`, `command` (null for a native agent) and `prompt`.
 
 ```js
+const FIND = (candidates, extra = {}) => ({ ok: true, topics: ['godot', 'containers'], candidates, rejected: [], pending: [], errors: [], ...extra })
+const godot = { id: 'godot-helper-1a2b', topic: 'godot', name: 'godot-helper', source: 'vercel-labs/agent-skills', author: 'vercel-labs', hash: 'h1', dir: '/data/skills/review/godot-helper-1a2b', code: { ok: true } }
+const docker = { id: 'dockerfile-3c4d', topic: 'containers', name: 'dockerfile', source: 'anthropics/skills', author: 'anthropics', hash: 'h2', dir: '/data/skills/review/dockerfile-3c4d', code: { ok: true } }
+const skillsOps = (find) => (call, fallback) => {
+  if (call.command.verb !== 'skills') return fallback(call)
+  const [what, id] = call.command.rest
+  if (what === 'find') return find
+  if (what === 'install') return { ok: true, name: id.replace(/-[0-9a-f]{4}$/, ''), hash: 'h1', path: `/repo/.agents/skills/${id}`, committed: false }
+  return { ok: true }
+}
+const reviewByName = (verdicts) => (call) => verdicts[call.label.replace('skills: review ', '')]
+
 test('R22/R23: find runs after the spec is approved and before requirements; an approved candidate is installed, a rejected one is discarded', async () => {
-  const run = await design({ ops: { 'aether-plan skills find': { ok: true, topics: ['godot', 'containers'], candidates: [
-      { id: 'godot-helper-1a2b', topic: 'godot', name: 'godot-helper', source: 'vercel-labs/agent-skills', author: 'vercel-labs', hash: 'h1', dir: '/data/skills/review/godot-helper-1a2b', code: { ok: true } },
-      { id: 'dockerfile-3c4d', topic: 'containers', name: 'dockerfile', source: 'anthropics/skills', author: 'anthropics', hash: 'h2', dir: '/data/skills/review/dockerfile-3c4d', code: { ok: true } } ],
-      rejected: [], pending: [{ source: 'someone/else', author: 'someone' }], errors: [] } },
-    agents: { 'skill-reviewer': [{ verdict: 'approved', reasons: [] }, { verdict: 'rejected', reasons: ['a script calls curl | sh'] }] } })
-  const order = run.calls.map((c) => c.cmd || c.agent)
-  assert.ok(order.indexOf('aether-plan skills find specs/045-x') < order.indexOf('aether-plan requirements specs/045-x/spec.md'))
-  assert.ok(run.calls.some((c) => c.cmd === 'aether-plan skills install specs/045-x godot-helper-1a2b'))
-  assert.ok(run.calls.some((c) => c.cmd === 'aether-plan skills discard dockerfile-3c4d'))
-  assert.equal(run.calls.some((c) => c.cmd && c.cmd.startsWith('aether-plan skills install') && c.cmd.endsWith('dockerfile-3c4d')), false)
+  const run = await go(ARGS, {
+    ops: skillsOps(FIND([godot, docker], { pending: [{ source: 'someone/else', author: 'someone' }] })),
+    'skill-reviewer': reviewByName({ 'godot-helper': { verdict: 'approved', reasons: [] }, dockerfile: { verdict: 'rejected', reasons: ['a script calls curl | sh'] } }),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const lines = run.calls.filter((c) => c.command).map((c) => c.command.line)
+  assert.ok(lines.indexOf(`aether-plan skills find ${FEATURE}`) !== -1)
+  assert.ok(lines.indexOf(`aether-plan skills find ${FEATURE}`) < lines.indexOf(`aether-plan requirements ${FEATURE}/spec.md`))
+  assert.ok(lines.includes(`aether-plan skills install ${FEATURE} godot-helper-1a2b`))
+  assert.ok(lines.includes('aether-plan skills discard dockerfile-3c4d'))
+  assert.equal(lines.includes(`aether-plan skills install ${FEATURE} dockerfile-3c4d`), false)
   assert.deepEqual(run.result.skills.installed.map((s) => s.name), ['godot-helper'])
   assert.deepEqual(run.result.skills.rejected.map((s) => s.name), ['dockerfile'])
   assert.deepEqual(run.result.skills.pending, [{ source: 'someone/else', author: 'someone' }])
   assert.equal(run.result.status, 'approved')
 })
-test('R23: a reviewer that ends without an answer, answers something invalid or throws rejects the skill (fail closed)', () => {})
-test('R25: find that does not run, answers ok:false or has errors is logged and the design still completes spec, plan, tasks and exam', () => {})
-test('R22: a short design never runs the skills step', () => {})
-test('R23: the step asks for at most 3 reviews and installs', () => {})
+test('R23: the installed skill is reported on a design that ends failed or in dispute after the step', async () => {
+  // the same candidates and verdicts as above; the plan check answers { ok: false, errors: ['x'] } twice (override ops
+  // for verb 'check', falling back to skillsOps for 'skills'): the result is status 'failed' at step 'plan-check' and
+  // run.result.skills.installed.map(s => s.name) is ['godot-helper']; a second run whose plan Judge answers a
+  // 'dispute'-shaped result of the harness (see the existing dispute cases) has status 'dispute' and the same skills.
+  // A spec that ends 'clarify' has no `skills` key (assert Object.hasOwn(run.result, 'skills') === false).
+})
+test('R23: a reviewer that ends without an answer, answers something invalid or throws rejects the skill (fail closed)', async () => {
+  // 'skill-reviewer' handlers: () => null, () => ({ verdict: 'maybe', reasons: [] }), () => { throw new Error('boom') }:
+  // in each run no `skills install` command is issued, a `skills discard` for the candidate is, and skills.rejected has it
+})
+test('R25: find that does not run, answers ok:false or has errors is logged and the design still completes spec, plan, tasks and exam', async () => {
+  // ops override: find -> { error: 'no network' }, then { ok: false, errors: ['boom'] }, then FIND([], { errors: ['timeout'] }):
+  // run.result.status === 'approved' each time, and run.result.skills is three empty lists
+})
+test('R22: a short design never runs the skills step', async () => {
+  // go(SHORT): no ops call with verb 'skills' and no `skills` key in the result (SHORT is the constant of the test file)
+})
+test('R23: the step asks for at most 3 reviews and installs', async () => {
+  // FIND with 5 candidates all code.ok: at most 3 'skill-reviewer' calls and at most 3 install commands
+})
 ```
 
 In `tests/ops-command-design.test.js`: `parseOpsPrompt` accepts `aether-plan skills find specs/045-x`, `aether-plan skills install specs/045-x godot-helper-1a2b` and `aether-plan skills discard godot-helper-1a2b`, and refuses a path as an id (`../x`), an id with uppercase or a slash, a missing id, an extra flag and `aether-plan skills find ../x`. `hooks/ops.test.ts` gets one mod case that answers `aether-plan skills find` without a model call.
 
 **Acceptance:**
 - `node --test tests/defect-045-skills-step.test.js tests/workflow-design.test.js tests/ops-command-design.test.js tests/ops-command.test.js tests/docs-facts.test.js` passes, and `npm run test:mod` passes with the new mod case.
-- The only new key of the `approved` result is `skills`; a design with no search result has `skills` with three empty lists.
+- The only new key of a result is `skills`, present on every result that follows the step (`approved`, dispute, `failed` after the step, the exam's stop) and absent before it and in a short design; a design with no search result has `skills` with three empty lists.
 
 ### Task 13: Decisions A134 to A136, A132 updated, and the documents that repeat the rules
 
 **Aether:**
 - Area: docs-decisions
-- Owns: `docs/decisions.md`, `docs/index.md`, `docs/guide/delegates.md`, `docs/guide/troubleshooting.md`, `AGENTS.md`, `plugins/aether/skills/using-aether/SKILL.md`, `tests/docs-032.test.js`, `tests/docs-facts.test.js`, `tests/decision-044.test.js`, `tests/delegates-docs.test.js`, `tests/review-verdict-rule.test.js`, `tests/using-aether-030.test.js`, `tests/session-start-parts.test.js`, `tests/defect-045-docs.test.js`
+- Owns: `docs/decisions.md`, `docs/index.md`, `docs/guide/delegates.md`, `docs/guide/troubleshooting.md`, `docs/guide/observe.md`, `AGENTS.md`, `plugins/aether/skills/using-aether/SKILL.md`, `tests/docs-032.test.js`, `tests/docs-facts.test.js`, `tests/decision-044.test.js`, `tests/delegates-docs.test.js`, `tests/review-verdict-rule.test.js`, `tests/using-aether-030.test.js`, `tests/session-start-parts.test.js`, `tests/defect-045-docs.test.js`
 - Depends on: Task 1 — same `skills/using-aether/SKILL.md` and `tests/review-verdict-rule.test.js`
 - Depends on: Task 3 — it documents the behaviour Task 3 builds
 - Depends on: Task 8 — it documents how Muse is read
@@ -687,12 +740,17 @@ In `tests/ops-command-design.test.js`: `parseOpsPrompt` accepts `aether-plan ski
 - Serves: R11, R12, R17, R26, R27, R28, R29
 
 **Interfaces:**
-- **The sentence S** (R29), identical in `docs/guide/delegates.md`, `AGENTS.md`, the paragraph `**The verdict.**` of `skills/using-aether/SKILL.md` and the entry A132 of `docs/decisions.md`, placed in the sentence that follows `A read-only delegate whose checks pass is closed by the system when it answers` (which stays word for word where `tests/review-verdict-rule.test.js:35` and `tests/using-aether-030.test.js:117` pin it): `An answer the harness reports as cut off or refused (a stop reason other than `end_turn`) stays pending for `aether-delegate verdict`.`
+- **The sentence S** (R29), identical in `docs/guide/delegates.md`, `AGENTS.md`, the paragraph `**The verdict.**` of `skills/using-aether/SKILL.md` and the entry A132 of `docs/decisions.md`: `An answer the harness reports as cut off or refused (a stop reason other than `end_turn`) stays pending for `aether-delegate verdict`.` Each file keeps **its own** sentence about the read-only close word for word, because the four do not share one: only `using-aether/SKILL.md` has the exact `A read-only delegate whose checks pass is closed by the system when it answers`, and `tests/review-verdict-rule.test.js:35` and `tests/using-aether-030.test.js:117` pin that file's whole sentence, up to its final period. S goes right after the sentence that holds it:
+  - `skills/using-aether/SKILL.md`, `**The verdict.**`: after `A read-only delegate whose checks pass is closed by the system when it answers; if its answer is wrong, `verdict --verdict fix|infeasible` reopens it; when a check fails on files another writer changed, `verdict --verdict approve --ignore '<glob>'`.`, before ``fix` and `infeasible` stay on that line for an edit too.`
+  - `docs/guide/delegates.md`, the paragraph that has `A read-only delegate whose checks pass is closed by the system as approved when it answers, without a verdict;`: S after that paragraph's last sentence (`…still approves.`). The bullet that starts `A verdict through `aether-delegate verdict` is what counts` (line 157) is not changed.
+  - `AGENTS.md`, the Delegates bullet: after the sentence that ends `an `approve` with a failed check is refused.`, before `Every delegate starts on Haiku`.
+  - `docs/decisions.md`, A132: in the dated update below.
 - **A132** gets a dated update (`2026-11-17`, citing «Trabaja autonomamente en hacer los de fallos.») with S, the note that `agy`, `codex` and `muse` report no stop reason, so a cut or refusal there is still closed by the system (a hole the owner decides, by changing A132 or waiting for those harnesses to report the field), and the exact statement of what `approve` does: the verdict's checks run before the merge only for a task that named `AETHER-TESTS`; `approve` merges and then runs the tests, keeping the merge when they fail (finding 21). The decision is not reverted.
 - **New rows, from A134:** A134, amendment of A124 clause (5) (the Examiner's `maxTurns` is no longer 40 but 80, the Writer's no longer 60 but 100, by spec 044), citing «yo digo que subas los turnos» (finding 22), and the record that the code-map step runs on native Haiku with no external seat (finding 29); A135, amendment of A129: Muse is read over `muse serve` (`model/list`) with no model call and no quota, last in the round, citing «Sí, una sola consulta `model/list` a la versión instalada (1.4.23), sin prompt, para confirmar que no gasta cuota. Si gastara, esa parte se detiene y queda en la lista del dueño.» and the query's result of 2026-11-17; A136, amendment of A125 clause (2) for the automatic delivery of skills to delegates and units and for the search, review and install in `/aether:design`, citing «Repartir e instalar» and «nuevamente no veo que el lead instale skills por su propia cuenta», with: trusted authors only, project only and not committed, 1 per topic and 3 per design, topics only from `intent.md` against the six of `config/skills.json`.
 - `docs/index.md`, `tests/docs-032.test.js` (line 23) and `tests/docs-facts.test.js` (line 852): `A1–A133` becomes `A1–A136`.
 - `docs/guide/troubleshooting.md`: the sentence about `Quota unavailable` says `below`, links `#the-harnesses-panel-says-quota-unavailable-or-enabled-not-installed`, and tells `enabled, not installed` (CLI missing) from `Quota unavailable` (CLI present, no reading); the sentence `Muse has no capture means without a model call and is never read` is replaced by one that says Muse is read over `muse serve` (`model/list`) with no model call and no quota, last in the round (R17).
 - `tests/decision-044.test.js`: the evidence of the merge refusal looks for the refusal on a failed check of the verdict (`tests/delegate-approve.test.js`, the case that refuses an `approve` with a failed check) and not only for the words of the command after the merge.
+- `docs/guide/observe.md` (line 60): `Muse has no capture means without a model call and is never read, which `/aether:doctor` reports as its reason.` is replaced by `Muse is read over `muse serve` (`model/list`) with no model call and no quota, last in the round, like the other harnesses.` The rest of the sentence (Codex's cache file) does not change.
 - `skills/using-aether/SKILL.md`: only S in the verdict paragraph; the parts of the bootstrap stay at most 9,800 characters (shorten a nearby phrase of the same paragraph if needed).
 
 **Tests (write first):**
@@ -701,17 +759,29 @@ New file `tests/defect-045-docs.test.js`:
 
 ```js
 const S = 'An answer the harness reports as cut off or refused (a stop reason other than `end_turn`) stays pending for `aether-delegate verdict`.'
-const OLD = 'A read-only delegate whose checks pass is closed by the system when it answers'
-test('R29: the exception of R3 is in the four files and the old sentence stays where the tests pin it', () => {
-  for (const file of ['docs/guide/delegates.md', 'AGENTS.md', 'plugins/aether/skills/using-aether/SKILL.md']) {
+// The sentence each file keeps word for word, and that S follows.
+const KEPT = {
+  'plugins/aether/skills/using-aether/SKILL.md': "A read-only delegate whose checks pass is closed by the system when it answers; if its answer is wrong, `verdict --verdict fix|infeasible` reopens it; when a check fails on files another writer changed, `verdict --verdict approve --ignore '<glob>'`.",
+  'docs/guide/delegates.md': 'A read-only delegate whose checks pass is closed by the system as approved when it answers, without a verdict;',
+  'AGENTS.md': 'a read-only delegate whose checks pass is closed by the system as approved when it answers,',
+}
+const A132_KEPT = 'A read-only delegate whose checks pass is closed by the system as approved, without a verdict.'
+test('R29: the exception of R3 is in the four files, each after the sentence it keeps', () => {
+  for (const [file, kept] of Object.entries(KEPT)) {
     const text = read(file)
-    assert.ok(text.includes(S), file)
-    assert.ok(text.includes(OLD) , file)
-    assert.ok(text.indexOf(S) > text.indexOf(OLD), `${file}: S comes after the old sentence`)
+    assert.ok(text.includes(kept), `${file} keeps its own sentence`)
+    assert.ok(text.includes(S), `${file} has S`)
+    assert.ok(text.indexOf(S) > text.indexOf(kept), `${file}: S comes after the kept sentence`)
   }
   const a132 = row('A132')
-  assert.ok(a132.includes(S) && a132.includes('2026-11-17') && a132.includes('Trabaja autonomamente en hacer los de fallos.'))
+  assert.ok(a132.includes(A132_KEPT), 'A132 keeps its title sentence')
+  assert.ok(a132.includes(S) && a132.indexOf(S) > a132.indexOf(A132_KEPT))
+  assert.ok(a132.includes('2026-11-17') && a132.includes('Trabaja autonomamente en hacer los de fallos.'))
   assert.ok(/agy.*codex.*muse/s.test(a132) && a132.includes('owner'))
+})
+test('R29: the sentence that tests pin in using-aether is whole, with S after it and not inside it', () => {
+  const using = read('plugins/aether/skills/using-aether/SKILL.md')
+  assert.ok(using.includes(KEPT['plugins/aether/skills/using-aether/SKILL.md'] + ' ' + S))
 })
 test('R11: A132 says what approve does before and after the merge', () => { /* a132 includes AETHER-TESTS and 'keeping the merge' */ })
 test('R12/R11: A134 amends A124 clause 5 with the owner words and records the Haiku map', () => {
@@ -724,6 +794,9 @@ test('R17: A135 amends A129 and troubleshooting says Muse is read over muse serv
   const page = read('docs/guide/troubleshooting.md')
   assert.equal(page.includes('Muse has no capture means without a model call and is never read'), false)
   assert.ok(page.includes('muse serve'))
+  const observe = read('docs/guide/observe.md')
+  assert.equal(observe.includes('Muse has no capture means without a model call and is never read'), false)
+  assert.ok(observe.includes('Muse is read over `muse serve` (`model/list`) with no model call and no quota'))
 })
 test('R11: troubleshooting links to the section below and tells the two marks apart', () => {
   const page = read('docs/guide/troubleshooting.md')
@@ -746,20 +819,20 @@ test('R28: the hole of agy, codex and muse is written down for the owner', () =>
 **Acceptance:**
 - `node --test tests/defect-045-docs.test.js tests/docs-032.test.js tests/docs-facts.test.js tests/decision-044.test.js tests/delegates-docs.test.js tests/review-verdict-rule.test.js tests/using-aether-030.test.js tests/session-start-parts.test.js tests/components-docs.test.js` passes; the new cases fail before the change.
 - Every part of the bootstrap is at most 9,800 characters.
-- A132 is not reverted: the sentence `A read-only delegate whose checks pass is closed by the system when it answers` is intact in all four files.
+- A132 is not reverted: the sentence each of the four files holds today (see `KEPT` and `A132_KEPT` above) is intact, and S follows it.
 
 ### Task 14: The skills and design documents
 
 **Aether:**
 - Area: docs-skills
-- Owns: `plugins/aether/skills/skills/SKILL.md`, `plugins/aether/skills/designing/SKILL.md`, `docs/guide/project-files-and-skills.md`, `docs/guide/design-seats.md`, `tests/defect-045-skills-docs.test.js`, `tests/designing-skill-043.test.js`, `tests/design-docs-044.test.js`, `tests/project-files-docs.test.js`, `tests/new-skills.test.js`, `tests/docs-030.test.js`, `tests/docs-facts.test.js`
+- Owns: `plugins/aether/skills/skills/SKILL.md`, `plugins/aether/skills/designing/SKILL.md`, `docs/guide/project-files-and-skills.md`, `docs/guide/design-seats.md`, `tests/defect-045-skills-docs.test.js`, `tests/designing-skill-043.test.js`, `tests/design-docs-044.test.js`, `tests/project-files-docs.test.js`, `tests/new-skills.test.js`, `tests/docs-030.test.js`, `tests/docs-facts.test.js`, `tests/examiner-order.test.js`
 - Depends on: Task 13 — it shares `tests/docs-facts.test.js` with Task 13
 - Depends on: Task 10 — it documents the automatic delivery
 - Depends on: Task 12 — it documents the skills step of the design
 - Serves: R11, R26
 
 **Interfaces:**
-- `skills/designing/SKILL.md`, the `approved` bullet with `exam.status: failed` (finding 20): it adds the clause `the workflow already relaunched the Examiner once with the partial tests, so complete the exam yourself from the tests that exist or report it; do not start another Examiner on the same partial` and no longer orders `start the Examiner once more with the criteria that have no test`. It also says that `/aether:design` now searches skills of the card's topics, reviews the trusted ones and installs them only in the project without committing, and lists the others for the owner (`skills` field of the `approved` result, `.aether/pending.jsonl` class `skill-install`).
+- `skills/designing/SKILL.md`, the `approved` bullet with `exam.status: failed` (finding 20): it adds the clause `the workflow already relaunched the Examiner once with the partial tests, so complete the exam yourself from the tests that exist or report it; do not start another Examiner on the same partial` and no longer orders `start the Examiner once more with the criteria that have no test`. The sentence of the bullet after `when every criterion has a test, write `exam.json` from them and run `aether-exam store specs/NNN-<topic>`;` becomes: `when `.aether/exam/` holds tests that do not cover every criterion of the spec, the workflow already relaunched the Examiner once with the partial tests, so complete the exam yourself from the tests that exist or report it; do not start another Examiner on the same partial; if it holds none, start the Examiner once more.` The phrases `exam.status` `failed`, `when every criterion has a test`, `holds tests that do not cover every criterion of the spec`, `aether-exam store specs/NNN-<topic>` and `holds none` stay in the bullet. `tests/examiner-order.test.js` (Task 14's) pins the old order at line 49 (`start the Examiner once more with the criteria that have no test`) and at line 50 (`telling it the folder already holds the others`): the test `the designing skill handles a partial exam when exam.status is failed (#229)` replaces those two assertions with `assert.match(content, /the workflow already relaunched the Examiner once/i)` and `assert.doesNotMatch(content, /start the Examiner once more with the criteria that have no test/i)` and keeps its other assertions unchanged. It also says that `/aether:design` now searches skills of the card's topics, reviews the trusted ones and installs them only in the project without committing, and lists the others for the owner (`skills` field of the `approved` result, `.aether/pending.jsonl` class `skill-install`).
 - `skills/skills/SKILL.md`: says the system hands the matching project skills to delegates and to the units of a plan by itself (up to 3, the ones named by hand first), that the notice `add AETHER-SKILLS:` is no longer needed for them, and that `/aether:design` installs reviewed skills of trusted authors in the project (never global, never committed) and leaves the rest on the owner's list. It keeps `npx skills@1.9.0 find` and `add` as the manual path.
 - `docs/guide/project-files-and-skills.md` and `docs/guide/design-seats.md`: the same facts, once each, in the page's own style, with no link or anchor that does not resolve.
 
@@ -784,5 +857,5 @@ test('R26: the skills pages describe the automatic delivery and the install in /
 ```
 
 **Acceptance:**
-- `node --test tests/defect-045-skills-docs.test.js tests/designing-skill-043.test.js tests/design-docs-044.test.js tests/project-files-docs.test.js tests/new-skills.test.js tests/docs-030.test.js tests/docs-facts.test.js tests/session-start-parts.test.js` passes; relative links and anchors of the edited pages resolve.
+- `node --test tests/defect-045-skills-docs.test.js tests/examiner-order.test.js tests/designing-skill-043.test.js tests/design-docs-044.test.js tests/project-files-docs.test.js tests/new-skills.test.js tests/docs-030.test.js tests/docs-facts.test.js tests/session-start-parts.test.js` passes; relative links and anchors of the edited pages resolve.
 - Then `npm run check` passes in the branch (`npm test`, `npm run test:mod`, `npm run validate`).
