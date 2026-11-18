@@ -236,6 +236,11 @@ function cleanProject(cwd, { now = Date.now(), dataDir = run.dataDir(), force = 
     // condition. A missing worktree folder reads as no entries and is skipped.
     for (const wt of registeredList) {
       const reviewDir = path.join(wt, '.aether', 'tmp', 'skill-review')
+      try {
+        if (!fs.lstatSync(reviewDir).isDirectory()) continue
+      } catch {
+        continue
+      }
       let names = []
       try {
         names = fs.readdirSync(reviewDir)

@@ -201,6 +201,23 @@ test('a symlink under skill-review that points outside is not followed (046 C4)'
   assert.equal(fs.existsSync(link), false, 'the old link itself goes without touching its target')
 })
 
+test('skill-review itself as a symlink is left alone, and its target is not followed (046 C4)', (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const wt = linkedWorktree(t, repo)
+  const outside = tempDir(t, 'aether-outside-')
+  const secret = path.join(outside, 'secret.md')
+  fs.writeFileSync(secret, 'secret')
+  fs.utimesSync(secret, hours(30), hours(30))
+  const reviewDir = path.join(wt, '.aether', 'tmp', 'skill-review')
+  fs.mkdirSync(path.dirname(reviewDir), { recursive: true })
+  fs.symlinkSync(outside, reviewDir)
+  const result = clean.cleanProject(repo.dir, { now: NOW, dataDir })
+  assert.equal(fs.readFileSync(secret, 'utf8'), 'secret', 'the link target is never followed')
+  assert.equal(fs.lstatSync(reviewDir).isSymbolicLink(), true, 'the link itself stays')
+  assert.ok(result.removed.every((r) => !r.path.startsWith(reviewDir + path.sep) && r.path !== reviewDir))
+})
+
 test('an old skill-review folder in the main checkout goes too (046 C4)', (t) => {
   const repo = makeRepo(t)
   const dataDir = tempDir(t, 'aether-data-')
