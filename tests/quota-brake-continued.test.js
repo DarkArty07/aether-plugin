@@ -11,6 +11,7 @@ const { fileKey } = require('../plugins/aether/lib/delegate-log.js')
 const BIN = path.join(PLUGIN, 'bin', 'aether-autonomy')
 const SESSION_A = 'sess-continued-A'
 const SESSION_B = 'sess-continued-B'
+const SESSION_C = 'sess-C'
 const HOURS = 'trabaja por horas en esto, no cuentes conmigo hasta acabar'
 
 const human = (text, time) =>
@@ -40,7 +41,7 @@ test('quota-brake stops the delegate chains of a continued run previous session'
   const dataDir = tempDir(t, 'aether-data-')
   const env = { CLAUDE_CONFIG_DIR: config, AETHER_DATA_DIR: dataDir }
 
-  // 1. Open an autonomous run in session A, with a live delegate chain.
+  // 1. Open an autonomous run in session A, with live delegate chains.
   const started = runBin(BIN, ['start', '--quote', HOURS, '--session', SESSION_A], repo.dir, env)
   assert.equal(started.status, 0, started.stdout + started.stderr)
   const autoId = started.json.started.id
@@ -49,27 +50,32 @@ test('quota-brake stops the delegate chains of a continued run previous session'
   state.started = new Date(Date.now() - 60_000).toISOString()
   fs.writeFileSync(runFile, JSON.stringify(state))
 
-  const ready = path.join(dataDir, 'sleeper.ready')
-  const proc = spawn(process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(ready)}, 'ok'); setInterval(() => {}, 60000)`], {
-    detached: true,
-    stdio: 'ignore',
-  })
-  proc.unref()
-  t.after(() => { try { process.kill(-proc.pid, 'SIGKILL') } catch {} })
-  const deadline = Date.now() + 5000
-  while (!fs.existsSync(ready)) {
-    if (Date.now() > deadline) throw new Error('timed out waiting for sleeper')
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
-  }
-  const pid = proc.pid
   const runDir = path.join(dataDir, 'delegates', 'run')
   fs.mkdirSync(runDir, { recursive: true })
-  fs.writeFileSync(path.join(runDir, `${fileKey(SESSION_A, 't1')}.json`), JSON.stringify({ pid, startedAt: Date.now() }))
-  assert.equal(isAlive(pid), true)
+  const spawnChain = (session, task, readyName) => {
+    const ready = path.join(dataDir, readyName)
+    const proc = spawn(process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(ready)}, 'ok'); setInterval(() => {}, 60000)`], {
+      detached: true,
+      stdio: 'ignore',
+    })
+    proc.unref()
+    t.after(() => { try { process.kill(-proc.pid, 'SIGKILL') } catch {} })
+    const deadline = Date.now() + 5000
+    while (!fs.existsSync(ready)) {
+      if (Date.now() > deadline) throw new Error('timed out waiting for sleeper')
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20)
+    }
+    fs.writeFileSync(path.join(runDir, `${fileKey(session, task)}.json`), JSON.stringify({ pid: proc.pid, startedAt: Date.now() }))
+    assert.equal(isAlive(proc.pid), true)
+    return proc.pid
+  }
+  const pidA = spawnChain(SESSION_A, 't1', 'sleeper-A.ready')
+  const pidC = spawnChain(SESSION_C, 't2', 'sleeper-C.ready')
 
-  // 2. Continue the run into session B.
+  // 2. Continue the run into session B, with its own live delegate chain.
   const continued = runBin(BIN, ['continue', autoId, '--session', SESSION_B], repo.dir, env)
   assert.equal(continued.status, 0, continued.stdout + continued.stderr)
+  const pidB = spawnChain(SESSION_B, 't1', 'sleeper-B.ready')
 
   // 3. Record the quota pause, and run quota-brake from session B.
   const crossing = runBin(
@@ -79,10 +85,14 @@ test('quota-brake stops the delegate chains of a continued run previous session'
     env,
   )
   assert.equal(crossing.status, 0, crossing.stdout + crossing.stderr)
+  assert.equal(crossing.json.paused, true, JSON.stringify(crossing.json))
   const brake = runBin(BIN, ['quota-brake', '--session', SESSION_B], repo.dir, env)
   assert.equal(brake.status, 0, brake.stdout + brake.stderr)
 
-  // 4. The chain of session A is stopped, and the output lists the run as paused.
-  assert.equal(waitForDeath(pid, 2000), false, 'sleeper of session A chain is still alive')
-  assert.ok(brake.stdout.includes('chains stopped 1'), brake.stdout)
+  // 4. The chains of the run's sessions (A and B) are stopped; the crossing recorded the
+  // pause, and quota-brake reports how many chains it stopped. A session outside the run stays alive.
+  assert.equal(waitForDeath(pidA, 2000), false, 'sleeper of session A chain is still alive')
+  assert.equal(waitForDeath(pidB, 2000), false, 'sleeper of session B chain is still alive')
+  assert.equal(isAlive(pidC), true, 'sleeper of the unrelated session was stopped')
+  assert.ok(brake.stdout.includes('chains stopped 2'), brake.stdout)
 })
