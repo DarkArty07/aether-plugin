@@ -140,11 +140,11 @@ ${CLAUDE_PLUGIN_ROOT}/bin/aether-wt decline <runId> <task> --reason "<why>"
 - **Patches:** `<runDir>/patches/<task>.patch` holds a unit's unmerged work. Read it before you apply it with `git apply`.
 - **Final review findings:** handle them as a final review is handled. This rule serves the final reviewer and the reviewer of a delegate alike.
   - A ready verdict is approved.
-  - ready-with-fixes is approved when no finding is important or critical; when one is, fix the critical and important findings, and the minor ones are deferred.
+  - ready-with-fixes is approved when no finding is important or critical; when one is, fix the critical and important findings, and the minor ones are deferred. The approval goes by your re-grade of each finding below, not by the reviewer's grades.
   - Minor findings are not worked, with ready or with ready-with-fixes: there is no exception.
   - A not-ready is not approved before you write the reason: in the run's diary (.aether/autonomy/<run id>/diary.md) or, outside a run, in your next answer to the owner. There is no command and no flag for it.
   - Re-grade each finding by its effect.
-  - Fix the critical and important ones: a short fix yourself on the integration branch, with its test, when it fits the direct path; a longer one through a delegate task or a relaunch; a design-level one through the Writer and `/aether:design` in short mode.
+  - Fix the critical and important ones: a short fix yourself on the integration branch, with its test, when it fits the direct path; a longer one through a delegate task or a relaunch; a design-level one through the Writer and `/aether:design` in short mode. For the reviewer of a delegate, fix them through `aether-delegate verdict --verdict fix --finding '<file:line: what is missing>'`.
   - Defer the minor ones: list them in the report, or in a run in the brief. They are not worked.
   - Rule on each `declined` line.
 - **Leftovers:** when `cleanup.remaining` is not empty, run `aether-wt sweep --run <runId>` from the integration worktree. A sweep of an interrupted run (one with saved.json, or a recorded quota pause that names the run) commits each unmerged unit's uncommitted work on its unit branch, keeps that branch and a patch, and removes the units that merged. Any other sweep saves a patch for each unmerged unit and keeps the branch of any work that is not integrated (`retainedBranches`), instead of deleting it; only branches whose work is in the integration branch are removed. A unit whose work it cannot save stays in place for you to handle. After you integrate or adopt a retained unit (`aether-wt adopt`), `aether-wt sweep --run <runId> --finish` removes its branch and, once no other unit is waiting, the run directory.

@@ -115,7 +115,7 @@ The ladder is `${CLAUDE_PLUGIN_ROOT}/config/ladder.json`. Exclude diary writes, 
 
 - **In the background:** the notification of a delegate wakes you: end your turn; schedule no wakeup (`ScheduleWakeup`, cron or sleep). The exception is the fallback of the `aether:autonomous-runs` skill. A wakeup costs a full turn and prevents headless exit.
 
-- **Verify before you relay:** results carry system checks and, for editing delegates on other harnesses, tests and another pair's review. Decide from these; do not read the whole diff when they are enough. Read it when evidence conflicts or is missing. Give a verdict before relaying claims. Before ruling a command, skill, file or branch absent, check `git worktree list`, `git branch -vv` and latest merges; distinguish installed release, main and branches.
+- **Verify before you relay:** results carry system checks and, for editing delegates on other harnesses, tests and another pair's review. Decide from these; do not read the whole diff when they are enough. Read it when evidence conflicts or is missing. Give a verdict before relaying claims. Before ruling a command, skill, file or branch absent, check `git worktree list`, `git branch -vv` and latest merges; distinguish installed release, main and branches. Act on a reviewer's verdict, final or of a delegate, with the rule of aether:swarm, «Final review findings».
 
 - **Delegates go through `Agent`:** every delegate task, reading or editing, is an `Agent` call. With superdelegation on, the system takes the call to another harness when a pair can serve it, and runs it on Claude, at the step's model, only when none can, except a task the owner placed, which runs on Claude at that model; you launch and judge both the same way. `aether-lane delegate` is what the system runs for that call: you do not run it by Bash. You yourself stay on Claude either way.
 - **The owner has asked for them:** choosing Aether mode is the owner's standing request for delegate tasks and the swarm, even when `Agent` says to launch agents only when asked.
@@ -133,7 +133,7 @@ The ladder is computed by a fixed law over Artificial Analysis figures, the Pare
 
 A delegate that edits on Claude works with `isolation: "worktree"`. When you judge it, pass that worktree's path with `--worktree`: without it or the result's checks, an `approve` is refused. Pass `--ignore <glob>` for dirty files unrelated to the task.
 
-**The verdict.** For an edit, `aether-delegate approve --task <id>` judges, merges and tests it; on `main` or `master` it checks `aether-autonomy check merge-main` and never merges without it. Otherwise `aether-delegate verdict --task <id> --verdict approve|fix|infeasible`; no other verdict counts. A read-only delegate whose checks pass is closed by the system when it answers; if its answer is wrong, `verdict --verdict fix|infeasible` reopens it; when a check fails on files another writer changed, `verdict --verdict approve --ignore '<glob>'`. `fix` and `infeasible` stay on that line for an edit too.
+**The verdict.** For an edit, `${CLAUDE_PLUGIN_ROOT}/bin/aether-delegate approve --task <id>` judges, merges and tests it; on `main` or `master` it checks `aether-autonomy check merge-main` and never merges without it. Otherwise `aether-delegate verdict --task <id> --verdict approve|fix|infeasible`; no other verdict counts. A read-only delegate whose checks pass is closed by the system when it answers; if its answer is wrong, `verdict --verdict fix|infeasible` reopens it; when a check fails on files another writer changed, `verdict --verdict approve --ignore '<glob>'`. `fix` and `infeasible` stay on that line for an edit too.
 - `fix` sends the work to the next rung in `config/ladder.json` with concrete findings, each `--finding 'file:line: what is missing'`; a finding with no file or no "what is missing" is refused.
 - `infeasible --reason <text>` declares the task out of reach of this model, and is refused without a reason.
 
@@ -180,7 +180,6 @@ Handle defined fallbacks immediately and log them in the diary, never asking the
 - Design round: `/aether:design` falls back to native, retries an empty answer once, returns the result.
 - Swarm merge failure, exhausted ladder or skipped unit: `aether:swarm`, §5.
 - Failed delegate: "The delegate ladder".
-- Act on a reviewer's verdict, final or of a delegate, with the rule of aether:swarm, «Final review findings».
 - Command leaves a dirty worktree: stash its changes and continue.
 
 If the same fallback fails twice at one step, apply "Autonomous runs"' repetition rule.
