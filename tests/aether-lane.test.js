@@ -177,6 +177,12 @@ test('each role schema accepts the answer its role gives, and validate throws fo
   assert.equal(schemas.validate(schemas.IMPLEMENTER_SCHEMA, JSON.parse(DONE)), null)
   assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, JSON.parse(APPROVE)), null)
   assert.equal(schemas.validate(schemas.REVIEW_SCHEMA, JSON.parse(READY)), null)
+  const readyFix = { verdict: 'ready', findings: [{ severity: 'minor', title: 't', file: 'a.js:1', evidence: 'e', fix: 'f' }], declined: [], summary: 'Ready.' }
+  assert.equal(schemas.validate(schemas.REVIEW_SCHEMA, readyFix), null)
+  assert.equal(
+    schemas.validate(schemas.REVIEW_SCHEMA, { ...readyFix, findings: [{ severity: 'minor', title: 't', file: 'a.js:1', evidence: 'e' }] }),
+    'missing findings[0].fix',
+  )
   const block = { verdict: 'block', findings: [{ severity: 'critical', title: 't', file: 'a.js:3', evidence: 'e' }], ruling: 'Block.', guidance: '', question: 'Which?' }
   assert.equal(schemas.validate(schemas.SUPERVISOR_SCHEMA, block), null)
   assert.throws(() => schemas.validate({ type: 'string', minLength: 1 }, 'x'), /unsupported schema keyword: minLength/)

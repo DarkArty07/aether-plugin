@@ -68,17 +68,11 @@ const FINDINGS = {
 }
 
 const REVIEW_FINDINGS = {
-  type: 'array',
+  ...FINDINGS,
   items: {
-    type: 'object',
-    required: ['severity', 'title', 'file', 'evidence', 'fix'],
-    properties: {
-      severity: { type: 'string', enum: ['critical', 'important', 'minor'] },
-      title: { type: 'string' },
-      file: { type: 'string', description: 'path:line' },
-      evidence: { type: 'string' },
-      fix: { type: 'string', description: 'the change that resolves the finding, in one line' },
-    },
+    ...FINDINGS.items,
+    required: [...FINDINGS.items.required, 'fix'],
+    properties: { ...FINDINGS.items.properties, fix: { type: 'string', description: 'the change that resolves the finding, in one line' } },
   },
 }
 
@@ -1951,6 +1945,9 @@ function reviewSlices(merged) {
 }
 
 const READINESS = { ready: 0, 'ready-with-fixes': 1, 'not-ready': 2 }
+// At most this many minor findings for the whole sliced review (issue 044): every
+// critical and important finding is kept, and the minors beyond the cap are dropped.
+const MINOR_CAP = 10
 
 // The sliced final review (issues 011, 022): slices run in parallel. With lanes, each slice goes through
 // external() on its own call id, at the model and effort the whole review chose, and only a slice no pair
@@ -2019,8 +2016,30 @@ async function reviewRunSliced(pkg, slices, { model, effort, chosen }) {
     const reason = blocked ? `slice ${missing} of ${slices.length} was blocked: ${blocked}` : `slice ${missing} of ${slices.length} ended without its answer; it may have run out of turns`
     return { status: 'failed', reason, findings, declined, slices: slices.length, slicesBy, ...chosen }
   }
+  const kept = []
+  let minorsKept = 0
+  for (const finding of findings) {
+    if (finding.severity !== 'minor' || minorsKept < MINOR_CAP) {
+      kept.push(finding)
+      if (finding.severity === 'minor') minorsKept++
+    }
+  }
+  const minorsOmitted = findings.length - kept.length
+  const summary = summaries.join('\n')
   const provider = slicesBy.every((by) => by === 'native') ? 'native' : slicesBy.includes('native') || new Set(slicesBy).size > 1 ? 'mixed' : slicesBy[0]
-  return { status: 'done', provider, verdict, findings, declined, summary: summaries.join('\n'), slices: slices.length, slicesBy, ...chosen }
+  if (minorsOmitted === 0) return { status: 'done', provider, verdict, findings: kept, declined, summary, slices: slices.length, slicesBy, ...chosen }
+  return {
+    status: 'done',
+    provider,
+    verdict,
+    findings: kept,
+    declined,
+    summary: `${summary}\n${minorsOmitted} minor findings were omitted (the cap is 10 for the whole review).`,
+    minorsOmitted,
+    slices: slices.length,
+    slicesBy,
+    ...chosen,
+  }
 }
 
 // True when this launch was given units and every one of them merged. An empty launch did not finish
