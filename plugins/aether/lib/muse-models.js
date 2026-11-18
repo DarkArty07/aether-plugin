@@ -4,7 +4,8 @@
 // It spawns `<command> serve` with the read-only flags and speaks JSON-RPC
 // 2.0 lines on stdio: initialize, then the initialized notification, then
 // model/list. It never sends any other method and never calls the network.
-// Family: model.
+// It belongs to the model round, under the `muse` family of the scheme.
+// Family: muse.
 
 const childProcess = require('node:child_process')
 const fs = require('node:fs')

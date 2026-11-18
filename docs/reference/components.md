@@ -71,6 +71,7 @@ Every piece of the Aether plugin and what it does, and the footprint of Aether i
 | skill | `skill-` | `skill-rules.js`, `skill-registry.js`, `skill-brief.js`, `skill-review.js`, `skill-loads.js`, `skill-topics.js`, `skill-repeat.js`, `skill-idle.js` | `none` |
 | tidy | `tidy-` | `tidy-detect.js`, `tidy-report.js`, `tidy-guard.js` | `none` |
 | model | `model-` | `model-listing.js`, `model-watch.js`, `muse-models.js` | `none` |
+| muse | `muse-` | `muse-models.js` | `none` |
 
 Loose modules (no family): `autonomy.js`, `autonomy-command.js`, `baseline.js`, `bash-parse.js`, `common.js`, `doctor.js`, `exam.js`, `first-setup.js`, `git.js`, `globs.js`, `guard.js`, `pairs.js`, `pareto.js`, `pending.js`, `pick-data.js`, `prices.js`, `quota-refusal.js`, `report.js`, `run.js`, `run-timings.js`, `superdelegation.js`, `voice.js` and `worktrees.js`; lane-command.js is a member of the lane family. (`autonomy-command.js` is declared loose: its prefix is not a family with more members.)
 
