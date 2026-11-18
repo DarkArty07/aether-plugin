@@ -8,7 +8,10 @@ const { PLUGIN } = require('./helpers.js')
 const read = (...p) => fs.readFileSync(path.join(PLUGIN, ...p), 'utf8')
 const swarm = read('skills', 'swarm', 'SKILL.md')
 const using = read('skills', 'using-aether', 'SKILL.md')
-const section = swarm.slice(swarm.indexOf('Final review findings'))
+const start = swarm.indexOf('Final review findings')
+const end = swarm.indexOf('- **Leftovers:**', start)
+assert.ok(end > start)
+const section = swarm.slice(start, end)
 
 test('R14: the swarm skill says what to do with each verdict', () => {
   assert.ok(section.includes('A ready verdict is approved.'))
@@ -28,6 +31,14 @@ test('R16: a not-ready is not approved before its reason is written, in the diar
 test('R17: the bootstrap carries only a pointer to the rule', () => {
   assert.ok(using.includes("Act on a reviewer's verdict, final or of a delegate, with the rule of aether:swarm, «Final review findings»."))
   assert.ok(!using.includes('Minor findings are not worked, with ready'))
+})
+
+test('the section ends at the next first-level bullet, so a verdict moved after Leftovers is out', () => {
+  const moved = swarm.replace('A ready verdict is approved.', '').replace('- **Leftovers:**', '- **Leftovers:**\n  - A ready verdict is approved.')
+  const s = moved.indexOf('Final review findings')
+  const e = moved.indexOf('- **Leftovers:**', s)
+  assert.ok(e > s)
+  assert.ok(!moved.slice(s, e).includes('A ready verdict is approved.'))
 })
 
 test('R26: the verdict paragraph says the system closes a read-only delegate whose checks pass', () => {
