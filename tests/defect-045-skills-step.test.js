@@ -13,7 +13,7 @@ const { runWorkflow } = require('./workflow-harness.js')
 const FEATURE = 'specs/007-demo'
 const ARGS = { feature: FEATURE, session: 'sess-1', repoRoot: '/repo', superdelegation: 'off', harnesses: 'agy' }
 const SHORT = { ...ARGS, mode: 'short', document: `${FEATURE}/design.md`, intent: 'Understanding: add a retry. Owner: «hazlo robusto»', author: 'opus' }
-const ROLES = ['writer', 'judge', 'examiner', 'mapper', 'skill-reviewer', 'ops']
+const ROLES = ['writer', 'judge', 'examiner', 'mapper', 'skill-scout', 'skill-reviewer', 'ops']
 
 const COMMAND = /^cd '[^']*' && (?:PATH='[^']*':"\$PATH" )?(aether-lane|aether-plan|aether-exam) ([a-z-]+)(.*)$/m
 function commandOf(prompt) {
@@ -49,6 +49,7 @@ function handlers() {
     },
     judge: () => APPROVE,
     examiner: () => EXAM,
+    'skill-scout': () => ({ topics: ['godot', 'containers'] }),
     ops: (call) => {
       const { verb, rest } = call.command
       if (verb === 'check') return CHECK_OK
@@ -68,8 +69,8 @@ test('R22/R23: find runs after the spec is approved and before requirements; an 
   })
   assert.equal(run.error, null, run.error && run.error.stack)
   const lines = run.calls.filter((c) => c.command).map((c) => c.command.line)
-  assert.ok(lines.indexOf(`aether-plan skills find ${FEATURE}`) !== -1)
-  assert.ok(lines.indexOf(`aether-plan skills find ${FEATURE}`) < lines.indexOf(`aether-plan requirements ${FEATURE}/spec.md`))
+  assert.ok(lines.indexOf(`aether-plan skills find ${FEATURE} --topic godot --topic containers`) !== -1)
+  assert.ok(lines.indexOf(`aether-plan skills find ${FEATURE} --topic godot --topic containers`) < lines.indexOf(`aether-plan requirements ${FEATURE}/spec.md`))
   assert.ok(lines.includes(`aether-plan skills install ${FEATURE} godot-helper-1a2b`))
   assert.ok(lines.includes('aether-plan skills discard dockerfile-3c4d'))
   assert.equal(lines.includes(`aether-plan skills install ${FEATURE} dockerfile-3c4d`), false)
