@@ -128,6 +128,13 @@ function judgeLine(id) {
   return `Judge it: aether-delegate verdict --task ${id} --verdict approve|fix|infeasible`
 }
 
+// A stop reason that keeps a read-only delegate pending for the Lead's verdict:
+// the turn was cut off or refused before it ended (`max_tokens`, `length`,
+// `incomplete`, `refusal`, `content_filter`, or any other), so its answer may be
+// partial. With `end_turn`, `tool_use` or no stop reason the automatic closing is
+// unchanged.
+const held = (reason) => typeof reason === 'string' && reason !== '' && reason !== 'end_turn' && reason !== 'tool_use'
+
 // The judge line of a read-only result whose checks pass: the answer below already closed the task (spec 044, D11),
 // so the Lead only judges again when the answer itself is wrong.
 function readOnlyClosedLine(id) {
@@ -318,8 +325,11 @@ async function runReadOnly(external, { cwd, dataDir }, runChain) {
   } catch {
     // The Lead still reads the answer in the text.
   }
-  const text = [chain.attribution, '', answer, '', checksLine(checks), checks.ok ? readOnlyClosedLine(external.id) : judgeLine(external.id)].filter((part) => part !== null && part !== undefined).join('\n')
-  return { result: { ok: true, status: chain.status ?? 'ok', text, checks, reason: null }, entry: { ...none, answer: saved } }
+  // A chain the turn cut off or refused stays pending: its text names the judge
+  // instead of the automatic closing, and `runTask` below does not close it.
+  const heldBack = held(chain.stopReason)
+  const text = [chain.attribution, '', answer, '', checksLine(checks), checks.ok && !heldBack ? readOnlyClosedLine(external.id) : judgeLine(external.id)].filter((part) => part !== null && part !== undefined).join('\n')
+  return { result: { ok: true, status: chain.status ?? 'ok', text, checks, reason: null, ...(heldBack ? { stopReason: chain.stopReason } : {}) }, entry: { ...none, answer: saved } }
 }
 
 // Runs the attempt the external file of `id` describes, and writes its result to results/<session-task-key>.json and to the log. The
@@ -359,8 +369,9 @@ async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { d
   if (result.status !== 'paused') {
     log.appendEntry(dataDir, { kind: 'result', time: now(), session, task: id, attempt, ok: result.ok, status: result.status, ...empty, ...outcome.entry, checks: result.checks, reason: result.reason })
     // A read-only delegate whose checks pass is closed by the system, without the Lead's verdict (spec 044, R23).
-    // An editing attempt, or a red check, is left pending for `aether-delegate verdict`, as today.
-    if (result.ok === true) delegateTask.closeReadOnly({ task: id, session, cwd: workDir, dataDir, now })
+    // An editing attempt, a red check, or a read-only result the turn cut off or refused is left pending for
+    // `aether-delegate verdict`, as today.
+    if (result.ok === true && !held(result.stopReason)) delegateTask.closeReadOnly({ task: id, session, cwd: workDir, dataDir, now })
   }
   try {
     if (typeof id === 'string' && ID.test(id)) writeAtomic(resultFile(dataDir, id, pathSession), `${JSON.stringify(result)}\n`)
@@ -374,13 +385,13 @@ async function runTask({ id, session = null, cwd, dataDir, now = Date.now }, { d
 
 // Records the end of a delegate that ran on Claude, preserving text only for read-only attempts. A read-only attempt
 // whose checks pass is closed by the system, without the Lead's verdict (spec 044, R23). Never throws.
-function recordAnswer({ task, attempt, text, session, cwd = process.cwd(), dataDir, now = Date.now }) {
+function recordAnswer({ task, attempt, text, session, cwd = process.cwd(), dataDir, now = Date.now, stopReason = null }) {
   try {
     const launch = log.readEntries(dataDir, { task, session: session ?? null }).filter((entry) => log.isLaunch(entry) && entry.attempt === attempt).at(-1)
     const entry = { kind: launch?.edits === true ? 'ended' : 'answer', time: now(), session: session ?? null, task, attempt }
     if (entry.kind === 'answer') entry.text = typeof text === 'string' ? text : ''
     const recorded = log.appendEntry(dataDir, entry)
-    if (recorded && entry.kind === 'answer') delegateTask.closeReadOnly({ task, session: entry.session, cwd, dataDir, now })
+    if (recorded && entry.kind === 'answer' && !held(stopReason)) delegateTask.closeReadOnly({ task, session: entry.session, cwd, dataDir, now })
     return { recorded }
   } catch {
     return { recorded: false }

@@ -8,7 +8,7 @@
 // aether-delegate start --id <id> [--session <id>]
 // aether-delegate run --id <id> [--session <id>]
 // aether-delegate wait --id <id> --seconds <n> [--session <id>]
-// aether-delegate answer --session <id> --task <id> --attempt <n> --text <text>
+// aether-delegate answer --session <id> --task <id> --attempt <n> --text <text> [--stop-reason <value>]
 // aether-delegate renew --harness <harness>
 // aether-delegate approve --task <id> [--worktree <path>] [--ignore <glob>]
 //
@@ -38,7 +38,7 @@ const VERBS = {
   start: { usage: 'start --id <id> [--session <id>]', flags: ['id', 'session'], required: ['id'] },
   run: { usage: 'run --id <id> [--session <id>]', flags: ['id', 'session'], required: ['id'] },
   wait: { usage: 'wait --id <id> --seconds <n> [--session <id>]', flags: ['id', 'seconds', 'session'], required: ['id', 'seconds'] },
-  answer: { usage: 'answer --session <id> --task <id> --attempt <n> --text <text>', flags: ['session', 'task', 'attempt', 'text'], required: ['task', 'attempt'] },
+  answer: { usage: 'answer --session <id> --task <id> --attempt <n> --text <text> [--stop-reason <value>]', flags: ['session', 'task', 'attempt', 'text', 'stop-reason'], required: ['task', 'attempt'] },
   renew: { usage: RENEW_USAGE, flags: ['harness'], required: ['harness'] },
   approve: { usage: 'approve --task <id> [--worktree <path>] [--ignore <glob>]', flags: ['task', 'worktree', 'ignore'], repeatable: ['ignore'], required: ['task'] },
 }
@@ -124,7 +124,9 @@ async function answerCommand(flags, dataDir) {
   if (!/^[A-Za-z0-9_-]+$/.test(flags.task)) throw new Error(`the task id is letters, digits, - and _\n${usageOf('answer')}`)
   const attempt = Number(flags.attempt)
   if (!/^\d+$/.test(flags.attempt) || attempt < 1) throw new Error(`--attempt needs a whole number from 1\n${usageOf('answer')}`)
-  return lib('delegate-run.js').recordAnswer({ task: flags.task, attempt, text: flags.text ?? '', session: flags.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null, cwd: process.cwd(), dataDir })
+  const stopReason = flags['stop-reason']
+  if (stopReason !== undefined && !/^\S+$/.test(stopReason)) throw new Error(`--stop-reason needs a non-empty token without spaces\n${usageOf('answer')}`)
+  return lib('delegate-run.js').recordAnswer({ task: flags.task, attempt, text: flags.text ?? '', session: flags.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null, cwd: process.cwd(), dataDir, ...(stopReason === undefined ? {} : { stopReason }) })
 }
 
 const approveCommand = async (flags) => lib('delegate-approve.js').approve(process.cwd(), { task: flags.task, worktree: flags.worktree, ignore: flags.ignore ?? [], env: process.env })

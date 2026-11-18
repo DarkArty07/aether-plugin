@@ -208,6 +208,23 @@ test('a read-only delegate on Claude goes through the model, and its last answer
   expect(run.init.timeoutMs).toBeLessThanOrEqual(15000)
 })
 
+test('a read-only answer the turn cut off records its stop reason, while end_turn keeps its argv', async ($, on) => {
+  const { runs, toolCalls } = stubs(on, {
+    verbs: { begin: [{ ...PLAN, answerOf: { task: 't1', attempt: 1 } }], answer: [{ recorded: true }] },
+    replies: [{ answer: 'half an answer', stopReason: 'max_tokens' }],
+  })
+  await call($, 'AETHER-TASK: t1\nAnswer this.')
+  const spawned = await spawn($, toolCalls[0].prompt)
+  const last = await step($, { index: 1, agentId: spawned.agentId })
+  expect(last.result.answer).toBe('half an answer')
+  const answered = runs.filter((r) => r.argv[2] === 'answer')
+  expect(answered.length).toBe(1)
+  const run = answered[0]
+  expect(run.argv.slice(2, 4)).toEqual(['answer', '--session'])
+  expect(run.argv.slice(run.argv.indexOf('--session'), run.argv.indexOf('--task'))).toEqual(['--session', 's1', '--stop-reason', 'max_tokens'])
+  expect(run.argv.slice(run.argv.indexOf('--task'))).toEqual(['--task', 't1', '--attempt', '1', '--text', 'half an answer'])
+})
+
 test('a begin that fails keeps the model the Lead named', async ($, on) => {
   const { runs, toolCalls } = stubs(on, { verbs: { begin: [new Error('boom')] } })
   const out = await call($, 'AETHER-TASK: t1\nFix it.')

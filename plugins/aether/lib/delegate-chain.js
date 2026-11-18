@@ -172,10 +172,14 @@ async function runChain({ cwd, id, session = null, external, config, dataDir }, 
     if (ok) break
   }
   const ok = last.result.status === 'ok'
+  // The stop reason of the last call, when it reports one: a cut-off or refused
+  // answer stays pending for the Lead's verdict instead of closing by itself.
+  const stopReason = typeof last.result.stopReason === 'string' && last.result.stopReason !== '' ? last.result.stopReason : null
   return {
     ok,
     status: last.result.status,
     text: last.result.text,
+    ...(stopReason !== null ? { stopReason } : {}),
     attribution: ok ? attributionOf(last.candidate, harnessCalls.slice(0, -1)) : null,
     detail: last.result.detail,
     marked,

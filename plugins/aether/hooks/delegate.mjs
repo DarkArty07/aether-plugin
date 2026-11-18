@@ -216,7 +216,20 @@ async function* runAnswering($, e, next, ctx, answerOf, route = null, seen = { t
       await delegate(
         $,
         ctx,
-        ['answer', '--session', ctx.session, '--task', answerOf.task, '--attempt', String(answerOf.attempt), '--text', result.answer.slice(0, ANSWER_MAX_CHARS)],
+        [
+          'answer',
+          '--session',
+          ctx.session,
+          // A turn that ended on anything but `end_turn` may hold a partial answer:
+          // the system must not close the task, so the stop reason goes along.
+          ...(result.stopReason !== 'end_turn' ? ['--stop-reason', result.stopReason] : []),
+          '--task',
+          answerOf.task,
+          '--attempt',
+          String(answerOf.attempt),
+          '--text',
+          result.answer.slice(0, ANSWER_MAX_CHARS),
+        ],
         ANSWER_TIMEOUT_MS,
       )
     } catch {
