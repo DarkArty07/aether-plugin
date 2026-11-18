@@ -221,6 +221,22 @@ const SKILL_REVIEW_SCHEMA = {
   },
 }
 
+// The pair that reads the intent card for skill search topics, and the shape
+// of its answer: a read-only scout before `aether-plan skills find`, on
+// Haiku at high like the mapper, native and with no external seat.
+const SKILL_SCOUT_PAIR = { model: 'haiku', effort: 'high' }
+const SKILL_SCOUT_SCHEMA = {
+  type: 'object',
+  required: ['topics'],
+  properties: {
+    topics: { type: 'array', items: { type: 'string' }, maxItems: 3 },
+  },
+}
+
+// One search topic: a lowercase hyphenated id of 1 to 3 words, so a scout
+// answer never becomes a command or a huge query.
+const SKILL_TOPIC = /^[a-z0-9]{1,24}(-[a-z0-9]{1,24}){0,2}$/
+
 // --- input -----------------------------------------------------------------------------------
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -1007,6 +1023,13 @@ async function planMap() {
   return answer.map
 }
 
+// What the scout reads: the owner's intent card. Like skillReviewMessage, the
+// message carries only the path, which the agent reads with Read; the card's
+// text is data and its instructions are never followed.
+function skillScoutMessage() {
+  return lines(`Read the owner's intent card ${INTENT} and return up to 3 skill search topics for it.`)
+}
+
 // What the skill-reviewer gets: the folder of the downloaded skill and the
 // topic it was searched for. The rules of the review live in its agent file.
 function skillReviewMessage(candidate) {
@@ -1029,7 +1052,35 @@ async function skillsStep() {
   const empty = () => {
     skills = { installed: [], rejected: [], pending: [] }
   }
-  const found = await ops(`aether-plan skills find ${feature}`, { phase: 'Plan', label: 'skills: find' })
+  // The scout names the search topics from the intent card. What does not fit
+  // the topic shape and repeats are dropped, and only the first 3 run. A
+  // scout that fails, ends without an answer, answers invalid data or leaves
+  // no valid topic is logged and find never runs: the design goes on with
+  // nothing, never a failure for this.
+  const scouted = await call('skill-scout', SKILL_SCOUT_PAIR.model, SKILL_SCOUT_PAIR.effort, skillScoutMessage(), {
+    phase: 'Plan',
+    label: 'skills: scout',
+    schema: SKILL_SCOUT_SCHEMA,
+  })
+  const topics = []
+  const seen = new Set()
+  const listed = isObject(scouted) && Array.isArray(scouted.topics) ? scouted.topics : null
+  if (listed !== null) {
+    for (const topic of listed) {
+      if (topics.length >= 3) break
+      if (typeof topic !== 'string' || !SKILL_TOPIC.test(topic)) continue
+      if (seen.has(topic)) continue
+      seen.add(topic)
+      topics.push(topic)
+    }
+  }
+  if (topics.length === 0) {
+    log(`skills: ${scouted === null ? 'the scout ended without an answer' : 'the scout left no valid topic'}; the design goes on`)
+    empty()
+    return
+  }
+  const command = `aether-plan skills find ${feature}${topics.map((topic) => ` --topic ${topic}`).join('')}`
+  const found = await ops(command, { phase: 'Plan', label: 'skills: find' })
   if (found.error) {
     log(`skills: ${found.error}; the design goes on`)
     empty()
