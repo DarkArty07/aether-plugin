@@ -43,6 +43,39 @@ test('R3: the verb fails with a JSON error on a missing file', (t) => {
   assert.equal(JSON.parse(r.stdout.trim()).ok, false)
 })
 
+test('R7: loadThreshold rejects every bad threshold config', (t) => {
+  const dir = tempDir(t, 'aether-req-threshold-')
+  const missing = path.join(dir, 'missing.json')
+  assert.throws(() => loadThreshold(missing), /not found/)
+  const badJson = path.join(dir, 'bad.json')
+  fs.writeFileSync(badJson, '{')
+  assert.throws(() => loadThreshold(badJson), /not JSON/)
+  for (const [name, content] of [['null.json', 'null'], ['array.json', '[]'], ['number.json', '7']]) {
+    const file = path.join(dir, name)
+    fs.writeFileSync(file, content)
+    assert.throws(() => loadThreshold(file), /is not an object/, name)
+    let message = ''
+    try {
+      loadThreshold(file)
+    } catch (err) {
+      message = err.message
+    }
+    assert.ok(!message.includes('Cannot read properties of null'), name)
+  }
+  for (const [name, content] of [
+    ['zero.json', '{"mapMinRequirements":0}'],
+    ['float.json', '{"mapMinRequirements":1.5}'],
+    ['string.json', '{"mapMinRequirements":"15"}'],
+  ]) {
+    const file = path.join(dir, name)
+    fs.writeFileSync(file, content)
+    assert.throws(() => loadThreshold(file), /positive integer/, name)
+  }
+  const good = path.join(dir, 'good.json')
+  fs.writeFileSync(good, '{"mapMinRequirements":15}')
+  assert.equal(loadThreshold(good), 15)
+})
+
 test('R3: the number of the threshold is written nowhere else in the code', () => {
   const files = []
   const walk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else if (/\.(js|mjs)$/.test(e.name) || path.basename(p) === 'aether-plan') files.push(p) } }

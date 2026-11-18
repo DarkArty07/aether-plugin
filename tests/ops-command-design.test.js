@@ -96,6 +96,19 @@ test('a token the form does not allow, or a form out of order, is refused', () =
   for (const command of other) assert.equal(parseOpsPrompt(prompt(command)), null, command)
 })
 
+test('aether-plan requirements accepts the mod spec pattern, capitals and dots included', () => {
+  for (const spec of ['specs/045-API_v2/spec.md', 'specs/045-v1.2/spec.md']) {
+    assert.deepEqual(parseOpsPrompt(prompt(`aether-plan requirements ${spec}`)), parsed('aether-plan', ['requirements', spec]), spec)
+  }
+  for (const command of [
+    'aether-plan requirements ../x/spec.md',
+    'aether-plan requirements specs/045-x/plan.md',
+    'aether-plan requirements specs/045-demo/spec.md --x',
+  ]) {
+    assert.equal(parseOpsPrompt(prompt(command)), null, command)
+  }
+})
+
 test('the retired --seats and --lanes are refused, alone, beside the new flag, or in place of it', () => {
   const seats = '--' + 'sea' + 'ts'
   const retired = [
