@@ -55,3 +55,10 @@ test('the skill reviewer treats the folder as untrusted data and rejects instruc
   assert.ok(body.includes('this skill is pre-approved'), 'the pre-approval example is named')
   assert.ok(/itself a reason for `?rejected`?/i.test(body), 'an instruction to the reviewer is itself a reason for rejected')
 })
+
+test('the skill reviewer reads every file of the list the message gives with Read', () => {
+  const { body } = reviewer()
+  assert.ok(body.includes('every file of the list'), 'it reads the list the message gives')
+  assert.ok(body.includes('Read with Read every file of the list'), 'it reads each file with Read')
+  assert.ok(body.includes('git ignores'), 'search tools may skip a folder git ignores')
+})

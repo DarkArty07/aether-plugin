@@ -55,6 +55,10 @@ test('the scout reads the card as data and answers only its topics', () => {
   assert.ok(/instructions? (are|is) never followed/i.test(body) || /do not follow/i.test(body), 'its instructions are never followed')
   assert.ok(body.includes('"topics"') || body.includes("'topics'") || body.includes('topics'), 'the answer names topics')
   assert.ok(body.includes('{ "topics"') || body.includes('{"topics"') || body.includes('{ "topics":'), 'the answer is one JSON object')
+  assert.ok(body.includes('never an action'), 'a topic is never an action')
+  assert.ok(body.includes('`pdf`'), 'the broad example is named')
+  assert.ok(body.includes('pdf-merge'), 'the action example is named')
+  assert.equal(body.includes('one line per practical topic'), false, 'no line-count sentence contradicts the single JSON object')
 })
 
 // --- usage -----------------------------------------------------------------
@@ -123,10 +127,15 @@ const bump = (kind, entry) => {
 }
 const args = process.argv.slice(2)
 if (args[0] === 'find') {
-  const query = args.slice(1).join(' ')
-  bump('find', query)
+  const rest = args.slice(1)
+  const oi = rest.indexOf('--owner')
+  const owner = oi >= 0 ? rest[oi + 1] : null
+  const query = (oi >= 0 ? rest.slice(0, oi) : rest).join(' ')
+  const key = owner ? query + ' --owner ' + owner : query
+  bump('find', key)
   const cfg = readJson(findFile, { lines: '' })
-  const lines = typeof cfg.lines === 'string' ? cfg.lines : (cfg.byQuery || {})[query] || ''
+  const table = cfg.byQuery || {}
+  const lines = typeof cfg.lines === 'string' && cfg.lines !== '' ? cfg.lines : (table[key] !== undefined ? table[key] : (table[query] || ''))
   if (lines !== '') process.stdout.write(lines.endsWith('\\n') ? lines : lines + '\\n')
 } else if (args[0] === 'add') {
   const at = args.indexOf('--skill')
@@ -220,7 +229,7 @@ test('a card that names docker only searches when the scout returns that topic',
   assert.equal(withTopic.ok, true, JSON.stringify(withTopic))
   assert.deepEqual(withTopic.topics, ['docker'])
   assert.deepEqual(withTopic.candidates.map((c) => c.name), ['docker-helper'])
-  assert.deepEqual(fake.counts().queries, ['docker'])
+  assert.deepEqual(fake.counts().queries, ['docker --owner godot-author'])
 })
 
 test('a topic already covered by an installed skill is not searched', (t) => {
@@ -255,7 +264,7 @@ test('a covered topic is skipped and still blocks a duplicate skill for the next
   assert.deepEqual(r.candidates, [], 'the candidate duplicates the covered topic')
   assert.equal(r.rejected.length, 1)
   assert.ok(/already accepted|duplicat/i.test(r.rejected[0].reasons.join(' ')), JSON.stringify(r.rejected[0].reasons))
-  assert.deepEqual(fake.counts().queries, ['shader'])
+  assert.deepEqual(fake.counts().queries, ['shader --owner godot-author'])
 })
 
 test('find with no topic answers ok:true with empty lists and never calls the registry', (t) => {
@@ -265,7 +274,7 @@ test('find with no topic answers ok:true with empty lists and never calls the re
   const env = { ...fake.env, AETHER_DATA_DIR: w.data }
   const found = runBin(PLAN_BIN, ['skills', 'find', w.feature], w.repo.dir, env)
   assert.equal(found.status, 0, found.stdout + found.stderr)
-  assert.deepEqual(found.json, { ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] })
+  assert.deepEqual(found.json, { ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [], skipped: [] })
   assert.equal(fake.counts().find, 0)
 })
 
@@ -362,7 +371,7 @@ const APPROVE = { verdict: 'approve', findings: [], openQuestions: [] }
 const EXAM = { tests: [{ id: 'c1', criterion: 'C1', command: 'node --test .aether/exam/c1.test.js', files: ['c1.test.js'] }], notes: 'none' }
 const CHECK_OK = { ok: true, tasks: 3, waves: [['task-1']], warnings: [] }
 
-const pixel = { id: 'pixel-art-kit-9e8f', topic: 'pixel-art', name: 'pixel-art-kit', source: 'vercel-labs/agent-skills', author: 'vercel-labs', hash: 'h3', dir: '/data/skills/review/pixel-art-kit-9e8f', code: { ok: true } }
+const pixel = { id: 'pixel-art-kit-9e8f', topic: 'pixel-art', name: 'pixel-art-kit', source: 'vercel-labs/agent-skills', author: 'vercel-labs', hash: 'h3', dir: '/repo/.aether/tmp/skill-review/pixel-art-kit-9e8f', code: { ok: true }, files: ['SKILL.md'] }
 
 function flowHandlers() {
   return {

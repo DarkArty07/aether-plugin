@@ -28,8 +28,8 @@ const EXAM = { tests: [{ id: 'c1', criterion: 'C1', command: 'node --test .aethe
 const CHECK_OK = { ok: true, tasks: 3, waves: [['task-1', 'task-2', 'task-3']], warnings: [] }
 
 const FIND = (candidates, extra = {}) => ({ ok: true, topics: ['godot', 'containers'], candidates, rejected: [], pending: [], errors: [], ...extra })
-const godot = { id: 'godot-helper-1a2b', topic: 'godot', name: 'godot-helper', source: 'vercel-labs/agent-skills', author: 'vercel-labs', hash: 'h1', dir: '/data/skills/review/godot-helper-1a2b', code: { ok: true } }
-const docker = { id: 'dockerfile-3c4d', topic: 'containers', name: 'dockerfile', source: 'anthropics/skills', author: 'anthropics', hash: 'h2', dir: '/data/skills/review/dockerfile-3c4d', code: { ok: true } }
+const godot = { id: 'godot-helper-1a2b', topic: 'godot', name: 'godot-helper', source: 'vercel-labs/agent-skills', author: 'vercel-labs', hash: 'h1', dir: '/repo/.aether/tmp/skill-review/godot-helper-1a2b', code: { ok: true }, files: ['SKILL.md'] }
+const docker = { id: 'dockerfile-3c4d', topic: 'containers', name: 'dockerfile', source: 'anthropics/skills', author: 'anthropics', hash: 'h2', dir: '/repo/.aether/tmp/skill-review/dockerfile-3c4d', code: { ok: true }, files: ['SKILL.md'] }
 const skillsOps = (find) => (call, fallback) => {
   if (call.command.verb !== 'skills') return fallback(call)
   const what = call.command.rest[0]
@@ -170,7 +170,7 @@ test('R22: a short design never runs the skills step', async () => {
 })
 
 test('R23: the step asks for at most 3 reviews and installs', async () => {
-  const five = ['a', 'b', 'c', 'd', 'e'].map((topic) => ({ ...godot, id: `skill-${topic}-1a2b`, topic: `topic-${topic}`, name: `skill-${topic}`, dir: `/data/skills/review/skill-${topic}-1a2b` }))
+  const five = ['a', 'b', 'c', 'd', 'e'].map((topic) => ({ ...godot, id: `skill-${topic}-1a2b`, topic: `topic-${topic}`, name: `skill-${topic}`, dir: `/repo/.aether/tmp/skill-review/skill-${topic}-1a2b` }))
   const run = await go(ARGS, {
     ops: skillsOps(FIND(five)),
     'skill-reviewer': () => ({ verdict: 'approved', reasons: [] }),
