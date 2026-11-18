@@ -79,6 +79,8 @@ The Lead can equip agents and external harness delegates with up to 3 relevant s
 - In `tasks.md`, specify skills using the `Skills:` field (e.g., `Skills: erebus-ui, patron-api`).
 - When compiling briefs or delegating tasks, the `AETHER-SKILLS:` line is injected, and the full content of each skill is embedded directly into the brief so any harness has access.
 
+The matching project skills reach delegates and the units of a plan by themselves: up to 3 per task, the ones named by hand first, so the `add AETHER-SKILLS:` notice is no longer needed for them. `/aether:design` searches the skills of the card's topics, reviews the trusted ones, and installs them in the project only (never global, not committed), leaving the rest on the owner's list: the approved result carries a `skills` field, and an untrusted author is recorded in `.aether/pending.jsonl` under the `skill-install` class.
+
 ### Skill reinforcement and performance
 
 All skill reinforcement notices are non-blocking advisory messages that run without invoking a model. None of these checks halts a tool call, an edit, or a delegate launch:
