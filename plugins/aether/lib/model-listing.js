@@ -181,10 +181,7 @@ async function listModels(harnessName, options = {}) {
   const config = readJsonOrNull(configPath) || {}
   const captureVia = config.captureVia
   if (!captureVia || !Object.hasOwn(captureVia, harnessName) || captureVia[harnessName] === null) {
-    const reason = harnessName === 'muse'
-      ? 'no capture means without a model call'
-      : `no capture configured for ${harnessName}`
-    return { status: 'no-capture', reason }
+    return { status: 'no-capture', reason: `no capture configured for ${harnessName}` }
   }
 
   const lanes = readJsonOrNull(lanesConfigPath) || {}
@@ -194,6 +191,12 @@ async function listModels(harnessName, options = {}) {
   }
 
   const entry = captureVia[harnessName]
+  if (entry && typeof entry === 'object' && entry.msp === true) {
+    const defaultTimeout = (typeof config.perHarnessSeconds === 'number' ? config.perHarnessSeconds : 10) * 1000
+    const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : defaultTimeout
+    const { listMuseModels } = require('./muse-models.js')
+    return listMuseModels({ command, env, timeoutMs })
+  }
   if (typeof entry.file === 'string') {
     return readCacheFile(entry.file, home)
   }

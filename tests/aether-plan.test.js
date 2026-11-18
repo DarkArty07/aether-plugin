@@ -4,7 +4,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { PLAN_BIN, makeRepo, writePlan, runBin, tempDir, NO_LANES_CONFIG, compile, commitIn } = require('./helpers.js')
+const { PLUGIN, PLAN_BIN, makeRepo, writePlan, runBin, tempDir, NO_LANES_CONFIG, compile, commitIn } = require('./helpers.js')
 const { task, plan, specKitTasks } = require('./plan-fixtures.js')
 const { CONFIG_FILE, loadConfig } = require('../plugins/aether/lib/lanes.js')
 const { runArgs } = require('../plugins/aether/lib/superdelegation.js')
@@ -574,4 +574,20 @@ test('the usage error of the bin names aether-plan requirements <spec.md>', (t) 
   assert.equal(r.status, 1)
   assert.equal(r.json.ok, false)
   assert.ok(r.json.errors[0].includes('aether-plan requirements <spec.md>'), r.json.errors[0])
+})
+
+test('R7: requirements with no argument prints the full shared USAGE like check, compile and an unknown verb', () => {
+  const { USAGE } = require('../plugins/aether/lib/plan-compile.js')
+  for (const argv of [['requirements'], ['check'], ['compile'], ['nope']]) {
+    const out = runBin(PLAN_BIN, argv, process.cwd())
+    assert.equal(out.status, 1)
+    assert.deepEqual(JSON.parse(out.stdout).errors, [USAGE], argv.join(' '))
+  }
+  assert.ok(USAGE.includes('aether-plan requirements <spec.md>'))
+})
+
+test('R7: bin/aether-plan holds no copy of USAGE', () => {
+  const text = fs.readFileSync(path.join(PLUGIN, 'bin', 'aether-plan'), 'utf8')
+  assert.equal(/const USAGE\s*=/.test(text), false)
+  assert.equal(text.includes("(verb === 'check' || verb === 'compile') && !argv[1]"), false)
 })

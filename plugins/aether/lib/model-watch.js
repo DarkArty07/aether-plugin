@@ -97,7 +97,11 @@ async function runWatch({
   }
 
   const prevResult = readResult(dataDir)
-  const targets = watchableHarnesses(harnesses, cfg)
+  // Muse is read over `muse serve` and may hang: it never consumes
+  // totalSeconds before another harness, so it moves to the end (stable
+  // for the others).
+  const readable = watchableHarnesses(harnesses, cfg)
+  const targets = [...readable.filter((name) => name !== 'muse'), ...readable.filter((name) => name === 'muse')]
   const perHarnessMs = (typeof cfg.perHarnessSeconds === 'number' ? cfg.perHarnessSeconds : 10) * 1000
   const totalMs = (typeof cfg.totalSeconds === 'number' ? cfg.totalSeconds : 30) * 1000
   const startMs = Date.now()

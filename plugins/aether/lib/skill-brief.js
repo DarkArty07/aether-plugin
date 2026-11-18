@@ -339,35 +339,93 @@ function briefStopWords() {
   return new Set(loadSkillsConfig().stopWords.map((word) => foldToken(word)))
 }
 
-function skillMatchesBrief(skill, words, foldedRaw, stop = new Set()) {
+// File extensions and dotted patterns of a skill, taken from its description
+// before it is tokenized: a token starting with `.`, continuing with 1 to 5
+// alphanumerics and admitting more `.` + 1 to 5 alphanumerics segments
+// (`.px.js`, `.ipynb`, `.gd`, `.wgsl`), preceded by start of text, a space, a
+// quote, a backtick or an opening parenthesis and followed by a space, a
+// quote, a backtick, a comma, a semicolon, a closing parenthesis or the end
+// of the text (so the final dot of `landing page.`, `e.g.` and `i.e.` gives
+// no pattern).
+function extractDotPatterns(description) {
+  const folded = foldToken(description || '')
+  const patterns = []
+  const seen = new Set()
+  const re = /(^|[\s'"`(`])(\.[a-z0-9]{1,5}(?:\.[a-z0-9]{1,5})*)(?=[\s'"`,;)]|$)/g
+  let found
+  while ((found = re.exec(folded)) !== null) {
+    if (!seen.has(found[2])) {
+      seen.add(found[2])
+      patterns.push(found[2])
+    }
+  }
+  return patterns
+}
+
+// The domain signals of a skill under R20: (a) its exact folded name, of any
+// length; (b) its dot patterns from the description; (c) the parts of at
+// least 2 characters of a hyphenated name that are not stop words; (d) the
+// distinct words of length >= 4 of its description (and of its name, once)
+// that are not stop words.
+function skillSignals(skill, stop = new Set()) {
   const name = foldToken(skill.name || '')
-  if (!name) return false
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  if (words.has(name) || new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`).test(foldedRaw)) return true
   const parts = name
-    .split('-')
-    .filter((part) => part.length >= 4 && !stop.has(part))
-  if (parts.length > 0 && parts.every((part) => words.has(part))) return true
+    ? name.split('-').filter((part) => part.length >= 2 && !stop.has(part))
+    : []
   const significant = new Set()
   for (const word of [...foldedWords(skill.name), ...foldedWords(skill.description)]) {
     if (word.length >= 4 && !stop.has(word)) significant.add(word)
   }
+  return { name, parts, significant, patterns: extractDotPatterns(skill.description) }
+}
+
+// The matching strength of a skill under R20, or null when it does not match:
+// (i) exact name as an independent token, (ii) a dot pattern matching an
+// owns path suffix or a literal mention, (iii) a compound name with at least
+// 2 remaining parts all present in the task, (iv) at least
+// max(2, min(3, ceil(N x 0.25))) distinct domain words (never with N < 2).
+function matchStrength(signals, words, foldedRaw, ownsFolded) {
+  if (signals.name) {
+    const escaped = signals.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (words.has(signals.name) || new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`).test(foldedRaw)) {
+      return { rank: 0, hits: 0 }
+    }
+  }
+  for (const pattern of signals.patterns) {
+    if (ownsFolded.some((file) => file.endsWith(pattern)) || foldedRaw.includes(pattern)) {
+      return { rank: 1, hits: 0 }
+    }
+  }
+  if (signals.parts.length >= 2 && signals.parts.every((part) => words.has(part))) {
+    return { rank: 2, hits: 0 }
+  }
   let hits = 0
-  for (const word of significant) {
+  for (const word of signals.significant) {
     if (words.has(word)) hits += 1
   }
-  const needed = Math.max(2, Math.min(3, Math.ceil(significant.size * 0.25)))
-  return hits >= needed
+  if (signals.significant.size >= 2) {
+    const needed = Math.max(2, Math.min(3, Math.ceil(signals.significant.size * 0.25)))
+    if (hits >= needed) return { rank: 3, hits }
+  }
+  return null
 }
 
 function matchDelegateSkills(cwd, { prompt = '', description = '', owns = [] } = {}) {
   const owned = Array.isArray(owns) ? owns.join(' ') : ''
   const foldedRaw = foldToken(`${prompt}\n${description}\n${owned}`)
   const words = new Set(foldedWords(foldedRaw))
+  const ownsFolded = (Array.isArray(owns) ? owns : []).map((entry) => foldToken(String(entry)))
   const stop = briefStopWords()
-  return listProjectSkills(cwd)
-    .filter((skill) => skillMatchesBrief(skill, words, foldedRaw, stop))
-    .map((skill) => skill.name)
+  const ranked = []
+  for (const skill of listProjectSkills(cwd)) {
+    const strength = matchStrength(skillSignals(skill, stop), words, foldedRaw, ownsFolded)
+    if (strength) ranked.push({ name: skill.name, ...strength })
+  }
+  // Order by strength of signal (exact name, dot pattern, full compound
+  // name, more matched domain words) and, on a tie, alphabetically by name.
+  // The domain-words tier counts matched words only, never the proportion.
+  ranked.sort((a, b) => a.rank - b.rank || b.hits - a.hits || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  return ranked.map((entry) => entry.name)
 }
 
 module.exports = {

@@ -656,8 +656,10 @@ function writeTargets(segment) {
 // Limit A14 (spec 030): commands that assemble the path at runtime (e.g. a script building .claude/ dynamically) cannot be detected.
 function claudeConfigWrite(command) {
   if (typeof command !== 'string') return null
-  for (const segment of commandSegments(command)) {
-    for (const target of writeTargets(segment)) {
+  const segments = commandSegments(command)
+  const writes = segmentsWrite(segments)
+  for (const segment of segments) {
+    for (const target of segmentTargets(segment, writes)) {
       const configTarget = claudeConfigPath(target)
       if (configTarget) return configTarget
     }
@@ -747,6 +749,21 @@ function isReadOnlySegment(named) {
   if (named.length === 0) return false
   if (named[0] === 'find') return !named.some((word) => FIND_WRITE_ACTIONS.has(word))
   return named[0] === 'gh' && (named[1] === 'issue' || named[1] === 'pr')
+}
+
+// The words of a segment after its wrappers, with a command run by its path read by its name, as collectWords
+// reads them: `sudo find` and `/usr/bin/find` read as `find`.
+function namedOf(segment) {
+  const unwrapped = dropWrappers(segment)
+  return unwrapped.length > 0 ? [nameOf(unwrapped[0]), ...unwrapped.slice(1)] : unwrapped
+}
+
+// The targets a segment can write: a read-only segment (a find with none of its writing actions, or gh issue
+// and gh pr, read through its wrappers) contributes only its redirection targets, and only when nothing else
+// in the line writes; every other segment is read as writeTargets reads it.
+function segmentTargets(segment, writes) {
+  if (!writes && isReadOnlySegment(namedOf(segment))) return redirectTargets(segment)
+  return writeTargets(segment)
 }
 
 // Limit A14 (spec 030): commands that assemble the personal skills path or an install at runtime (e.g. a script building
@@ -961,8 +978,10 @@ function trustedWrite(command, cwd = process.cwd(), env = process.env) {
   const exempt = shape.plain && (shape.commands.length > 0 && shape.commands.every((c) => READ_COMMANDS.has(c[0])) || (authorized && !command.includes('<<')))
   if (exempt) return null
 
-  for (const segment of commandSegments(command)) {
-    for (const target of writeTargets(segment)) {
+  const segments = commandSegments(command)
+  const writes = segmentsWrite(segments)
+  for (const segment of segments) {
+    for (const target of segmentTargets(segment, writes)) {
       if (isTrustedTarget(target, cwd, env)) return target
     }
   }
