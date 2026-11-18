@@ -31,7 +31,7 @@ Un agente nuevo y de solo lectura, `skill-scout`, lee la tarjeta y devuelve hast
 - **`plugins/aether/hooks/ops-command.mjs`:** las formas de `skills find` con 1, 2 y 3 `--topic`, cada valor validado con el patrón del punto 2 (en el mod, que lo repite, con los mismos límites). La forma sin `--topic` se conserva.
 - **`plugins/aether/lib/skill-design.js`:** `main` acepta de 0 a 3 `--topic` válidos y distintos, y cualquier otra forma imprime el uso; `SKILLS_USAGE` pasa a incluir `[--topic <t>]...` en `skills find`. `findForDesign` recibe `topics` y deja de leer `intent.md` y la tabla `topics` para decidir la búsqueda. `coveredIds` y `acceptedKeys` se calculan sobre los temas del agente (los recién armados con `id`, `label` y `skillKeywords`), no sobre `cfg.topics`: un tema cubierto por una skill instalada se salta y agrega sus claves a `acceptedKeys`, que sigue bloqueando una skill duplicada para el tema siguiente.
 - **`plugins/aether/config/skills.json`:** la tabla `topics` no cambia. Sigue sirviendo al aviso de arranque de `lib/skill-topics.js`.
-- **Documentos:** `docs/decisions.md` agrega A137, que modifica A136, y el rango pasa a `A1–A137` donde esté fijado. Se actualizan `plugins/aether/skills/designing/SKILL.md`, `plugins/aether/skills/skills/SKILL.md`, `docs/guide/project-files-and-skills.md`, `docs/es/guias/archivos-skills-y-continuidad.md`, `docs/guide/design-seats.md`, `docs/reference/components.md` y la lista de agentes de `AGENTS.md`.
+- **Documentos:** `docs/decisions.md` agrega A137, que modifica A136, y el rango pasa a `A1–A137` donde esté fijado. Se actualizan `plugins/aether/skills/designing/SKILL.md`, `plugins/aether/skills/skills/SKILL.md`, `docs/guide/project-files-and-skills.md`, `docs/es/guias/archivos-skills-y-continuidad.md`, `docs/guide/design-seats.md`, `docs/guide/ops.md` (la lista de formas de `aether-plan skills find <feature>` que corre el mod), `docs/reference/components.md` y la lista de agentes de `AGENTS.md`.
 
 ## Seguridad
 
@@ -56,11 +56,12 @@ Un agente nuevo y de solo lectura, `skill-scout`, lee la tarjeta y devuelve hast
 
 Estas pruebas describen el comportamiento que este diseño reemplaza; la construcción las reescribe para que una construcción correcta no se juzgue con ellas:
 
-- `tests/defect-045-skills-step.test.js` (líneas 71-72): el flujo llama a `aether-plan skills find ${FEATURE} --topic ...` con los temas del agente, antes de `requirements`.
-- `tests/workflow-design.test.js` (línea 17): `ROLES` agrega `skill-scout`, y el arnés del flujo responde `skill-scout` con un stub (`{ topics: [] }` por defecto).
-- `tests/skill-design.test.js` (línea 772 y las llamadas a `findForDesign` por palabras de la tarjeta): el texto de uso nuevo, y `findForDesign` recibe `topics`.
+- `tests/defect-045-skills-step.test.js` (línea 16 y líneas 71-72): `ROLES` agrega `skill-scout` (sin él el arnés `workflow-harness.js` lanza en la línea 281, `call` devuelve null y `find` no corre), y los handlers del archivo hacen que `skill-scout` devuelva temas para que `find` corra en todo el archivo; el flujo llama a `aether-plan skills find ${FEATURE} --topic ...` con los temas del agente, antes de `requirements`.
+- `tests/workflow-design.test.js` (línea 17 y líneas 599-611): `ROLES` agrega `skill-scout`, y el arnés del flujo responde `skill-scout` con un stub (`{ topics: [] }` por defecto). La prueba de las líneas 599-611 sobrescribe `skill-scout` con un tema válido, de modo que `skills find <feature> --topic <t>` pase por `parseOpsPrompt` (línea 605) y el verbo `skills` se conserve en la lista de la línea 603; con el stub por defecto no se llamaría a `find`.
+- `tests/skill-design.test.js` (líneas 432, 467-470, 764-767 y 772, y las llamadas a `findForDesign` por palabras de la tarjeta): las llamadas a `skills find` por el bin pasan `--topic <t>` (sin `--topic` responden listas vacías, no un candidato), el texto de uso nuevo, y `findForDesign` recibe `topics`.
 - `tests/ops-command-design.test.js` (líneas 99-122): las formas de `skills find` con `--topic`, válidas e inválidas.
 - `plugins/aether/hooks/ops.test.ts` (línea 389): `skills find` con `--topic` corre en el mod.
+- Los pines de `A1–A136`: `tests/defect-045-docs.test.js` (línea 83), `tests/docs-032.test.js` (línea 23) y `tests/docs-facts.test.js` (línea 852) pasan a `A1–A137`, junto con `docs/index.md`.
 
 ## Supuestos
 
