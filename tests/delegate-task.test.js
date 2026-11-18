@@ -839,7 +839,7 @@ test('relaunch findings, reason, and previous work sections stay byte-for-byte i
 test('the launch note of a read-only task says it closes itself and how a red check is judged (spec 044, D11)', async (t) => {
   const { deps } = world(t)
   const note = (await task.begin(call(BRIEF('note-ro')), deps)).notes.join('\n')
-  assert.match(note, /It closes itself when its checks pass/)
+  assert.match(note, /It closes itself as approved when its checks pass/)
   assert.match(note, /aether-delegate verdict --task note-ro --verdict fix\|infeasible/)
   assert.match(note, /--verdict approve --ignore '<glob>' when the failing files are another writer's/)
 })

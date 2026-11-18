@@ -174,18 +174,21 @@ const lastOf = (entries, test) => {
   return { entry: null, index: -1 }
 }
 
-// The verdict inputs the ladder judges: every verdict line with an input, including the system's own closing of a
-// read-only attempt (auto: true). That closing stays in the inputs, so the ladder reads the task as closed and no
-// later verdict or launch opens it again.
-function verdictInputs(entries) {
-  return entries.filter((entry) => entry.kind === 'verdict' && isObject(entry.input)).map((entry) => entry.input)
+// The verdict inputs the ladder judges: an automatic approval a later verdict reopened (spec 044, D11) no longer
+// closes the task, so the task behaves exactly as if the read-only attempt were still open at that attempt. With
+// `reopen`, the task's last verdict itself is the automatic approval being reopened, so it is dropped too.
+function effectiveVerdictInputs(entries, reopen = false) {
+  let last = -1
+  for (let i = 0; i < entries.length; i++) if (entries[i].kind === 'verdict') last = i
+  return entries.filter((entry, i) => entry.kind === 'verdict' && isObject(entry.input) && !(entry.auto === true && entry.verdict === 'approved' && (i < last || (reopen && i === last)))).map((entry) => entry.input)
 }
 
-// The task's last verdict when it is the system's own closing of a read-only attempt (auto: true): the task is
-// closed, and `fix`, `infeasible` and `approve` are refused (spec 044, R26). Null otherwise.
-function autoClosed(entries) {
+// The task's last verdict when it is the system's own closing of a read-only attempt (auto: true) with no launch
+// after it: still reopenable by fix or infeasible (spec 044, D11). Null otherwise.
+function reopenableAuto(entries) {
   const lastVerdict = lastOf(entries, (e) => e.kind === 'verdict')
   if (!lastVerdict.entry || lastVerdict.entry.verdict !== 'approved' || lastVerdict.entry.auto !== true) return null
+  if (lastOf(entries, isLaunch).index > lastVerdict.index) return null
   return lastVerdict.entry
 }
 
@@ -408,7 +411,7 @@ function nextLaunch(entries, ladder, { firstStep, configDir }) {
   const launches = entries.filter(isLaunch)
   const launchAttempt = launches.length + 1
   if (launches.length === 0) return { status: 'open', step: firstStep, launchKind: 'first', verdict: null, launchAttempt }
-  const state = ladderLib.stateOf(verdictInputs(entries), ladder, auth.startStepOf(entries, ladder, configDir))
+  const state = ladderLib.stateOf(effectiveVerdictInputs(entries), ladder, auth.startStepOf(entries, ladder, configDir))
   if (state.status !== 'open') return { status: state.status, step: null, launchKind: 'refused', verdict: null, launchAttempt }
   const lastLaunch = lastOf(entries, isLaunch)
   const lastVerdict = lastOf(entries, (e) => e.kind === 'verdict')
@@ -438,7 +441,7 @@ function sameModelPair(pairs, previous, limit, quota) {
 function stepNote(id, step, launchAttempt, launchKind, args, pick, edits) {
   const where = pick ? `on ${pick.harness} ${pick.model} ${pick.effort} (pair ${pick.id}), with claude ${args.model} ${args.effort} as its rescue` : `on claude ${args.model} ${args.effort}`
   if (edits) return `Aether delegate task ${id}: step ${step}, attempt ${launchAttempt} (${launchKind}), runs ${where}. Judge it with aether-delegate verdict --task ${id} --verdict approve|fix|infeasible.`
-  return `Aether delegate task ${id}: step ${step}, attempt ${launchAttempt} (${launchKind}), runs ${where}. It closes itself when its checks pass; a red check takes aether-delegate verdict --task ${id} --verdict fix|infeasible, or --verdict approve --ignore '<glob>' when the failing files are another writer's.`
+  return `Aether delegate task ${id}: step ${step}, attempt ${launchAttempt} (${launchKind}), runs ${where}. It closes itself as approved when its checks pass; a red check takes aether-delegate verdict --task ${id} --verdict fix|infeasible, or --verdict approve --ignore '<glob>' when the failing files are another writer's.`
 }
 
 // The owner's placement of a first launch (spec 021): the rung the call asks for above the first one, and the authorization
@@ -920,7 +923,7 @@ function closeReadOnly({ task, session, cwd, dataDir, now }) {
     if (!launch) return { closed: false, reason: 'unknown task' }
     if (editsOf(launch)) return { closed: false, reason: 'the task edits: only aether-delegate verdict closes it' }
     const verdictInput = { kind: 'approve', findings: [], reason: null, fromScratch: false }
-    const state = ladderLib.stateOf(verdictInputs(entries), r.ladder, auth.startStepOf(entries, r.ladder, r.configDir))
+    const state = ladderLib.stateOf(effectiveVerdictInputs(entries), r.ladder, auth.startStepOf(entries, r.ladder, r.configDir))
     const judged = ladderLib.judge(state, verdictInput, r.ladder)
     if (!judged.accepted) return { closed: false, reason: judged.error }
     const error = approveError(r, entries, launch, undefined, [])
@@ -949,13 +952,14 @@ async function verdict(input, deps = {}) {
     const entries = taskEntries(r.dataDir, task, session)
     const launch = lastOf(entries, isLaunch).entry
     if (!launch) return refuse('unknown task')
-    const state = ladderLib.stateOf(verdictInputs(entries), r.ladder, auth.startStepOf(entries, r.ladder, r.configDir))
+    const auto = reopenableAuto(entries)
+    const reopening = auto !== null && (kind === 'fix' || kind === 'infeasible')
+    const state = ladderLib.stateOf(effectiveVerdictInputs(entries, reopening), r.ladder, auth.startStepOf(entries, r.ladder, r.configDir))
     const at = { step: state.step }
     if (!VERDICTS.includes(kind)) return refuse('the verdict must be approve, fix or infeasible', at)
     const ignored = ignoreOf(ignore)
     if (ignored.error) return refuse(ignored.error, at)
     if (ignored.globs.length > 0 && editsOf(launch)) return refuse('--ignore is for a read-only task: an editing task is checked by its AETHER-OWNS, not by --ignore', at)
-    if (autoClosed(entries) !== null) return refuse('the task was already closed by the system as approved: no verdict is needed; new work needs a new AETHER-TASK id', at)
 
     const verdictInput = { kind, findings: [], reason: isText(reason) ? reason.trim() : null, fromScratch: Boolean(fromScratch) }
     if (kind === 'fix') {
@@ -963,6 +967,7 @@ async function verdict(input, deps = {}) {
       if (error) return refuse(error, at)
       verdictInput.findings = parsed
     }
+    if (kind === 'approve' && auto !== null) return refuse('the task was already closed by the system as approved: no verdict is needed; when its answer is wrong, judge it fix or infeasible', at)
     const judged = ladderLib.judge(state, verdictInput, r.ladder)
     if (!judged.accepted) return refuse(judged.error, at)
     if (kind === 'approve') {

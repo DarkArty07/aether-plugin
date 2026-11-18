@@ -32,5 +32,5 @@ test('R17: the bootstrap carries only a pointer to the rule', () => {
 
 test('R26: the verdict paragraph says the system closes a read-only delegate whose checks pass', () => {
   assert.ok(!using.includes('A read-only delegate did not edit, so `aether-delegate approve` refuses it'))
-  assert.ok(using.includes('A read-only delegate whose checks pass is closed by the system when it answers; to redo it, launch a new `AETHER-TASK`. One whose check fails takes `verdict --verdict fix|infeasible`, or `verdict --verdict approve --ignore \'<glob>\'` when the failing files are another writer\'s.'))
+  assert.ok(using.includes('A read-only delegate whose checks pass is closed by the system when it answers; if its answer is wrong, `verdict --verdict fix|infeasible` reopens it; when a check fails on files another writer changed, `verdict --verdict approve --ignore \'<glob>\'`\.'))
 })
