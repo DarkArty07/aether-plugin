@@ -74,6 +74,10 @@ Skills loaded into an agent context must stay focused:
 - **Size limit:** Each `SKILL.md` must not exceed 500 lines.
 - **Task limit:** Each task receives at most 3 skills, with a total combined size of at most 1,500 lines.
 
+### Automatic delivery
+
+The system hands the matching project skills to delegates and to the units of a plan by itself: up to 3 per task, the ones named by hand first. The `add AETHER-SKILLS:` notice is no longer needed for them: a manual `AETHER-SKILLS:` name still wins and stays strict, and the automatic matches fill the free places. `/aether:design` installs the reviewed skills of trusted authors in the project only (never global, not committed) and leaves the rest on the owner's list.
+
 ### In Plans (`tasks.md`)
 In `tasks.md`, specify skills using the `Skills:` field in the task's Aether metadata block:
 ```markdown
