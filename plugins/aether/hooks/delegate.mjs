@@ -221,8 +221,10 @@ async function* runAnswering($, e, next, ctx, answerOf, route = null, seen = { t
           '--session',
           ctx.session,
           // A turn that ended on anything but `end_turn` may hold a partial answer:
-          // the system must not close the task, so the stop reason goes along.
-          ...(result.stopReason !== 'end_turn' ? ['--stop-reason', result.stopReason] : []),
+          // the system must not close the task, so the stop reason goes along. Only
+          // a non-empty token without spaces can go: the CLI refuses any other value
+          // and the answer would never be recorded.
+          ...(result.stopReason !== 'end_turn' && result.stopReason !== '' && !/\s/.test(result.stopReason) ? ['--stop-reason', result.stopReason] : []),
           '--task',
           answerOf.task,
           '--attempt',

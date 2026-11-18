@@ -96,6 +96,20 @@ test('an answer on the first pair says what it always said, and the journal hold
   assert.equal(s.calls[0].maxCliSeconds, undefined, 'the first attempt has the limit it always had')
 })
 
+test('runChain carries the stopReason of its last call (defect 045)', async (t) => {
+  const s = setup(t, [refusal(), { status: 'ok', stopReason: 'max_tokens' }])
+  const out = await s.run(ARGON, [GROK])
+  assert.equal(out.ok, true)
+  assert.equal(out.stopReason, 'max_tokens')
+})
+
+test('runChain omits stopReason when its last call reports none (defect 045)', async (t) => {
+  const s = setup(t, [{ status: 'ok' }])
+  const out = await s.run(ARGON, [GROK])
+  assert.equal(out.ok, true)
+  assert.equal(Object.hasOwn(out, 'stopReason'), false)
+})
+
 test('an unavailable pair counts as a refusal at the start', async (t) => {
   const s = setup(t, [{ status: 'unavailable', detail: 'muse has no model muse-wonder-full-1.0' }, { status: 'ok' }])
   const out = await s.run(MUSE, [GROK])
