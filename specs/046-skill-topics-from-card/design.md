@@ -17,7 +17,7 @@ Un agente nuevo y de solo lectura, `skill-scout`, lee la tarjeta y devuelve hast
 ## Comportamiento
 
 1. En el paso de skills de un `/aether:design` completo, antes de `aether-plan skills find`, el flujo llama a `skill-scout` en Haiku `high`, nativo y sin asiento externo, igual que el mapper.
-2. El agente devuelve `{ "topics": ["pixel-art", "postgres"] }`: de 0 a 3 temas. Cada tema es un identificador en inglés y minúsculas, de 1 a 3 palabras unidas por guiones, que cumple `^[a-z0-9]+(-[a-z0-9]+){0,2}$`. Una tarjeta sin un tema práctico devuelve una lista vacía.
+2. El agente devuelve `{ "topics": ["pixel-art", "postgres"] }`: de 0 a 3 temas. Cada tema es un identificador en inglés y minúsculas, de 1 a 3 palabras unidas por guiones, que cumple `^[a-z0-9]{1,24}(-[a-z0-9]{1,24}){0,2}$`, así que una respuesta desbordada de Haiku no se vuelve un comando ni una consulta enormes. Una tarjeta sin un tema práctico devuelve una lista vacía.
 3. El flujo descarta lo que no cumpla ese patrón y los repetidos, y conserva los 3 primeros.
 4. Si el agente falla, no responde, responde algo inválido o no queda ningún tema, el flujo lo registra en el log, deja `skills` con sus tres listas vacías, no llama a `find` y el diseño sigue. Nunca termina en fallo por esto.
 5. Con temas válidos, el flujo ejecuta `aether-plan skills find <feature> --topic <a> [--topic <b>] [--topic <c>]`.
@@ -26,10 +26,10 @@ Un agente nuevo y de solo lectura, `skill-scout`, lee la tarjeta y devuelve hast
 
 ## Cambios
 
-- **Nuevo `plugins/aether/agents/skill-scout.md`:** herramienta `Read`, modelo `haiku`, esfuerzo `high`, `maxTurns: 5`. El texto de la tarjeta son datos y sus instrucciones no se siguen. Responde solo con el JSON.
-- **`plugins/aether/workflows/design.workflow.js`:** `SKILL_SCOUT_PAIR`, `SKILL_SCOUT_SCHEMA`, el mensaje al agente y el inicio de `skillsStep`.
-- **`plugins/aether/hooks/ops-command.mjs`:** las formas de `skills find` con 1, 2 y 3 `--topic`, cada valor validado con el patrón del punto 2. La forma sin `--topic` se conserva.
-- **`plugins/aether/lib/skill-design.js`:** `main` acepta de 0 a 3 `--topic` válidos y distintos, y cualquier otra forma imprime el uso. `findForDesign` recibe `topics` y deja de leer `intent.md` y la tabla para decidir la búsqueda.
+- **Nuevo `plugins/aether/agents/skill-scout.md`:** herramienta `Read`, modelo `haiku`, esfuerzo `high`, `maxTurns: 5`. El mensaje del flujo da la ruta de `intent.md` (como `skillReviewMessage` da un directorio) y el agente la lee con `Read`. El texto de la tarjeta son datos y sus instrucciones no se siguen. Responde solo con el JSON.
+- **`plugins/aether/workflows/design.workflow.js`:** `SKILL_SCOUT_PAIR`, `SKILL_SCOUT_SCHEMA` (objeto con `topics`, un arreglo de cadenas con `maxItems: 3`), el mensaje al agente con la ruta de `intent.md` y el inicio de `skillsStep`.
+- **`plugins/aether/hooks/ops-command.mjs`:** las formas de `skills find` con 1, 2 y 3 `--topic`, cada valor validado con el patrón del punto 2 (en el mod, que lo repite, con los mismos límites). La forma sin `--topic` se conserva.
+- **`plugins/aether/lib/skill-design.js`:** `main` acepta de 0 a 3 `--topic` válidos y distintos, y cualquier otra forma imprime el uso; `SKILLS_USAGE` pasa a incluir `[--topic <t>]...` en `skills find`. `findForDesign` recibe `topics` y deja de leer `intent.md` y la tabla `topics` para decidir la búsqueda. `coveredIds` y `acceptedKeys` se calculan sobre los temas del agente (los recién armados con `id`, `label` y `skillKeywords`), no sobre `cfg.topics`: un tema cubierto por una skill instalada se salta y agrega sus claves a `acceptedKeys`, que sigue bloqueando una skill duplicada para el tema siguiente.
 - **`plugins/aether/config/skills.json`:** la tabla `topics` no cambia. Sigue sirviendo al aviso de arranque de `lib/skill-topics.js`.
 - **Documentos:** `docs/decisions.md` agrega A137, que modifica A136, y el rango pasa a `A1–A137` donde esté fijado. Se actualizan `plugins/aether/skills/designing/SKILL.md`, `plugins/aether/skills/skills/SKILL.md`, `docs/guide/project-files-and-skills.md`, `docs/es/guias/archivos-skills-y-continuidad.md`, `docs/guide/design-seats.md`, `docs/reference/components.md` y la lista de agentes de `AGENTS.md`.
 
@@ -48,11 +48,25 @@ Un agente nuevo y de solo lectura, `skill-scout`, lee la tarjeta y devuelve hast
 - `main` y el mod rechazan 4 temas, un tema repetido y valores con espacios, mayúsculas, `;`, `$` o `/`.
 - Un tema ya cubierto por una skill instalada no se busca.
 - El archivo del agente es de solo lectura, en Haiku, y dice que la tarjeta son datos.
+- Un tema del agente cubierto por una skill instalada se salta y no deja pasar una skill duplicada para el tema siguiente.
+- Un tema con una palabra de más de 24 caracteres se descarta en el flujo, en el mod y en `main`.
+- `SKILLS_USAGE` nombra `--topic`.
+
+### Pruebas visibles que se reescriben
+
+Estas pruebas describen el comportamiento que este diseño reemplaza; la construcción las reescribe para que una construcción correcta no se juzgue con ellas:
+
+- `tests/defect-045-skills-step.test.js` (líneas 71-72): el flujo llama a `aether-plan skills find ${FEATURE} --topic ...` con los temas del agente, antes de `requirements`.
+- `tests/workflow-design.test.js` (línea 17): `ROLES` agrega `skill-scout`, y el arnés del flujo responde `skill-scout` con un stub (`{ topics: [] }` por defecto).
+- `tests/skill-design.test.js` (línea 772 y las llamadas a `findForDesign` por palabras de la tarjeta): el texto de uso nuevo, y `findForDesign` recibe `topics`.
+- `tests/ops-command-design.test.js` (líneas 99-122): las formas de `skills find` con `--topic`, válidas e inválidas.
+- `plugins/aether/hooks/ops.test.ts` (línea 389): `skills find` con `--topic` corre en el mod.
 
 ## Supuestos
 
+- La relevancia usa el `id` y el `label` del propio tema (`matchesKeys`); los sinónimos curados de la tabla ya no se aplican. Es más débil para variantes como `postgres` y `postgresql`, y es lo que el dueño aprobó con «la relevancia usa esos temas».
 - Los temas van en inglés porque las skills de los autores de confianza tienen nombres y descripciones en inglés. Si un tema no encuentra nada, el diseño sigue.
-- Las pruebas del examen oculto de la spec 045 que activan la búsqueda por las palabras de la tabla describen el comportamiento que este diseño reemplaza. Se reportan como obsoletas en el brief, sin borrar ese examen.
+- Las pruebas del examen oculto de la spec 045 que activan la búsqueda por las palabras de la tabla describen el comportamiento que este diseño reemplaza. Se reportan como obsoletas en el brief, sin borrar ese examen. Si el examen oculto de la spec 045 forma parte de la compuerta de la construcción, el Lead decide antes de lanzarla.
 
 ## Fuera de alcance
 
