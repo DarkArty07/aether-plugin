@@ -3,7 +3,8 @@
 // Search, review and byte-for-byte install of skills for full `/aether:design`
 // runs (spec 045, R22-R25): topics activate only from intent.md words, covered
 // topics are never searched, trusted authors are downloaded once and pass a
-// deterministic code stage, and anything else is queued in .aether/pending.jsonl.
+// deterministic code stage, and anything else is queued in the owner's list
+// (pending.jsonl under .aether/).
 // Family: skill.
 
 const fs = require('node:fs')
@@ -29,17 +30,14 @@ function worktreeOf(cwd) {
   }
 }
 
-function fold(text) {
-  return String(text || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
-}
-
 // A whole word or its plural, accents folded: never part of a longer word.
 function wordHit(text, word) {
-  const wanted = fold(word).trim()
+  const normalize = (value) => String(value || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
+  const wanted = normalize(word).trim()
   if (!wanted) return false
   const parts = wanted.split(/\s+/).map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   const pattern = `${parts.join('\\s+')}(?:e?s)?`
-  return new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, 'u').test(fold(text))
+  return new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, 'u').test(normalize(text))
 }
 
 function topicKeys(topic) {
@@ -314,7 +312,7 @@ function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now }
   const acceptedKeys = new Set()
   for (const topic of topics) {
     if (!coveredIds.has(topic.id)) continue
-    for (const key of topicKeys(topic)) acceptedKeys.add(fold(key))
+  for (const key of topicKeys(topic)) acceptedKeys.add(String(key).toLowerCase().normalize('NFD').replace(/\p{M}/gu, ''))
   }
   const result = { ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] }
   const { cmd, prefix } = installLib.skillsBin(env)
