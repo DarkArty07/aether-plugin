@@ -75,6 +75,15 @@ test('grok parse carries a cut-off stop reason, and drops end_turn or a missing 
   assert.equal(Object.hasOwn(missing, 'stopReason'), false)
 })
 
+test('grok parse carries a refusal stop reason', () => {
+  const { createGrok } = require('../plugins/aether/lib/harness/grok.js')
+  const grok = createGrok({ groups: { grok: 'Grok models' } })
+  const answer = JSON.stringify({ answer: 'x' })
+  const refused = grok.parse({ stdout: JSON.stringify({ result: answer, stopReason: 'refusal' }), stderr: '', exitCode: 0 }, { required: ['answer'] })
+  assert.equal(refused.clean, true)
+  assert.equal(refused.stopReason, 'refusal')
+})
+
 test('agy, codex and muse parse() never return a stop reason', () => {
   const { createAgy } = require('../plugins/aether/lib/harness/agy.js')
   const { createCodex } = require('../plugins/aether/lib/harness/codex.js')
@@ -111,4 +120,31 @@ test('a runTask whose chain stopped short keeps the judge line and stays pending
   const whole = await run.runTask({ id: 'ro-whole', session: 's1', cwd: repo2.dir, dataDir: dataDir2 }, { runChain: async () => ({ ok: true, status: 'ok', text: 'the answer', attribution: 'a', attempts: [], changed: [] }) })
   assert.match(whole.text, /Closed by the system as approved: the read-only checks passed/)
   assert.deepEqual(unverdictedDelegates({ dataDir: dataDir2, session: 's1' }), [])
+})
+
+test('a runTask the grok turn cut off or refused stays pending, and end_turn closes it', async (t) => {
+  const run = require('../plugins/aether/lib/delegate-run.js')
+  const EXTERNAL = { lanes: true, harnesses: ['grok'], deadlines: { quotaMs: 1 } }
+  const GROK = { id: 'grok/grok-4.7@high', harness: 'grok', model: 'grok-4.7', effort: 'high', group: 'grok' }
+  const setup = async (id) => {
+    const repo = makeRepo(t)
+    const dataDir = tempDir(t, 'aether-data-')
+    let n = 0
+    const deps = { dataDir, cwd: repo.dir, now: () => 1000 + (n += 1), settings: EXTERNAL, newId: () => `gen-${n}`, pickPair: async () => ({ pick: GROK, quota: [] }) }
+    await task.begin({ session: 's1', event: { subagent_type: 'general-purpose', description: 'd', prompt: `AETHER-TASK: ${id}\nDo the work.` } }, deps)
+    return { repo, dataDir }
+  }
+  for (const stopReason of ['length', 'refusal', 'content_filter']) {
+    const id = `ro-${stopReason}`
+    const { repo, dataDir } = await setup(id)
+    const out = await run.runTask({ id, session: 's1', cwd: repo.dir, dataDir }, { runChain: async () => ({ ok: true, status: 'ok', text: 'cut', attribution: 'a', stopReason, attempts: [], changed: [] }) })
+    assert.match(out.text, new RegExp(`Judge it: aether-delegate verdict --task ${id} --verdict approve\\|fix\\|infeasible`), stopReason)
+    assert.doesNotMatch(out.text, /Closed by the system/, stopReason)
+    assert.deepEqual(unverdictedDelegates({ dataDir, session: 's1' }).map((x) => x.task), [id], stopReason)
+    assert.deepEqual(log.readEntries(dataDir, { task: id }).filter((e) => e.kind === 'verdict'), [], stopReason)
+  }
+  const { repo, dataDir } = await setup('ro-ended')
+  const whole = await run.runTask({ id: 'ro-ended', session: 's1', cwd: repo.dir, dataDir }, { runChain: async () => ({ ok: true, status: 'ok', text: 'the answer', attribution: 'a', stopReason: 'end_turn', attempts: [], changed: [] }) })
+  assert.match(whole.text, /Closed by the system as approved: the read-only checks passed/)
+  assert.deepEqual(unverdictedDelegates({ dataDir, session: 's1' }), [])
 })

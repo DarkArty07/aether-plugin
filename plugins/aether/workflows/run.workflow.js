@@ -2012,10 +2012,6 @@ async function reviewRunSliced(pkg, slices, { model, effort, chosen }) {
     if (READINESS[checked.verdict] > READINESS[verdict]) verdict = checked.verdict
     summaries.push(`Slice ${i + 1} (${slices[i].map((u) => u.id).join(', ')}): ${checked.summary || ''}`)
   })
-  if (missing !== null) {
-    const reason = blocked ? `slice ${missing} of ${slices.length} was blocked: ${blocked}` : `slice ${missing} of ${slices.length} ended without its answer; it may have run out of turns`
-    return { status: 'failed', reason, findings, declined, slices: slices.length, slicesBy, ...chosen }
-  }
   const kept = []
   let minorsKept = 0
   for (const finding of findings) {
@@ -2025,6 +2021,10 @@ async function reviewRunSliced(pkg, slices, { model, effort, chosen }) {
     }
   }
   const minorsOmitted = findings.length - kept.length
+  if (missing !== null) {
+    const reason = blocked ? `slice ${missing} of ${slices.length} was blocked: ${blocked}` : `slice ${missing} of ${slices.length} ended without its answer; it may have run out of turns`
+    return { status: 'failed', reason, findings: kept, declined, slices: slices.length, slicesBy, ...(minorsOmitted > 0 ? { minorsOmitted } : {}), ...chosen }
+  }
   const summary = summaries.join('\n')
   const provider = slicesBy.every((by) => by === 'native') ? 'native' : slicesBy.includes('native') || new Set(slicesBy).size > 1 ? 'mixed' : slicesBy[0]
   if (minorsOmitted === 0) return { status: 'done', provider, verdict, findings: kept, declined, summary, slices: slices.length, slicesBy, ...chosen }

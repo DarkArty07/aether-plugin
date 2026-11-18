@@ -52,6 +52,34 @@ test('R8: four slices of six minors and one important give four importants, ten 
   assert.ok(f.summary.includes('14 minor findings were omitted'))
 })
 
+test('R8: a slice with no answer still caps at 10 minors and keeps the important finding', async (t) => {
+  const units = [task(1, { area: 'a1' }), task(2, { area: 'a2' }), task(3, { area: 'a3' })]
+  const minorsOf = (n, count) => Array.from({ length: count }, (_, i) => minor(n, i))
+  const run = await runWorkflow(compile(makeRepo(t), plan(units)), {
+    reviewer: (call) => {
+      const m = /slice (\d+)\//.exec(call.label || '')
+      const n = m ? Number(m[1]) : call.n
+      if (n === 1) return null
+      if (n === 2) return { verdict: 'ready-with-fixes', findings: minorsOf(2, 7), declined: [], summary: 'slice 2' }
+      return { verdict: 'ready-with-fixes', findings: [...minorsOf(3, 6), important(3)], declined: [], summary: 'slice 3' }
+    },
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  const f = run.result.finalReview
+  assert.equal(f.status, 'failed')
+  assert.match(f.reason, /slice 1 of 3/)
+  assert.deepEqual(
+    f.findings.filter((x) => x.severity === 'important').map((x) => x.title),
+    ['s3-important'],
+  )
+  const minors = f.findings.filter((x) => x.severity === 'minor').map((x) => x.title)
+  assert.equal(minors.length, 10)
+  assert.deepEqual(minors.slice(0, 7), ['s2-minor-1', 's2-minor-2', 's2-minor-3', 's2-minor-4', 's2-minor-5', 's2-minor-6', 's2-minor-7'])
+  assert.deepEqual(minors.slice(7), ['s3-minor-1', 's3-minor-2', 's3-minor-3'])
+  assert.equal(f.minorsOmitted, 3)
+  assert.equal(f.verdict, undefined, 'part of a review is never a verdict')
+})
+
 test('R8: with ten minors or fewer minorsOmitted is absent', async (t) => {
   const two = [1, 2].map((n) => Array.from({ length: 3 }, (_, i) => minor(n, i)))
   const result = await runSlicedReview(t, two)
