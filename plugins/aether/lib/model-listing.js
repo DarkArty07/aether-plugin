@@ -195,7 +195,8 @@ async function listModels(harnessName, options = {}) {
     const defaultTimeout = (typeof config.perHarnessSeconds === 'number' ? config.perHarnessSeconds : 10) * 1000
     const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : defaultTimeout
     const { listMuseModels } = require('./muse-models.js')
-    return listMuseModels({ command, env, timeoutMs })
+    const { laneEnv } = require('./lane-process.js')
+    return listMuseModels({ command, env: { ...laneEnv(env, 'muse-models'), MUSE_NO_AUTO_UPDATE: '1' }, timeoutMs })
   }
   if (typeof entry.file === 'string') {
     return readCacheFile(entry.file, home)

@@ -141,6 +141,67 @@ test('listModels: handles ok, failed, timeout, not-installed, no-capture, and co
   assert.deepEqual(codex, { status: 'ok', ids: ['gpt-6.1-sol', 'gpt-6.1-terra'] })
 })
 
+test('listModels: muse serve gets a scrubbed env with auto-update off', async (t) => {
+  const dir = tempDir(t)
+  const configPath = path.join(dir, 'model-watch.json')
+  fs.writeFileSync(configPath, JSON.stringify({
+    perHarnessSeconds: 2,
+    totalSeconds: 10,
+    captureVia: { muse: { msp: true } },
+  }))
+  const lanesConfigPath = path.join(dir, 'lanes.json')
+  fs.writeFileSync(lanesConfigPath, JSON.stringify({ harnesses: {} }))
+
+  const binDir = tempDir(t)
+  const fake = path.join(binDir, 'muse')
+  fs.writeFileSync(fake, `#!/usr/bin/env node
+'use strict'
+const fs = require('node:fs')
+const path = require('node:path')
+const dir = ${JSON.stringify(dir)}
+fs.writeFileSync(path.join(dir, 'env.json'), JSON.stringify(process.env))
+let buf = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', (chunk) => {
+  buf += chunk
+  let idx
+  while ((idx = buf.indexOf('\\n')) >= 0) {
+    const line = buf.slice(0, idx)
+    buf = buf.slice(idx + 1)
+    if (!line.trim()) continue
+    let msg
+    try { msg = JSON.parse(line) } catch { continue }
+    if (msg.method === 'initialize') {
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { serverInfo: { name: 'muse' } } }) + '\\n')
+    } else if (msg.method === 'model/list') {
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: 2, result: { models: [{ modelId: 'muse-wonder-1.0' }, { modelId: 'muse-ember-1.0' }] } }) + '\\n')
+    }
+  }
+})
+`)
+  fs.chmodSync(fake, 0o755)
+
+  const found = await listModels('muse', {
+    env: {
+      ...process.env,
+      PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
+      META_API_KEY: 'owner-secret-1',
+      SOME_SECRET_TOKEN: 'owner-secret-2',
+    },
+    configPath,
+    lanesConfigPath,
+    timeoutMs: 5000,
+  })
+  assert.deepEqual(found, { status: 'ok', ids: ['muse-wonder-1.0', 'muse-ember-1.0'] })
+
+  const seen = JSON.parse(fs.readFileSync(path.join(dir, 'env.json'), 'utf8'))
+  assert.equal(seen.MUSE_NO_AUTO_UPDATE, '1')
+  assert.ok(!Object.hasOwn(seen, 'META_API_KEY'), 'owner api key stays out of the muse process')
+  assert.ok(!Object.hasOwn(seen, 'SOME_SECRET_TOKEN'), 'owner secret token stays out of the muse process')
+  assert.ok(typeof seen.PATH === 'string' && seen.PATH.includes(binDir), 'PATH still reaches the process')
+  assert.ok(typeof seen.HOME === 'string' && seen.HOME.length > 0, 'HOME still reaches the process')
+})
+
 test('model-watch.json captureVia only uses ["models"], a cache file or the muse serve reading (R1)', () => {
   const cfg = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'config', 'model-watch.json'), 'utf8'))
   assert.equal(cfg.perHarnessSeconds, 10)
