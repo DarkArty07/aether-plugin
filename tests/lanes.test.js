@@ -135,7 +135,7 @@ test('the shipped table has codex with its three models, cursor without models, 
   const config = shipped()
   assert.deepEqual(Object.keys(config.harnesses), ['agy', 'codex', 'grok', 'cursor', 'muse'])
   assert.deepEqual(config.harnesses.cursor.models, {})
-  assert.deepEqual(Object.keys(config.harnesses.codex.models), ['gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna'])
+  assert.deepEqual(Object.keys(config.harnesses.codex.models), ['gpt-6.2-sol', 'gpt-6.1-terra', 'gpt-6-luna'])
   assert.deepEqual(config.harnesses.cursor.command, 'cursor-agent')
   // grok-4.7-build-fast is the same model faster and twice the price: it is not a lane model.
   assert.deepEqual(Object.keys(config.harnesses.grok.models), ['grok-4.7'])

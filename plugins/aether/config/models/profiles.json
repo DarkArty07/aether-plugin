@@ -291,6 +291,48 @@
       ],
       "checked": "2026-10-29"
     },
+    "gpt-6-2-sol": {
+      "name": "GPT-6.2 Sol",
+      "maker": "OpenAI",
+      "released": null,
+      "purpose": "«Fast, go-to model for coding and everyday work.»",
+      "contextTokens": 500000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "low",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": { "input": 2, "output": 10, "note": "per million tokens" },
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "~/.codex/models_cache.json (codex-cli 0.166.0, read 2026-11-17)",
+        "plugins/aether/config/models/aa-pages.json"
+      ],
+      "checked": "2026-11-17"
+    },
+    "gpt-6-2-astra": {
+      "name": "GPT-6.2 Astra",
+      "maker": "OpenAI",
+      "released": null,
+      "purpose": "«Our most capable model for complex coding and professional work.»",
+      "contextTokens": 272000,
+      "maxOutputTokens": null,
+      "inputs": ["text"],
+      "outputs": ["text"],
+      "defaultEffort": "low",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "price": { "input": 8, "output": 40, "note": "per million tokens" },
+      "knowledgeCutoff": null,
+      "availability": "Codex CLI (codex exec).",
+      "caveats": [],
+      "sources": [
+        "~/.codex/models_cache.json (codex-cli 0.166.0, read 2026-11-17)",
+        "plugins/aether/config/models/aa-pages.json"
+      ],
+      "checked": "2026-11-17"
+    },
     "gpt-6-1-terra": {
       "name": "GPT-6.1 Terra",
       "maker": "OpenAI",

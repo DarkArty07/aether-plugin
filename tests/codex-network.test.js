@@ -154,7 +154,7 @@ test('a design seat on Codex runs with the network closed (issue 189)', (t) => {
   repo.git('add', '-A')
   repo.git('commit', '-q', '-m', 'spec')
   // The shipped table gives Codex no design seat: this test lets Sol judge, and nothing else changes.
-  const env = codexEnv(t, [answering(JUDGE)], (config) => { config.harnesses.codex.models['gpt-6.1-sol'].roles.push('judge') })
+  const env = codexEnv(t, [answering(JUDGE)], (config) => { config.harnesses.codex.models['gpt-6.2-sol'].roles.push('judge') })
   const dir = path.join(repo.dir, '.aether', 'tmp', 'seats', 's1')
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'message.md'), 'Review.\n')

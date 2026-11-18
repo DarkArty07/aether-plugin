@@ -145,13 +145,13 @@ test('a reviewer gets the structured object it asked for, and a missing field or
   assert.equal(runBin(WT_BIN, ['merge', args.runId, 'task-1'], args.repoRoot).json.merged, true)
   runBin(WT_BIN, ['diff', args.runId, '--final'], args.repoRoot)
   const env = codexEnv(t, {})
-  const reviewFlags = { role: 'reviewer', task: null, model: 'gpt-6.1-sol', effort: 'high' }
+  const reviewFlags = { role: 'reviewer', task: null, model: 'gpt-6.2-sol', effort: 'high' }
 
   const review = (call, script) => {
     const digest = fx.writePrompt(args, call, 'Final review.')
     const start = fx.lane(args, 'start', [call, ...flags(digest, reviewFlags)], setScript(env, script))
     assert.equal(start.json.started, true, start.stdout + start.stderr)
-    assert.equal(start.json.model, 'gpt-6.1-sol')
+    assert.equal(start.json.model, 'gpt-6.2-sol')
     return fx.waitDone(args, call, env)
   }
   const prose = [
@@ -272,7 +272,7 @@ test('the quota view and the choice treat Codex as any harness (R10)', (t) => {
     reference: { model: 'sonnet', effort: 'high' },
     harnesses: { codex: report.json.harnesses.codex },
   })
-  assert.equal(decision.picked.id, 'codex/gpt-6.1-terra@high')
+  assert.equal(decision.picked.id, 'codex/gpt-6.2-sol@low')
 })
 
 test('an editing delegate runs on Codex in its own worktree and comes back as a unit branch the Lead merges, and its reviewer is another pair (R20)', (t) => {
@@ -294,9 +294,9 @@ test('an editing delegate runs on Codex in its own worktree and comes back as a 
   assert.equal(repo.git('status', '--porcelain'), '')
   assert.equal(repo.git('rev-parse', 'HEAD'), headBefore)
   assert.equal(json.review.status, 'done')
-  // The review excludes the author's pair, Terra low, and of the Codex models only Sol takes the reviewer role: the review goes to Sol medium.
+  // The review excludes the author's pair, Terra low, and of the Codex models only Sol takes the reviewer role: the review goes to Sol low.
   assert.notEqual(json.review.pair.id, json.pair.id)
-  assert.equal(json.review.pair.id, 'codex/gpt-6.1-sol@medium')
+  assert.equal(json.review.pair.id, 'codex/gpt-6.2-sol@low')
   assert.equal(json.review.verdict, 'ready')
 })
 

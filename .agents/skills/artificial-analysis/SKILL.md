@@ -38,10 +38,10 @@ The model pages are the **only source** by the owner's decision: the owner wants
 
 ## The top tier waits for its next generation
 
-The owner's rule (A43 for Fable, extended to GPT-6 Astra on 2026-10-29): the top model of a line stays out of use while a much cheaper model, from the same maker or another, reaches nearly the same points. It re-enters with the next generation of that top tier, not before, and then it is measured again like any new model.
+The owner's rule (A43 for Fable; GPT-6 Astra has its own decision, below): the top model of a line stays out of use while a much cheaper model, from the same maker or another, reaches nearly the same points. It re-enters with the next generation of that top tier, not before, and then it is measured again like any new model.
 
 - **Fable 5.1** is out until Fable 5.5. On 2026-10-26 Opus 5.5 `high` scored 53.6 against Fable's 53.4 at US$ 1.82 per index task against US$ 7.63 (`docs/models/artificial-analysis-2026-10-26.md`), and Opus `max` scored 57.6.
-- **GPT-6 Astra** is out until GPT-6.1 Astra. On 2026-10-29 Astra `max` scored 56.9 in intelligence and 59.1 % in Terminal-Bench 4.0 against GPT-6.1 Sol `max` at 54.5 and 56.1 %, a gap of 2.4 points, and Sol costs a fifth per token (2 / 10 against 10 / 50 US$/M).
+- **GPT-6 Astra** stays out by the owner's decision of 2026-11-17 (A133): it sits at Fable's level of cost and intelligence and Aether does not use that tier, so no later Astra re-enters by itself. On 2026-11-17 GPT-6.2 Astra `high` scored 60.1 at US$ 2.07 per index task against GPT-6.2 Sol `max` at 57.3 and US$ 1.01.
 - **How to apply it.** When a harness brings its models, set its top tier against the best cheaper model in reach with same-day figures, and write down the points and the dollars of both. If the cheaper one nearly matches it, the top tier goes to the `excluded` list of the harness (`harness-models.json`, then `models.json`) with the reason, the owner's words and the model whose release reopens the question. How near is "nearly" is the owner's call: bring him the gap and the price, not a threshold of your own.
 - **What it is not.** It is not a ban on a line. The middle and low tiers (Sol, Terra and Luna; Sonnet and Haiku) are the ones Aether uses, and a top tier is measured at once when its next generation is listed.
 

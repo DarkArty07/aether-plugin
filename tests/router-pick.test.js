@@ -33,7 +33,7 @@ const MUSE = { readAt: NOW - MIN, groups: { muse: { windows: { '5h': win(1, 5), 
 // Codex: one model with the three roles in the copy of the table, one pair, and a reading whose weekly window renews in `hours`.
 // The other Codex models stay: the test of the real pairs table reads this same copy.
 config.harnesses.codex.models = {
-  'gpt-6.1-sol': { group: 'codex', roles: ['implementer', 'supervisor', 'reviewer'] },
+  'gpt-6.2-sol': { group: 'codex', roles: ['implementer', 'supervisor', 'reviewer'] },
   'gpt-6.1-terra': config.harnesses.codex.models['gpt-6.1-terra'],
   'gpt-6-luna': config.harnesses.codex.models['gpt-6-luna'],
 }
@@ -53,7 +53,7 @@ const PAIRS = [
   external('agy', 'claude-sonnet-5-5', 'high', 'claude', 46.8, 0.88),
   external('grok', 'grok-4.7', 'high', 'grok', 46.3, 2.73),
   external('muse', 'muse-wonder-full-1.0', 'high', 'muse', 53.6, null, { ownerDecision: 'by the owner' }),
-  external('codex', 'gpt-6.1-sol', 'medium', 'codex', 46.1, 0.115),
+  external('codex', 'gpt-6.2-sol', 'medium', 'codex', 46.1, 0.115),
 ]
 const SONNET_HIGH = { model: 'sonnet', effort: 'high' }
 
@@ -154,7 +154,7 @@ test('a harness that is not enabled or not installed gives nothing, and cursor i
 test('Codex takes a call when it is enabled and its quota is the one that renews first, at its pair that reaches the points (R20)', async () => {
   const s = setup({ settings: { harnesses: ALL_FOUR }, readings: { ...GOOD, codex: CODEX(10) } })
   const step = await pairStep(s.d, s.merged, { reference: SONNET_HIGH })
-  assert.equal(idOf(step), 'codex/gpt-6.1-sol@medium')
+  assert.equal(idOf(step), 'codex/gpt-6.2-sol@medium')
   assert.deepEqual(s.renewed, [])
 })
 

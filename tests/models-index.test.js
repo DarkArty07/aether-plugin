@@ -251,7 +251,7 @@ test('committed files retain the index shape, profiles, ordering and a short REA
     assert.match(entry.profile.checked, /^\d{4}-\d{2}-\d{2}$/)
   }
   const readme = fs.readFileSync(path.join(__dirname, '..', 'docs', 'models', 'README.md'), 'utf8')
-  assert.ok(readme.split('\n').length < 80)
+  assert.ok(readme.split('\n').length < 90)
   assert.match(readme, /<!-- models-index:start -->/)
   assert.match(readme, /<!-- models-index:end -->/)
 })

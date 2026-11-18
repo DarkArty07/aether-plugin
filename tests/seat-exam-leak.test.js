@@ -20,7 +20,7 @@ const OPTIONS = ['--superdelegation', 'on', '--harnesses', 'agy']
 const FAKE_CODEX = path.join(__dirname, 'fixtures', 'fake-codex.js')
 const RATE_LIMITS = path.join(__dirname, 'fixtures', 'codex', 'rate-limits.json')
 const CODEX_OPTIONS = ['--superdelegation', 'on', '--harnesses', 'codex']
-const CODEX_MODEL = 'gpt-6.1-sol'
+const CODEX_MODEL = 'gpt-6.2-sol'
 const JUDGE_ANSWER = { verdict: 'approve', findings: [], openQuestions: [] }
 const TEST_FILE = '.aether/exam/c1.test.js'
 const SECRET = 'LEAK-SECRET-184'
@@ -38,7 +38,7 @@ const grantOpusSeats = (cfg) => {
     cfg.harnesses.agy.models['claude-opus-5-5'].roles.push('judge', 'examiner')
   }
 }
-// The shipped table gives codex no Examiner role; Sol (54.5) is the codex model above the floor Opus high sets (51.7).
+// The shipped table gives codex no Examiner role; Sol (57.3) is the codex model above the floor Opus high sets (51.8).
 const grantCodexSeats = (cfg) => {
   const model = cfg?.harnesses?.codex?.models?.[CODEX_MODEL]
   if (model?.roles && !model.roles.includes('examiner')) model.roles.push('examiner')

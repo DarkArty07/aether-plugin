@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-11-14",
+  "generatedAt": "2026-11-17",
   "source": "plugins/aether/config/models/aa-pages.json, from the model pages https://artificialanalysis.ai/models/<slug>",
   "harnesses": ["claude","agy","codex","grok","muse"],
-  "listedOn": {"claude":"2026-10-14","agy":"2026-11-13","codex":"2026-10-29","grok":"2026-10-13","muse":"2026-10-27"},
+  "listedOn": {"claude":"2026-10-14","agy":"2026-11-13","codex":"2026-11-17","grok":"2026-10-13","muse":"2026-10-27"},
   "rules": {
     "newest": "Only the newest generation of each line is used (Sonnet 5.5, not Sonnet 5): an older one is declared superseded in harness-models.json, with its reason and date.",
     "offered": "Only a model the CLI of a chosen harness lists is in, whatever Artificial Analysis lists; a model only the lane table names is not offered.",
@@ -20,11 +20,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":18.6,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":210,"ttftSeconds":5.83},
-        {"effort":"medium","intelligence":24.6,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":220.7,"ttftSeconds":10.89},
-        {"effort":"high","intelligence":29.9,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":224.4,"ttftSeconds":22.04},
-        {"effort":"xhigh","intelligence":34.6,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":231.1,"ttftSeconds":58.98},
-        {"effort":"max","intelligence":36.5,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":254.1,"ttftSeconds":182.97}
+        {"effort":"low","intelligence":18.6,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":213.5,"ttftSeconds":5.61},
+        {"effort":"medium","intelligence":24.6,"terminalBench":0.152,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":225,"ttftSeconds":10.19},
+        {"effort":"high","intelligence":29.9,"terminalBench":0.217,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":226.9,"ttftSeconds":19.69},
+        {"effort":"xhigh","intelligence":34.6,"terminalBench":0.293,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":235.9,"ttftSeconds":44.47},
+        {"effort":"max","intelligence":36.5,"terminalBench":0.328,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":255.4,"ttftSeconds":190.13}
       ],
       "lane": null,
       "profile": {
@@ -65,11 +65,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":34.8,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":105,"ttftSeconds":5.36},
-        {"effort":"medium","intelligence":48.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":105.9,"ttftSeconds":16.66},
-        {"effort":"high","intelligence":51.8,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":106.1,"ttftSeconds":28.25},
-        {"effort":"xhigh","intelligence":57.4,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":110.9,"ttftSeconds":88.37},
-        {"effort":"max","intelligence":59.1,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":114.5,"ttftSeconds":399.11}
+        {"effort":"low","intelligence":34.8,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":105.4,"ttftSeconds":4.88},
+        {"effort":"medium","intelligence":48.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":106.7,"ttftSeconds":11.53},
+        {"effort":"high","intelligence":51.8,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":107.9,"ttftSeconds":19.81},
+        {"effort":"xhigh","intelligence":57.4,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":110.3,"ttftSeconds":63.37},
+        {"effort":"max","intelligence":59.1,"terminalBench":0.596,"priceInput":4,"priceOutput":20,"tokensPerSecond":117.8,"ttftSeconds":355.12}
       ],
       "lane": null,
       "profile": {
@@ -96,11 +96,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":25.6,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":134.9,"ttftSeconds":2.28},
-        {"effort":"medium","intelligence":30.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":131.5,"ttftSeconds":4.41},
-        {"effort":"high","intelligence":41.5,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":144.3,"ttftSeconds":10.31},
-        {"effort":"xhigh","intelligence":49.9,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":141.9,"ttftSeconds":30.3},
-        {"effort":"max","intelligence":54.5,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":141.6,"ttftSeconds":292.1}
+        {"effort":"low","intelligence":25.6,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":135.5,"ttftSeconds":2.52},
+        {"effort":"medium","intelligence":30.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":136.7,"ttftSeconds":5.2},
+        {"effort":"high","intelligence":41.5,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":143.7,"ttftSeconds":9.56},
+        {"effort":"xhigh","intelligence":49.9,"terminalBench":0.571,"priceInput":2,"priceOutput":10,"tokensPerSecond":143.3,"ttftSeconds":28.12},
+        {"effort":"max","intelligence":54.5,"terminalBench":0.636,"priceInput":2,"priceOutput":10,"tokensPerSecond":147.1,"ttftSeconds":290.29}
       ],
       "lane": null,
       "profile": {
@@ -127,9 +127,9 @@
       "efforts": ["low","medium","high"],
       "ids": {"low":"claude-opus-5-5-low","medium":"claude-opus-5-5-medium","high":"claude-opus-5-5-high"},
       "scores": [
-        {"effort":"low","intelligence":34.8,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":105,"ttftSeconds":5.36},
-        {"effort":"medium","intelligence":48.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":105.9,"ttftSeconds":16.66},
-        {"effort":"high","intelligence":51.8,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":106.1,"ttftSeconds":28.25}
+        {"effort":"low","intelligence":34.8,"terminalBench":0.313,"priceInput":4,"priceOutput":20,"tokensPerSecond":105.4,"ttftSeconds":4.88},
+        {"effort":"medium","intelligence":48.2,"terminalBench":0.525,"priceInput":4,"priceOutput":20,"tokensPerSecond":106.7,"ttftSeconds":11.53},
+        {"effort":"high","intelligence":51.8,"terminalBench":0.566,"priceInput":4,"priceOutput":20,"tokensPerSecond":107.9,"ttftSeconds":19.81}
       ],
       "lane": {"roles":["implementer","reviewer"]},
       "profile": {
@@ -156,9 +156,9 @@
       "efforts": ["low","medium","high"],
       "ids": {"low":"claude-sonnet-5-5-low","medium":"claude-sonnet-5-5-medium","high":"claude-sonnet-5-5-high"},
       "scores": [
-        {"effort":"low","intelligence":25.6,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":134.9,"ttftSeconds":2.28},
-        {"effort":"medium","intelligence":30.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":131.5,"ttftSeconds":4.41},
-        {"effort":"high","intelligence":41.5,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":144.3,"ttftSeconds":10.31}
+        {"effort":"low","intelligence":25.6,"terminalBench":0.207,"priceInput":2,"priceOutput":10,"tokensPerSecond":135.5,"ttftSeconds":2.52},
+        {"effort":"medium","intelligence":30.8,"terminalBench":0.298,"priceInput":2,"priceOutput":10,"tokensPerSecond":136.7,"ttftSeconds":5.2},
+        {"effort":"high","intelligence":41.5,"terminalBench":0.439,"priceInput":2,"priceOutput":10,"tokensPerSecond":143.7,"ttftSeconds":9.56}
       ],
       "lane": {"roles":["implementer","supervisor"]},
       "profile": {
@@ -256,11 +256,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":9.7,"terminalBench":0,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":88.2,"ttftSeconds":3.34},
-        {"effort":"medium","intelligence":18.5,"terminalBench":0.025,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":92.1,"ttftSeconds":6.49},
-        {"effort":"high","intelligence":21.4,"terminalBench":0.045,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":94.4,"ttftSeconds":13.37},
-        {"effort":"xhigh","intelligence":23.5,"terminalBench":0.081,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":98.2,"ttftSeconds":20.35},
-        {"effort":"max","intelligence":27.9,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":103.1,"ttftSeconds":86.56}
+        {"effort":"low","intelligence":9.7,"terminalBench":0,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":88.4,"ttftSeconds":2.48},
+        {"effort":"medium","intelligence":18.5,"terminalBench":0.025,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":95.4,"ttftSeconds":5.27},
+        {"effort":"high","intelligence":21.4,"terminalBench":0.045,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":94.4,"ttftSeconds":9.44},
+        {"effort":"xhigh","intelligence":23.5,"terminalBench":0.081,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":99.9,"ttftSeconds":15.71},
+        {"effort":"max","intelligence":27.9,"terminalBench":0.126,"priceInput":0.1,"priceOutput":0.5,"tokensPerSecond":103.7,"ttftSeconds":64.04}
       ],
       "lane": {"roles":["implementer"]},
       "profile": {
@@ -278,36 +278,6 @@
     },
     {
       "harness": "codex",
-      "model": "gpt-6.1-sol",
-      "family": "gpt-6-1-sol",
-      "name": "GPT-6.1 Sol",
-      "maker": "OpenAI",
-      "released": "2026-09-29",
-      "effortVia": "flag",
-      "efforts": ["low","medium","high","xhigh","max"],
-      "scores": [
-        {"effort":"low","intelligence":34.8,"terminalBench":0.308,"priceInput":2,"priceOutput":10,"tokensPerSecond":48.3,"ttftSeconds":3.14},
-        {"effort":"medium","intelligence":46.3,"terminalBench":0.48,"priceInput":2,"priceOutput":10,"tokensPerSecond":49.3,"ttftSeconds":5.2},
-        {"effort":"high","intelligence":50.3,"terminalBench":0.515,"priceInput":2,"priceOutput":10,"tokensPerSecond":48.1,"ttftSeconds":40.91},
-        {"effort":"xhigh","intelligence":52.5,"terminalBench":0.54,"priceInput":2,"priceOutput":10,"tokensPerSecond":48.9,"ttftSeconds":82.55},
-        {"effort":"max","intelligence":54.6,"terminalBench":0.561,"priceInput":2,"priceOutput":10,"tokensPerSecond":48.6,"ttftSeconds":197.65}
-      ],
-      "lane": {"roles":["implementer","supervisor","reviewer"]},
-      "profile": {
-        "purpose": "«Latest workhorse model for coding and everyday work.»",
-        "contextTokens": 500000,
-        "maxOutputTokens": null,
-        "defaultEffort": "low",
-        "price": {"input":2,"output":10,"note":"per million tokens"},
-        "knowledgeCutoff": null,
-        "availability": "Codex CLI (codex exec).",
-        "caveats": [],
-        "sources": ["https://platform.openai.com/docs/models"],
-        "checked": "2026-10-29"
-      }
-    },
-    {
-      "harness": "codex",
       "model": "gpt-6.1-terra",
       "family": "gpt-6-1-terra",
       "name": "GPT-6.1 Terra",
@@ -316,11 +286,11 @@
       "effortVia": "flag",
       "efforts": ["low","medium","high","xhigh","max"],
       "scores": [
-        {"effort":"low","intelligence":29.4,"terminalBench":0.152,"priceInput":1,"priceOutput":5,"tokensPerSecond":62.4,"ttftSeconds":2.81},
-        {"effort":"medium","intelligence":38.2,"terminalBench":0.323,"priceInput":1,"priceOutput":5,"tokensPerSecond":63.3,"ttftSeconds":5.11},
-        {"effort":"high","intelligence":42.4,"terminalBench":0.419,"priceInput":1,"priceOutput":5,"tokensPerSecond":65,"ttftSeconds":12.7},
-        {"effort":"xhigh","intelligence":45.3,"terminalBench":0.465,"priceInput":1,"priceOutput":5,"tokensPerSecond":67.2,"ttftSeconds":35.53},
-        {"effort":"max","intelligence":51.3,"terminalBench":0.556,"priceInput":1,"priceOutput":5,"tokensPerSecond":69.7,"ttftSeconds":176.31}
+        {"effort":"low","intelligence":29.4,"terminalBench":0.152,"priceInput":1,"priceOutput":5,"tokensPerSecond":61.5,"ttftSeconds":2.99},
+        {"effort":"medium","intelligence":38.2,"terminalBench":0.323,"priceInput":1,"priceOutput":5,"tokensPerSecond":64.5,"ttftSeconds":4.58},
+        {"effort":"high","intelligence":42.4,"terminalBench":0.419,"priceInput":1,"priceOutput":5,"tokensPerSecond":66.4,"ttftSeconds":10.08},
+        {"effort":"xhigh","intelligence":45.3,"terminalBench":0.465,"priceInput":1,"priceOutput":5,"tokensPerSecond":66.8,"ttftSeconds":28.38},
+        {"effort":"max","intelligence":51.3,"terminalBench":0.556,"priceInput":1,"priceOutput":5,"tokensPerSecond":70.3,"ttftSeconds":144.41}
       ],
       "lane": {"roles":["implementer","supervisor"]},
       "profile": {
@@ -334,6 +304,35 @@
         "caveats": [],
         "sources": ["https://platform.openai.com/docs/models"],
         "checked": "2026-10-29"
+      }
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-6.2-sol",
+      "family": "gpt-6-2-sol",
+      "name": "GPT-6.2 Sol",
+      "maker": "OpenAI",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [
+        {"effort":"low","intelligence":40.6,"terminalBench":0.379,"priceInput":2,"priceOutput":10,"tokensPerSecond":72,"ttftSeconds":1.77},
+        {"effort":"medium","intelligence":52.7,"terminalBench":0.561,"priceInput":2,"priceOutput":10,"tokensPerSecond":74.5,"ttftSeconds":2.81},
+        {"effort":"high","intelligence":54.9,"terminalBench":0.586,"priceInput":2,"priceOutput":10,"tokensPerSecond":79.3,"ttftSeconds":7.9},
+        {"effort":"xhigh","intelligence":55.7,"terminalBench":0.561,"priceInput":2,"priceOutput":10,"tokensPerSecond":80.2,"ttftSeconds":22.98},
+        {"effort":"max","intelligence":57.3,"terminalBench":0.601,"priceInput":2,"priceOutput":10,"tokensPerSecond":85.2,"ttftSeconds":61.56}
+      ],
+      "lane": {"roles":["implementer","supervisor","reviewer"]},
+      "profile": {
+        "purpose": "«Fast, go-to model for coding and everyday work.»",
+        "contextTokens": 500000,
+        "maxOutputTokens": null,
+        "defaultEffort": "low",
+        "price": {"input":2,"output":10,"note":"per million tokens"},
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["~/.codex/models_cache.json (codex-cli 0.166.0, read 2026-11-17)","plugins/aether/config/models/aa-pages.json"],
+        "checked": "2026-11-17"
       }
     },
     {
@@ -582,7 +581,7 @@
         "sources": ["https://platform.openai.com/docs/models"],
         "checked": "2026-10-29"
       },
-      "reason": "The top tier waits for its next generation: the owner said «no lo vamos a usar hasta que salga astra 6.1». GPT-6.1 Astra reopens the question as Fable 5.5 reopens Fable 5.1 (A43); Astra max scored 56.9 against Sol max 54.5, at five times the price per token: 10/50 against 2/10.",
+      "reason": "The owner keeps Astra out by decision of 2026-11-17: «Astra sigue fuera, es que astra s emueve en costos y niveles nivel fable y nuestro sistema nunca usa fable. me agradfa la nueva escalera configurala». Astra sits at Fable's level of cost and intelligence and Aether does not use that tier; it does not re-enter by itself with a next generation, only by the owner's decision.",
       "price": null
     },
     {
@@ -609,6 +608,57 @@
         "checked": "2026-10-29"
       },
       "reason": "Previous generation workhorse model of the line; Aether uses only the newest generation.",
+      "price": null
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "family": "gpt-6-1-sol",
+      "name": "GPT-6.1 Sol",
+      "maker": "OpenAI",
+      "released": "2026-09-29",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [],
+      "lane": null,
+      "profile": {
+        "purpose": "«Latest workhorse model for coding and everyday work.»",
+        "contextTokens": 500000,
+        "maxOutputTokens": null,
+        "defaultEffort": "low",
+        "price": {"input":2,"output":10,"note":"per million tokens"},
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["https://platform.openai.com/docs/models"],
+        "checked": "2026-10-29"
+      },
+      "reason": "Previous generation workhorse model of the line, replaced by GPT-6.2 Sol; Aether uses only the newest generation.",
+      "price": null
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-6.2-astra",
+      "family": "gpt-6-2-astra",
+      "name": "GPT-6.2 Astra",
+      "maker": "OpenAI",
+      "effortVia": "flag",
+      "efforts": ["low","medium","high","xhigh","max"],
+      "scores": [],
+      "lane": null,
+      "profile": {
+        "purpose": "«Our most capable model for complex coding and professional work.»",
+        "contextTokens": 272000,
+        "maxOutputTokens": null,
+        "defaultEffort": "low",
+        "price": {"input":8,"output":40,"note":"per million tokens"},
+        "knowledgeCutoff": null,
+        "availability": "Codex CLI (codex exec).",
+        "caveats": [],
+        "sources": ["~/.codex/models_cache.json (codex-cli 0.166.0, read 2026-11-17)","plugins/aether/config/models/aa-pages.json"],
+        "checked": "2026-11-17"
+      },
+      "reason": "The owner keeps Astra out by decision of 2026-11-17: «Astra sigue fuera, es que astra s emueve en costos y niveles nivel fable y nuestro sistema nunca usa fable. me agradfa la nueva escalera configurala». Astra sits at Fable's level of cost and intelligence and Aether does not use that tier; it does not re-enter by itself with a next generation, only by the owner's decision.",
       "price": null
     },
     {

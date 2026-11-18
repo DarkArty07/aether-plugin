@@ -53,21 +53,29 @@
       }
     },
     "codex": {
-      "capturedAt": "2026-10-29",
+      "capturedAt": "2026-11-17",
       "listedBy": "models_cache.json of ~/.codex (codex 0.166.0 has no command that lists models)",
       "effortVia": "flag",
       "efforts": ["low", "medium", "high", "xhigh", "max"],
       "excludedEfforts": {
         "ultra": "Artificial Analysis does not measure it, so it has no figure to compare; the owner's words: “no efforts AA does not measure”."
       },
-      "note": "Captured on 2026-10-29 from ~/.codex/models_cache.json with codex 0.166.0 for the owner's account (plan Plus), listing 10 models.",
+      "note": "Captured on 2026-11-17 from ~/.codex/models_cache.json with codex 0.166.0 for the owner's account (plan Plus), listing 12 models.",
       "models": [
-        "gpt-6.1-sol",
+        "gpt-6.2-sol",
         "gpt-6.1-terra",
         "gpt-6-luna",
         {
+          "id": "gpt-6.2-astra",
+          "excluded": "The owner keeps Astra out by decision of 2026-11-17: «Astra sigue fuera, es que astra s emueve en costos y niveles nivel fable y nuestro sistema nunca usa fable. me agradfa la nueva escalera configurala». Astra sits at Fable's level of cost and intelligence and Aether does not use that tier; it does not re-enter by itself with a next generation, only by the owner's decision."
+        },
+        {
+          "id": "gpt-6.1-sol",
+          "excluded": "Previous generation workhorse model of the line, replaced by GPT-6.2 Sol; Aether uses only the newest generation."
+        },
+        {
           "id": "gpt-6-astra",
-          "excluded": "The top tier waits for its next generation: the owner said «no lo vamos a usar hasta que salga astra 6.1». GPT-6.1 Astra reopens the question as Fable 5.5 reopens Fable 5.1 (A43); Astra max scored 56.9 against Sol max 54.5, at five times the price per token: 10/50 against 2/10."
+          "excluded": "The owner keeps Astra out by decision of 2026-11-17: «Astra sigue fuera, es que astra s emueve en costos y niveles nivel fable y nuestro sistema nunca usa fable. me agradfa la nueva escalera configurala». Astra sits at Fable's level of cost and intelligence and Aether does not use that tier; it does not re-enter by itself with a next generation, only by the owner's decision."
         },
         {
           "id": "gpt-6-sol",
