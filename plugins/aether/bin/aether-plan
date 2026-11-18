@@ -2,8 +2,8 @@
 'use strict'
 
 // aether-plan: checks and compiles plans and briefs, builds /aether:design args, finds the next spec number,
-// and counts a spec's requirements against the map threshold.
-// Calls lib/plan-compile.js, lib/plan-design.js, lib/plan-number.js or lib/plan-requirements.js.
+// counts a spec's requirements against the map threshold, and searches, installs or discards design skills.
+// Calls lib/plan-compile.js, lib/plan-design.js, lib/plan-number.js, lib/plan-requirements.js or lib/skill-design.js.
 
 const path = require('node:path')
 const argv = process.argv.slice(2)
@@ -21,6 +21,9 @@ if (verb === 'next-spec') {
 } else if (verb === 'requirements') {
   const { main } = require(path.join(__dirname, '..', 'lib', 'plan-requirements.js'))
   main(argv, { cwd: process.cwd(), stdout: process.stdout })
+} else if (verb === 'skills') {
+  const { main } = require(path.join(__dirname, '..', 'lib', 'skill-design.js'))
+  process.exit(main(argv, { cwd: process.cwd(), stdout: process.stdout, env: process.env }))
 } else {
   const { USAGE } = require(path.join(__dirname, '..', 'lib', 'plan-compile.js'))
   process.stdout.write(JSON.stringify({ ok: false, errors: [USAGE], warnings: [] }) + '\n')
