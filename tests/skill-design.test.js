@@ -470,7 +470,8 @@ test('skills find resolves the data dir without AETHER_DATA_DIR, from CLAUDE_CON
   assert.equal(r.json.candidates.length, 1)
   const reviewRoot = path.join(dataDir, 'skills', 'review')
   assert.ok(fs.existsSync(path.join(reviewRoot, 'godot-helper', 'review.json')), 'the review lands under the CLAUDE_CONFIG_DIR data dir')
-  assert.ok(fs.existsSync(path.join(reviewRoot, 'specs-001-quest.json')), 'the state file lands under the CLAUDE_CONFIG_DIR data dir')
+  assert.ok(fs.existsSync(path.join(dataDir, 'skills', 'design-state', 'specs-001-quest.json')), 'the state file lands under the CLAUDE_CONFIG_DIR data dir')
+  assert.deepEqual(fs.readdirSync(reviewRoot), ['godot-helper'], 'the review folder holds only the temporary download')
 })
 
 test('R23: a registry name that is not a safe id is never downloaded and writes nothing', async (t) => {

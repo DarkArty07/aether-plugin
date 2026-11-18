@@ -155,8 +155,13 @@ function featureKey(feature) {
   return String(feature).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'feature'
 }
 
+// The state of each design lives apart from the review folder, which holds only temporary downloads (R23).
+function stateRoot(dataDir) {
+  return path.join(dataDir, 'skills', 'design-state')
+}
+
 function stateFile(dataDir, feature) {
-  return path.join(installLib.reviewRoot(dataDir), `${featureKey(feature)}.json`)
+  return path.join(stateRoot(dataDir), `${featureKey(feature)}.json`)
 }
 
 function readState(dataDir, feature) {
@@ -170,7 +175,7 @@ function readState(dataDir, feature) {
 }
 
 function writeState(dataDir, feature, state) {
-  fs.mkdirSync(installLib.reviewRoot(dataDir), { recursive: true })
+  fs.mkdirSync(stateRoot(dataDir), { recursive: true })
   fs.writeFileSync(stateFile(dataDir, feature), JSON.stringify({ feature, produced: state.produced, installed: state.installed }, null, 2) + '\n')
 }
 
@@ -487,9 +492,9 @@ function discardForDesign({ id, dataDir } = {}) {
   if (!exists) return { ok: false, errors: [`unknown skill id "${id}"`] }
   installLib.removeDir(dir)
   try {
-    for (const file of fs.readdirSync(installLib.reviewRoot(dataDir))) {
+    for (const file of fs.readdirSync(stateRoot(dataDir))) {
       if (!file.endsWith('.json')) continue
-      const full = path.join(installLib.reviewRoot(dataDir), file)
+      const full = path.join(stateRoot(dataDir), file)
       try {
         const state = JSON.parse(fs.readFileSync(full, 'utf8'))
         if (!state || !Array.isArray(state.produced)) continue
