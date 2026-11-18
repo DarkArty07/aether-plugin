@@ -395,12 +395,18 @@ test('aether-plan skills find runs in the mod, while bad forms go to the model',
   expect(runs[0].argv.slice(2)).toEqual(['skills', 'find', 'specs/007-demo'])
   expect(counts.modelSteps).toBe(0)
 
-  for (const bad of ['aether-plan skills find ../x', 'aether-plan skills install specs/007-demo', 'aether-plan skills discard Godot']) {
+  await spawn($, opsPrompt('aether-plan skills find specs/007-demo --topic pixel-art --topic postgres'))
+  await step($)
+  expect(runs.length).toBe(2)
+  expect(runs[1].argv.slice(2)).toEqual(['skills', 'find', 'specs/007-demo', '--topic', 'pixel-art', '--topic', 'postgres'])
+  expect(counts.modelSteps).toBe(0)
+
+  for (const bad of ['aether-plan skills find ../x', 'aether-plan skills find specs/007-demo --topic pixel-art --topic pixel-art', 'aether-plan skills find specs/007-demo --topic Pixel-Art', 'aether-plan skills install specs/007-demo', 'aether-plan skills discard Godot']) {
     await spawn($, opsPrompt(bad))
     await step($)
   }
-  expect(runs.length).toBe(1)
-  expect(counts.modelSteps).toBe(3)
+  expect(runs.length).toBe(2)
+  expect(counts.modelSteps).toBe(5)
 })
 
 test('aether-plan requirements runs in the mod, while bad forms go to the model', async ($, on) => {

@@ -75,6 +75,19 @@ test('the Designer is gone', () => {
   assert.equal(fs.existsSync(path.join(PLUGIN, 'agents', 'designer.md')), false)
 })
 
+test('the skill scout runs on Haiku at high effort, and can only read', () => {
+  const { front } = agentFile('skill-scout')
+  assert.equal(field(front, 'name'), 'skill-scout')
+  assert.match(field(front, 'description'), /^"?Aether skill scout:/)
+  assert.equal(field(front, 'model'), 'haiku')
+  assert.equal(field(front, 'effort'), 'high')
+  assert.equal(field(front, 'maxTurns'), '5')
+  assert.deepEqual(
+    field(front, 'tools').split(',').map((s) => s.trim()),
+    ['Read'],
+  )
+})
+
 test('the swarm agents run at their set effort, and the supervisor frontmatter sets neither model nor effort', () => {
   // Trial 2 found that implementers at medium were one of two causes of its quality gap (2026-10-08).
   assert.equal(field(agentFile('implementer').front, 'effort'), 'high')

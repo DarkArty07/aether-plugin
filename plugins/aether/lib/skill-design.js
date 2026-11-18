@@ -1,10 +1,10 @@
 'use strict'
 
 // Search, review and byte-for-byte install of skills for full `/aether:design`
-// runs (spec 045, R22-R25): topics activate only from intent.md words, covered
-// topics are never searched, trusted authors are downloaded once and pass a
-// deterministic code stage, and anything else is queued in the owner's list
-// (pending.jsonl under .aether/).
+// runs (spec 045, R22-R25, spec 046): the scout names up to 3 search topics
+// from the intent card, covered topics are never searched, trusted authors
+// are downloaded once and pass a deterministic code stage, and anything else
+// is queued in the owner's list (pending.jsonl under .aether/).
 // Family: skill.
 
 const fs = require('node:fs')
@@ -13,15 +13,19 @@ const path = require('node:path')
 const { repoPaths } = require('./git.js')
 const runLib = require('./run.js')
 const { checkSkillFile } = require('./skill-brief.js')
-const { loadSkillsConfig, readInstalls, recordInstall } = require('./skill-registry.js')
+const { readInstalls, recordInstall } = require('./skill-registry.js')
 const { authorOf, readTrusted } = require('./skill-rules.js')
 const { installedBlobs, topicCovered } = require('./skill-topics.js')
 const { appendPending, readPending } = require('./pending.js')
 const installLib = require('./skill-install.js')
 
-const SKILLS_USAGE = 'usage: aether-plan skills find <feature> | aether-plan skills install <feature> <id> | aether-plan skills discard <id>'
+const SKILLS_USAGE = 'usage: aether-plan skills find <feature> [--topic <t>]... | aether-plan skills install <feature> <id> | aether-plan skills discard <id>'
 const MAX_PER_DESIGN = 3
 const SKILL_ID = installLib.ID_PATTERN
+// One search topic: a lowercase hyphenated id of 1 to 3 words, so a scout
+// answer never becomes a command or a huge query. Checked in three places:
+// the flow, the mod and main.
+const TOPIC_PATTERN = /^[a-z0-9]{1,24}(-[a-z0-9]{1,24}){0,2}$/
 
 function worktreeOf(cwd) {
   try {
@@ -62,15 +66,6 @@ function topicQuery(topic) {
   const label = typeof topic.label === 'string' ? topic.label.trim() : ''
   if (label) return label
   return String(topic.id || '').split(/[-_]+/).filter(Boolean).join(' ')
-}
-
-function readIntent(projectRoot, feature) {
-  const file = path.join(projectRoot, feature, 'intent.md')
-  try {
-    return { text: fs.readFileSync(file, 'utf8'), file }
-  } catch {
-    return { text: null, file }
-  }
 }
 
 function skillDirNames(root) {
@@ -309,32 +304,39 @@ function contentProblems(text, rel) {
   return problems
 }
 
-function findForDesign({ cwd, feature, home, dataDir, env, runner, config, now, timeoutMs } = {}) {
+// One topic of the scout as the search sees it: the id drives coverage, and
+// the label with spaces drives the registry query and the relevance.
+function scoutTopic(id) {
+  const label = String(id).split(/[-_]+/).filter(Boolean).join(' ')
+  return { id: String(id), label, skillKeywords: [label] }
+}
+
+function findForDesign({ cwd, feature, home, dataDir, env, runner, topics, now, timeoutMs } = {}) {
   void now
   const projectRoot = worktreeOf(cwd || '.')
   const pendingRoot = pendingRootOf(cwd || '.')
   const findTimeoutMs = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : installLib.FIND_TIMEOUT_MS
   const empty = (errors) => ({ ok: false, topics: [], candidates: [], rejected: [], pending: [], errors })
-  let cfg = config || null
-  if (!cfg) {
-    try {
-      cfg = loadSkillsConfig()
-    } catch (err) {
-      return empty([`the skills config cannot be read: ${String((err && err.message) || err)}`])
-    }
+  const emptyOk = () => ({ ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] })
+  // The scout's topics, valid and distinct, at most 3: without one the search
+  // answers ok:true with empty lists and never calls the registry.
+  const seen = new Set()
+  const searched = []
+  for (const id of Array.isArray(topics) ? topics : []) {
+    if (typeof id !== 'string' || !TOPIC_PATTERN.test(id) || seen.has(id)) continue
+    seen.add(id)
+    searched.push(scoutTopic(id))
+    if (searched.length >= MAX_PER_DESIGN) break
   }
-  const topics = Array.isArray(cfg.topics) ? cfg.topics : []
-  const { text: intent, file: intentFile } = readIntent(projectRoot, feature)
-  if (intent === null) return empty([`intent.md not found: ${intentFile}`])
-  const active = topics.filter((topic) => topic && typeof topic.id === 'string' && Array.isArray(topic.words) && topic.words.some((word) => typeof word === 'string' && wordHit(intent, word)))
+  if (searched.length === 0) return emptyOk()
   const blobs = installedBlobs({ cwd: projectRoot, home, dataDir })
-  const coveredIds = new Set(topics.filter((topic) => topic && typeof topic.id === 'string' && topicCovered(blobs, topic)).map((topic) => topic.id))
-  const wanted = active.filter((topic) => !coveredIds.has(topic.id))
+  const coveredIds = new Set(searched.filter((topic) => topicCovered(blobs, topic)).map((topic) => topic.id))
+  const wanted = searched.filter((topic) => !coveredIds.has(topic.id))
   const names = installedNames({ cwd: projectRoot, home, dataDir })
   const runNames = new Set(names)
   const runPairs = installedPairs({ dataDir })
   const acceptedKeys = new Set()
-  for (const topic of topics) {
+  for (const topic of searched) {
     if (!coveredIds.has(topic.id)) continue
     for (const key of topicKeys(topic)) acceptedKeys.add(String(key).toLowerCase().normalize('NFD').replace(/\p{M}/gu, ''))
   }
@@ -521,15 +523,29 @@ function main(argv, { cwd = process.cwd(), stdout = process.stdout, env = proces
   const home = (env && env.HOME) || process.env.HOME || os.homedir()
   const dataDir = runLib.dataDir(env || process.env)
   const [sub, first, second] = rest
+  // `skills find <feature>` with 0 to 3 `--topic <t>`: each value a valid
+  // and distinct topic id, or the form is a usage error.
+  if (sub === 'find' && validFeature(first)) {
+    const tail = rest.slice(2)
+    if (tail.length % 2 !== 0) return fail()
+    const topics = []
+    for (let i = 0; i < tail.length; i += 2) {
+      if (tail[i] !== '--topic') return fail()
+      const topic = tail[i + 1]
+      if (typeof topic !== 'string' || !TOPIC_PATTERN.test(topic)) return fail()
+      topics.push(topic)
+    }
+    if (topics.length > 3 || new Set(topics).size !== topics.length) return fail()
+    const result = findForDesign({ cwd, feature: first, home, dataDir, env, topics })
+    stdout.write(JSON.stringify(result) + '\n')
+    return 0
+  }
   const shape =
-    (sub === 'find' && rest.length === 2 && validFeature(first)) ||
     (sub === 'install' && rest.length === 3 && validFeature(first) && SKILL_ID.test(second || '')) ||
     (sub === 'discard' && rest.length === 2 && SKILL_ID.test(first || ''))
   if (!shape) return fail()
   let result = null
-  if (sub === 'find') {
-    result = findForDesign({ cwd, feature: first, home, dataDir, env })
-  } else if (sub === 'install') {
+  if (sub === 'install') {
     result = installForDesign({ cwd, feature: first, id: second, home, dataDir, env })
   } else {
     result = discardForDesign({ id: first, dataDir })
@@ -541,6 +557,7 @@ function main(argv, { cwd = process.cwd(), stdout = process.stdout, env = proces
 module.exports = {
   SKILLS_USAGE,
   MAX_PER_DESIGN,
+  TOPIC_PATTERN,
   wordHit,
   topicKeys,
   topicQuery,

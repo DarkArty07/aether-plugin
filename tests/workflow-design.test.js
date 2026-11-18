@@ -14,7 +14,7 @@ const FEATURE = 'specs/007-demo'
 const SCOPE = 'Deliver what was asked, at the scope asked. When that work is done and checked, stop and report. Do not add features, tests, files, docs or refactors that were not asked for. If you think one would help, say so at the end instead of doing it.'
 const ARGS = { feature: FEATURE, session: 'sess-1', repoRoot: '/repo', superdelegation: 'off', harnesses: 'agy' }
 const SHORT = { ...ARGS, mode: 'short', document: `${FEATURE}/design.md`, intent: 'Understanding: add a retry. Owner: «hazlo robusto»', author: 'opus' }
-const ROLES = ['writer', 'judge', 'examiner', 'mapper', 'skill-reviewer', 'ops']
+const ROLES = ['writer', 'judge', 'examiner', 'mapper', 'skill-scout', 'skill-reviewer', 'ops']
 
 let parseOpsPrompt
 let PAYLOAD_PATH
@@ -48,6 +48,7 @@ function handlers() {
     },
     judge: () => APPROVE,
     examiner: () => EXAM,
+    'skill-scout': () => ({ topics: [] }),
     ops: (call) => {
       const { verb, rest } = call.command
       if (verb === 'seat-start') return { started: true, id: `${rest[0]}-20261015-12000${++starts}-ab12` }
@@ -92,7 +93,7 @@ const ruleIsInBody = (run, label, role, texts) => {
 test('one run takes the card to an approved plan with no turn of the Lead in between (E1)', async () => {
   const run = await go(ARGS)
   assert.equal(run.error, null, run.error && run.error.stack)
-  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'writer', 'judge', 'examiner'])
+  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'skill-scout', 'writer', 'writer', 'judge', 'examiner'])
   const r = run.result
   assert.equal(r.status, 'approved')
   assert.equal(r.skill, 'aether:designing')
@@ -414,7 +415,7 @@ const planWriter = (run) => run.calls.find((c) => c.label === 'plan: writer writ
 test('R3 R5: a spec of 15 requirements runs the map step once, before the plan Writer, and the Writer message carries the map', async () => {
   const run = await go(ARGS, { ops: mapOps(15), mapper: () => ({ map: MAP_TEXT }) })
   assert.equal(run.error, null, run.error && run.error.stack)
-  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'mapper', 'writer', 'writer', 'judge', 'examiner'])
+  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'skill-scout', 'mapper', 'writer', 'writer', 'judge', 'examiner'])
   assert.equal(run.calls.filter((c) => c.label === 'plan: map').length, 1)
   assert.ok(planWriter(run).prompt.includes('## Mapa del código'))
   assert.ok(planWriter(run).prompt.includes(MAP_TEXT))
@@ -423,7 +424,7 @@ test('R3 R5: a spec of 15 requirements runs the map step once, before the plan W
 
 test('R3 R5: a spec of 14 requirements has no map step and the Writer message is the one of today', async () => {
   const run = await go(ARGS, { ops: mapOps(14), mapper: () => { throw new Error('the mapper must not run') } })
-  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'writer', 'judge', 'examiner'])
+  assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'skill-scout', 'writer', 'writer', 'judge', 'examiner'])
   const baseline = await go(ARGS)
   assert.equal(planWriter(run).prompt, planWriter(baseline).prompt)
   assert.ok(!planWriter(run).prompt.includes('Mapa del código'))
@@ -472,7 +473,7 @@ for (const [name, requirements] of [['fails', { raw: { exitCode: 1, stdout: '{}\
     const run = await go(ARGS, { ops, mapper: () => { throw new Error('the mapper must not run') } })
     assert.equal(run.error, null, run.error && run.error.stack)
     assert.equal(run.result.status, 'approved')
-    assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'writer', 'writer', 'judge', 'examiner'])
+    assert.deepEqual(nativeCalls(run).map((c) => c.role), ['writer', 'judge', 'skill-scout', 'writer', 'writer', 'judge', 'examiner'])
     assert.equal(run.calls.filter((c) => c.label === 'plan: map').length, 0)
     assert.ok(!planWriter(run).prompt.includes('Mapa del código'))
     assert.ok(run.logs.some((line) => /plan: map: .*the plan is written without a map/.test(line)), run.logs.join('\n'))
@@ -597,8 +598,9 @@ test('a short design on plan.md runs only the Judge, the Writer revises in a sea
 })
 
 test('every ops prompt is one the mod runs without a model, and every payload goes where the mod saves it', async () => {
-  const run = await go({ ...ARGS, superdelegation: 'on', harnesses: 'agy,codex' })
-  const failed = await go({ ...ARGS, superdelegation: 'on', harnesses: 'agy,codex' }, { examiner: () => null })
+  const scout = { 'skill-scout': () => ({ topics: ['godot'] }) }
+  const run = await go({ ...ARGS, superdelegation: 'on', harnesses: 'agy,codex' }, scout)
+  const failed = await go({ ...ARGS, superdelegation: 'on', harnesses: 'agy,codex' }, { examiner: () => null, ...scout })
   const ops = [...run.calls, ...failed.calls].filter((c) => c.role === 'ops')
   assert.deepEqual([...new Set(ops.map((c) => c.command.verb))].sort(), ['check', 'recover', 'requirements', 'seat-start', 'seat-wait', 'skills', 'store'])
   for (const c of ops) {

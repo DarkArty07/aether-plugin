@@ -98,6 +98,9 @@ test('a token the form does not allow, or a form out of order, is refused', () =
 
 test('aether-plan skills find, install and discard parse to their argument vectors', () => {
   assert.deepEqual(parseOpsPrompt(prompt(`aether-plan skills find ${FEATURE}`)), parsed('aether-plan', ['skills', 'find', FEATURE]))
+  assert.deepEqual(parseOpsPrompt(prompt(`aether-plan skills find ${FEATURE} --topic pixel-art`)), parsed('aether-plan', ['skills', 'find', FEATURE, '--topic', 'pixel-art']))
+  assert.deepEqual(parseOpsPrompt(prompt(`aether-plan skills find ${FEATURE} --topic pixel-art --topic postgres`)), parsed('aether-plan', ['skills', 'find', FEATURE, '--topic', 'pixel-art', '--topic', 'postgres']))
+  assert.deepEqual(parseOpsPrompt(prompt(`aether-plan skills find ${FEATURE} --topic a --topic b-c --topic d-e-f`)), parsed('aether-plan', ['skills', 'find', FEATURE, '--topic', 'a', '--topic', 'b-c', '--topic', 'd-e-f']))
   assert.deepEqual(parseOpsPrompt(prompt(`aether-plan skills install ${FEATURE} godot-helper-1a2b`)), parsed('aether-plan', ['skills', 'install', FEATURE, 'godot-helper-1a2b']))
   assert.deepEqual(parseOpsPrompt(prompt(`aether-plan skills discard godot-helper-1a2b`)), parsed('aether-plan', ['skills', 'discard', 'godot-helper-1a2b']))
 })
@@ -107,6 +110,17 @@ test('aether-plan skills refuses a path as an id, an id with uppercase or a slas
     'aether-plan skills find ../x',
     `aether-plan skills find ${FEATURE} extra`,
     `aether-plan skills find ${FEATURE} --x`,
+    `aether-plan skills find ${FEATURE} --topic`,
+    `aether-plan skills find ${FEATURE} pixel-art`,
+    `aether-plan skills find ${FEATURE} --topic pixel-art --topic postgres --topic redis --topic extra`,
+    `aether-plan skills find ${FEATURE} --topic pixel-art --topic pixel-art`,
+    `aether-plan skills find ${FEATURE} --topic Pixel-Art`,
+    `aether-plan skills find ${FEATURE} --topic pixel art`,
+    `aether-plan skills find ${FEATURE} --topic pixel;art`,
+    `aether-plan skills find ${FEATURE} --topic pixel$art`,
+    `aether-plan skills find ${FEATURE} --topic pixel/art`,
+    `aether-plan skills find ${FEATURE} --topic abcdefghijklmnopqrstuvwxy`,
+    `aether-plan skills find ${FEATURE} --topic pixel-art --x`,
     `aether-plan skills install ${FEATURE} Godot-helper-1a2b`,
     `aether-plan skills install ${FEATURE} godot/helper-1a2b`,
     `aether-plan skills install ${FEATURE} ../x`,

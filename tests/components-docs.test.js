@@ -30,6 +30,11 @@ test('the components page names aether-delegate and no retired decider command (
   assert.equal(components.includes('`' + OLD_BIN + '`'), false)
 })
 
+test('the components page and AGENTS.md name the skill scout of spec 046', () => {
+  assert.ok(read('docs', 'reference', 'components.md').includes('`skill-scout`'))
+  assert.ok(read('AGENTS.md').includes('skill-scout'))
+})
+
 test('the README and the AGENTS.md name no retired decider command and point to the delegates guide (R10)', () => {
   for (const file of ['README.md', 'AGENTS.md']) assert.equal(read(file).includes(OLD_BIN), false, file)
   assert.ok(read('AGENTS.md').includes('aether-delegate'))

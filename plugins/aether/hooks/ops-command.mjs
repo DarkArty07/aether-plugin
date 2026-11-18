@@ -43,6 +43,9 @@ const SESSION = /^[A-Za-z0-9-]+$/
 const AUTHOR = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
 const FEATURE = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*$/
 const SKILL_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/
+// One skill search topic: a lowercase hyphenated id of 1 to 3 words, which
+// admits no space and no shell character (lib/skill-design.js repeats it).
+const SKILL_TOPIC = /^[a-z0-9]{1,24}(-[a-z0-9]{1,24}){0,2}$/
 const TASKS = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*\/tasks\.md$/
 const SPEC = /^specs\/\d{3}-[A-Za-z0-9][A-Za-z0-9._-]*\/spec\.md$/
 const HARNESSES = /^[a-z]+(,[a-z]+)*$/
@@ -82,6 +85,23 @@ function seatStartForms() {
     { payload: true, checks: [...head, ...digest] },
     { payload: true, checks: [...head, ...exclude, ...digest] },
   ])
+}
+
+// The four shapes of `aether-plan skills find`: bare, and with 1 to 3
+// `--topic`, each value a valid topic id. A repeated topic is refused.
+function skillsFindForms() {
+  const head = [word('skills'), word('find'), is(FEATURE)]
+  const topic = [word('--topic'), is(SKILL_TOPIC)]
+  const distinct = (args) => {
+    const topics = args.filter((token, index) => args[index - 1] === '--topic')
+    return new Set(topics).size === topics.length
+  }
+  return [
+    { checks: head },
+    { checks: [...head, ...topic], verify: (args) => distinct(args) },
+    { checks: [...head, ...topic, ...topic], verify: (args) => distinct(args) },
+    { checks: [...head, ...topic, ...topic, ...topic], verify: (args) => distinct(args) },
+  ]
 }
 
 // Each accepted command, one check per token. `payload` marks the command that carries a lane prompt.
@@ -143,7 +163,7 @@ const COMMANDS = {
   'aether-plan': [
     { checks: [word('check'), is(TASKS)] },
     { checks: [word('requirements'), is(SPEC)] },
-    { checks: [word('skills'), word('find'), is(FEATURE)] },
+    ...skillsFindForms(),
     { checks: [word('skills'), word('install'), is(FEATURE), is(SKILL_ID)] },
     { checks: [word('skills'), word('discard'), is(SKILL_ID)] },
   ],
