@@ -133,6 +133,95 @@ test('the stamp is of each project and each kind: a second project is cleaned in
   assert.equal(clean.stampDue(dataDir, a.dir, 'clean', NOW - 3600000), true, 'a stamp from the future says due')
 })
 
+function linkedWorktree(t, repo) {
+  const wt = tempDir(t, 'aether-wt-')
+  fs.rmSync(wt, { recursive: true, force: true })
+  repo.git('worktree', 'add', '-q', '--detach', wt)
+  return wt
+}
+
+test('a skill-review folder older than 24 hours in a linked worktree is removed, and skill-review goes when left empty (046 C4)', (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const wt = linkedWorktree(t, repo)
+  const old = path.join(wt, '.aether', 'tmp', 'skill-review', 'abc123')
+  file(path.join(old, 'review.json'), '{}', 30)
+  age(old, 30)
+  const result = clean.cleanProject(repo.dir, { now: NOW, dataDir })
+  assert.equal(fs.existsSync(old), false, 'the old skill-review entry goes')
+  assert.equal(fs.existsSync(path.join(wt, '.aether', 'tmp', 'skill-review')), false, 'an empty skill-review goes too')
+  assert.ok(result.removed.some((r) => r.path === old), 'removed names the entry')
+})
+
+test('a young skill-review folder stays, and nothing else of the linked worktree is touched (046 C4)', (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const wt = linkedWorktree(t, repo)
+  const young = path.join(wt, '.aether', 'tmp', 'skill-review', 'young01')
+  file(path.join(young, 'review.json'), '{}', 2)
+  const neighbor = path.join(wt, '.aether', 'tmp', 'other.md')
+  file(neighbor, 'keep', 48)
+  const result = clean.cleanProject(repo.dir, { now: NOW, dataDir })
+  assert.equal(fs.existsSync(path.join(young, 'review.json')), true, 'a 2-hour entry stays')
+  assert.equal(fs.readFileSync(neighbor, 'utf8'), 'keep', 'a file next to skill-review stays')
+  assert.equal(fs.readFileSync(path.join(wt, 'README.md'), 'utf8'), 'fixture\n', 'a tracked file stays')
+  assert.ok(result.removed.every((r) => r.path !== young && r.path !== neighbor))
+})
+
+test('with a run open nothing under any skill-review goes, in a linked worktree or the main checkout (046 C4)', (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const wt = linkedWorktree(t, repo)
+  const oldWt = path.join(wt, '.aether', 'tmp', 'skill-review', 'old01')
+  file(path.join(oldWt, 'review.json'), '{}', 30)
+  age(oldWt, 30)
+  const oldMain = path.join(repo.dir, '.aether', 'tmp', 'skill-review', 'old02')
+  file(path.join(oldMain, 'review.json'), '{}', 30)
+  age(oldMain, 30)
+  const result = clean.cleanProject(repo.dir, { now: NOW, dataDir, openRun: true })
+  assert.equal(fs.existsSync(path.join(oldWt, 'review.json')), true, 'an open run keeps the linked entry')
+  assert.equal(fs.existsSync(path.join(oldMain, 'review.json')), true, 'an open run keeps the main entry')
+  assert.equal(result.removed.length, 0)
+})
+
+test('a symlink under skill-review that points outside is not followed (046 C4)', (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const wt = linkedWorktree(t, repo)
+  const outside = tempDir(t, 'aether-outside-')
+  const secret = path.join(outside, 'secret.md')
+  fs.writeFileSync(secret, 'secret')
+  const reviewDir = path.join(wt, '.aether', 'tmp', 'skill-review')
+  fs.mkdirSync(reviewDir, { recursive: true })
+  const link = path.join(reviewDir, 'tricky')
+  fs.symlinkSync(outside, link)
+  fs.lutimesSync(link, hours(30), hours(30))
+  clean.cleanProject(repo.dir, { now: NOW, dataDir })
+  assert.equal(fs.readFileSync(secret, 'utf8'), 'secret', 'the outside target is never followed')
+  assert.equal(fs.existsSync(link), false, 'the old link itself goes without touching its target')
+})
+
+test('an old skill-review folder in the main checkout goes too (046 C4)', (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const old = path.join(repo.dir, '.aether', 'tmp', 'skill-review', 'old09')
+  file(path.join(old, 'review.json'), '{}', 30)
+  age(old, 30)
+  const result = clean.cleanProject(repo.dir, { now: NOW, dataDir })
+  assert.equal(fs.existsSync(old), false)
+  assert.ok(result.removed.some((r) => r.path === old))
+})
+
+test('a registered worktree whose folder is missing is skipped without an error (046 C4)', (t) => {
+  const repo = makeRepo(t)
+  const dataDir = tempDir(t, 'aether-data-')
+  const wt = linkedWorktree(t, repo)
+  assert.ok(repo.git('worktree', 'list', '--porcelain').includes(wt), 'the worktree is registered')
+  fs.rmSync(wt, { recursive: true, force: true })
+  const result = clean.cleanProject(repo.dir, { now: NOW, dataDir })
+  assert.equal(result.ran, true)
+})
+
 test('two writes of the stamp at the same time do not lose the stamp of another project (R18)', async (t) => {
   const a = makeRepo(t)
   const b = makeRepo(t)
