@@ -1017,8 +1017,10 @@ function skillReviewMessage(candidate) {
 // plan map, the flow searches the skills the design may reuse, has the
 // skill-reviewer review at most one candidate per topic and three per design,
 // and installs what it approves. A search that does not run or reports an
-// error is logged and the design goes on with empty lists, never a failure.
-// A reviewer that ends without an answer, answers without an approved
+// error is logged and the design goes on with what it has (a search that
+// reports errors still reports its pending list), never a failure. A
+// rejection of the search's own code stage is logged and listed with its
+// reason. A reviewer that ends without an answer, answers without an approved
 // verdict, or fails, drops the candidate's folder (fail closed). A failed
 // install or discard is logged and the candidate counts as rejected. The step
 // always sets `skills`, so every result after it carries the key.
@@ -1039,7 +1041,8 @@ async function skillsStep() {
   }
   if (listOf(found.errors).length > 0) {
     log(`skills: the search reported errors: ${listOf(found.errors).join(' ')}; the design goes on`)
-    empty()
+    const pending = (Array.isArray(found.pending) ? found.pending : []).filter(isObject).map((entry) => ({ source: entry.source, author: entry.author }))
+    skills = { installed: [], rejected: [], pending }
     return
   }
   const wanted = []
@@ -1047,12 +1050,19 @@ async function skillsStep() {
   for (const candidate of Array.isArray(found.candidates) ? found.candidates : []) {
     if (wanted.length >= 3) break
     if (!isObject(candidate) || !isObject(candidate.code) || !candidate.code.ok) continue
+    if (typeof candidate.id !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(candidate.id)) continue
     if (typeof candidate.topic !== 'string' || seenTopics.has(candidate.topic)) continue
     seenTopics.add(candidate.topic)
     wanted.push(candidate)
   }
   const installed = []
   const rejected = []
+  for (const entry of Array.isArray(found.rejected) ? found.rejected : []) {
+    if (!isObject(entry)) continue
+    const reasons = listOf(entry.reasons)
+    rejected.push({ name: entry.name, reasons })
+    log(`skills: ${entry.name} rejected: ${reasons.join(' ')}`)
+  }
   for (const candidate of wanted) {
     const name = typeof candidate.name === 'string' && candidate.name !== '' ? candidate.name : String(candidate.id)
     const answer = await call('skill-reviewer', SKILL_REVIEW_PAIR.model, SKILL_REVIEW_PAIR.effort, skillReviewMessage(candidate), {

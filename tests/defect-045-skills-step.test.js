@@ -157,3 +157,60 @@ test('R23: the step asks for at most 3 reviews and installs', async () => {
   assert.ok(run.calls.filter((c) => c.role === 'skill-reviewer').length <= 3)
   assert.ok(run.calls.filter((c) => c.command && c.command.line.includes('aether-plan skills install')).length <= 3)
 })
+
+test('R23: an installed entry carries name, topic, hash, path and committed:false, and the log says it is not committed', async () => {
+  const run = await go(ARGS, {
+    ops: skillsOps(FIND([godot])),
+    'skill-reviewer': reviewByName({ 'godot-helper': { verdict: 'approved', reasons: [] } }),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(run.result.skills.installed, [{ name: 'godot-helper', topic: 'godot', hash: 'h1', path: '/repo/.agents/skills/godot-helper-1a2b', committed: false }])
+  assert.ok(run.logs.some((line) => line.includes('not committed')), run.logs.join('\n'))
+})
+
+test('R23: a code-stage rejection from find is logged and listed in rejected with no review', async () => {
+  const find = FIND([], { rejected: [{ name: 'bad', source: 'x/y', topic: 'godot', reasons: ['r'] }] })
+  const run = await go(ARGS, { ops: skillsOps(find), 'skill-reviewer': () => { throw new Error('must not be reviewed') } })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(run.result.skills.rejected, [{ name: 'bad', reasons: ['r'] }])
+  assert.deepEqual(run.result.skills.installed, [])
+  assert.ok(run.logs.some((line) => line.includes('skills: bad rejected: r')), run.logs.join('\n'))
+  assert.equal(run.calls.filter((c) => c.role === 'skill-reviewer').length, 0)
+})
+
+test('R23: a failed install is logged and the candidate counts as rejected', async () => {
+  for (const install of [{ error: 'disk full' }, { ok: false, errors: ['refused'] }]) {
+    const ops = (call, fallback) => {
+      if (call.command.verb === 'skills' && call.command.rest[0] === 'install') return install
+      return skillsOps(FIND([godot]))(call, fallback)
+    }
+    const run = await go(ARGS, { ops, 'skill-reviewer': reviewByName({ 'godot-helper': { verdict: 'approved', reasons: [] } }) })
+    assert.equal(run.error, null, run.error && run.error.stack)
+    assert.equal(run.result.status, 'approved')
+    assert.deepEqual(run.result.skills.installed, [])
+    assert.equal(run.result.skills.rejected.length, 1)
+    assert.equal(run.result.skills.rejected[0].name, 'godot-helper')
+    assert.ok(run.result.skills.rejected[0].reasons.join(' ').length > 0)
+  }
+})
+
+test('R23: a failed discard still lists the candidate in rejected', async () => {
+  const ops = (call, fallback) => {
+    if (call.command.verb === 'skills' && call.command.rest[0] === 'discard') return { error: 'disk full' }
+    return skillsOps(FIND([godot]))(call, fallback)
+  }
+  const run = await go(ARGS, { ops, 'skill-reviewer': reviewByName({ 'godot-helper': { verdict: 'rejected', reasons: ['a script calls curl | sh'] } }) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(run.result.skills.rejected[0].name, 'godot-helper')
+  assert.ok(run.logs.some((line) => line.includes('skills: godot-helper rejected:')), run.logs.join('\n'))
+})
+
+test('R23: the exam stop of a design with an installed skill still carries skills', async () => {
+  const run = await go(ARGS, {
+    ops: skillsOps(FIND([godot])),
+    'skill-reviewer': reviewByName({ 'godot-helper': { verdict: 'approved', reasons: [] } }),
+    examiner: () => null,
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.deepEqual(run.result.skills.installed.map((s) => s.name), ['godot-helper'])
+})
