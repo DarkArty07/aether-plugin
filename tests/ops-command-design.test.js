@@ -96,6 +96,41 @@ test('a token the form does not allow, or a form out of order, is refused', () =
   for (const command of other) assert.equal(parseOpsPrompt(prompt(command)), null, command)
 })
 
+test('aether-plan skills find, install and discard parse to their argument vectors', () => {
+  assert.deepEqual(parseOpsPrompt(prompt(`aether-plan skills find ${FEATURE}`)), parsed('aether-plan', ['skills', 'find', FEATURE]))
+  assert.deepEqual(parseOpsPrompt(prompt(`aether-plan skills install ${FEATURE} godot-helper-1a2b`)), parsed('aether-plan', ['skills', 'install', FEATURE, 'godot-helper-1a2b']))
+  assert.deepEqual(parseOpsPrompt(prompt(`aether-plan skills discard godot-helper-1a2b`)), parsed('aether-plan', ['skills', 'discard', 'godot-helper-1a2b']))
+})
+
+test('aether-plan skills refuses a path as an id, an id with uppercase or a slash, a missing id, a flag, or a bad feature', () => {
+  for (const command of [
+    'aether-plan skills find ../x',
+    `aether-plan skills find ${FEATURE} extra`,
+    `aether-plan skills find ${FEATURE} --x`,
+    `aether-plan skills install ${FEATURE} Godot-helper-1a2b`,
+    `aether-plan skills install ${FEATURE} godot/helper-1a2b`,
+    `aether-plan skills install ${FEATURE} ../x`,
+    `aether-plan skills install ${FEATURE}`,
+    `aether-plan skills install ${FEATURE} godot-helper-1a2b --force`,
+    `aether-plan skills install ${FEATURE} godot-helper-1a2b godot-helper-1a2b`,
+    'aether-plan skills discard ../x',
+    'aether-plan skills discard Godot',
+    'aether-plan skills discard godot/helper-1a2b',
+    'aether-plan skills discard',
+    `aether-plan skills discard godot-helper-1a2b --x`,
+    'aether-plan skills install specs/07-demo godot-helper-1a2b',
+    `aether-plan skills find ${FEATURE}/spec.md`,
+  ]) {
+    assert.equal(parseOpsPrompt(prompt(command)), null, command)
+  }
+})
+
+test('aether-plan skills needs no payload, and a payload on it is refused', () => {
+  for (const command of [`aether-plan skills find ${FEATURE}`, `aether-plan skills install ${FEATURE} godot-helper-1a2b`, 'aether-plan skills discard godot-helper-1a2b']) {
+    assert.equal(parseOpsPrompt(prompt(command, { payload: MESSAGE })), null, command)
+  }
+})
+
 test('aether-plan requirements accepts the mod spec pattern, capitals and dots included', () => {
   for (const spec of ['specs/045-API_v2/spec.md', 'specs/045-v1.2/spec.md']) {
     assert.deepEqual(parseOpsPrompt(prompt(`aether-plan requirements ${spec}`)), parsed('aether-plan', ['requirements', spec]), spec)

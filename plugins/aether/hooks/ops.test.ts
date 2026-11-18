@@ -385,6 +385,24 @@ test('aether-exam recover and store run in the mod, while bad forms go to the mo
   expect(counts.modelSteps).toBe(3)
 })
 
+test('aether-plan skills find runs in the mod, while bad forms go to the model', async ($, on) => {
+  const { runs, counts } = stubs(on, { answer: { exitCode: 0, stdout: '{"ok":true,"topics":[],"candidates":[],"rejected":[],"pending":[],"errors":[]}\n' } })
+  await spawn($, opsPrompt('aether-plan skills find specs/007-demo'))
+  const { chunks } = await step($)
+  expect(answered(chunks).input).toEqual({ exitCode: 0, stdout: '{"ok":true,"topics":[],"candidates":[],"rejected":[],"pending":[],"errors":[]}\n' })
+  expect(runs.length).toBe(1)
+  expect(runs[0].argv[1].endsWith('/bin/aether-plan')).toBe(true)
+  expect(runs[0].argv.slice(2)).toEqual(['skills', 'find', 'specs/007-demo'])
+  expect(counts.modelSteps).toBe(0)
+
+  for (const bad of ['aether-plan skills find ../x', 'aether-plan skills install specs/007-demo', 'aether-plan skills discard Godot']) {
+    await spawn($, opsPrompt(bad))
+    await step($)
+  }
+  expect(runs.length).toBe(1)
+  expect(counts.modelSteps).toBe(3)
+})
+
 test('aether-plan requirements runs in the mod, while bad forms go to the model', async ($, on) => {
   const { runs, counts } = stubs(on, { answer: { exitCode: 0, stdout: '{"requirements":15,"threshold":15,"map":true}\n' } })
   await spawn($, opsPrompt('aether-plan requirements specs/007-demo/spec.md'))

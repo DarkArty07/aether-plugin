@@ -208,6 +208,19 @@ const MAP_SCHEMA = {
   },
 }
 
+// The pair that reviews a downloaded skill, and the shape of its answer: the
+// read-only semantic review after the deterministic code stage. An approved
+// verdict lets the flow install the skill; anything else drops its folder.
+const SKILL_REVIEW_PAIR = { model: 'sonnet', effort: 'high' }
+const SKILL_REVIEW_SCHEMA = {
+  type: 'object',
+  required: ['verdict', 'reasons'],
+  properties: {
+    verdict: { type: 'string', enum: ['approved', 'rejected'] },
+    reasons: { type: 'array', items: { type: 'string' } },
+  },
+}
+
 // --- input -----------------------------------------------------------------------------------
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -283,6 +296,8 @@ const MESSAGE_PATH = `${repoRoot}/.aether/tmp/seats/${session}/message.md`
 // Every verdict of the Judge as it was given, and every round with who took it.
 const verdicts = []
 const rounds = []
+// The skills the design installed, rejected or left pending, once the skills step ran (R22 to R25).
+let skills = null
 // Every open question of every Writer answer (a first write, a check retry or a correction, external or native), in
 // order and without duplicates, for the Lead: the Writer has no other channel to it.
 const writerQuestions = []
@@ -992,6 +1007,98 @@ async function planMap() {
   return answer.map
 }
 
+// What the skill-reviewer gets: the folder of the downloaded skill and the
+// topic it was searched for. The rules of the review live in its agent file.
+function skillReviewMessage(candidate) {
+  return lines(`Review the skill downloaded for review in ${candidate.dir}, found for the topic "${candidate.topic}".`)
+}
+
+// The skills step (R22 to R25): after the spec is approved and before the
+// plan map, the flow searches the skills the design may reuse, has the
+// skill-reviewer review at most one candidate per topic and three per design,
+// and installs what it approves. A search that does not run or reports an
+// error is logged and the design goes on with what it has (a search that
+// reports errors still reports its pending list), never a failure. A
+// rejection of the search's own code stage is logged and listed with its
+// reason. A reviewer that ends without an answer, answers without an approved
+// verdict, or fails, drops the candidate's folder (fail closed). A failed
+// install or discard is logged and the candidate counts as rejected. The step
+// always sets `skills`, so every result after it carries the key.
+async function skillsStep() {
+  const empty = () => {
+    skills = { installed: [], rejected: [], pending: [] }
+  }
+  const found = await ops(`aether-plan skills find ${feature}`, { phase: 'Plan', label: 'skills: find' })
+  if (found.error) {
+    log(`skills: ${found.error}; the design goes on`)
+    empty()
+    return
+  }
+  if (found.ok !== true) {
+    log(`skills: the search answered ok: false: ${listOf(found.errors).join(' ')}; the design goes on`)
+    empty()
+    return
+  }
+  if (listOf(found.errors).length > 0) {
+    log(`skills: the search reported errors: ${listOf(found.errors).join(' ')}; the design goes on`)
+    const pending = (Array.isArray(found.pending) ? found.pending : []).filter(isObject).map((entry) => ({ source: entry.source, author: entry.author }))
+    skills = { installed: [], rejected: [], pending }
+    return
+  }
+  const wanted = []
+  const seenTopics = new Set()
+  for (const candidate of Array.isArray(found.candidates) ? found.candidates : []) {
+    if (wanted.length >= 3) break
+    if (!isObject(candidate) || !isObject(candidate.code) || !candidate.code.ok) continue
+    if (typeof candidate.id !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(candidate.id)) continue
+    if (typeof candidate.topic !== 'string' || seenTopics.has(candidate.topic)) continue
+    seenTopics.add(candidate.topic)
+    wanted.push(candidate)
+  }
+  const installed = []
+  const rejected = []
+  for (const entry of Array.isArray(found.rejected) ? found.rejected : []) {
+    if (!isObject(entry)) continue
+    const reasons = listOf(entry.reasons)
+    rejected.push({ name: entry.name, reasons })
+    log(`skills: ${entry.name} rejected: ${reasons.join(' ')}`)
+  }
+  for (const candidate of wanted) {
+    const name = typeof candidate.name === 'string' && candidate.name !== '' ? candidate.name : String(candidate.id)
+    const answer = await call('skill-reviewer', SKILL_REVIEW_PAIR.model, SKILL_REVIEW_PAIR.effort, skillReviewMessage(candidate), {
+      phase: 'Plan',
+      label: `skills: review ${name}`,
+      schema: SKILL_REVIEW_SCHEMA,
+    })
+    if (answer !== null && fits(SKILL_REVIEW_SCHEMA, answer) && answer.verdict === 'approved') {
+      const done = await ops(`aether-plan skills install ${feature} ${candidate.id}`, { phase: 'Plan', label: `skills: install ${name}` })
+      if (!done.error && done.ok === true) {
+        installed.push({ name: String(done.name), topic: candidate.topic, hash: String(done.hash), path: String(done.path), committed: false })
+        log(`skills: installed ${done.name} at ${done.path}; it is not committed`)
+      } else {
+        const reason = done.error || listOf(done.errors).join(' ') || 'the install failed'
+        log(`skills: the install of ${name} failed: ${reason}; the design goes on`)
+        rejected.push({ name, reasons: [reason] })
+      }
+    } else {
+      const dropped = await ops(`aether-plan skills discard ${candidate.id}`, { phase: 'Plan', label: `skills: discard ${name}` })
+      const reasons =
+        answer !== null && fits(SKILL_REVIEW_SCHEMA, answer)
+          ? listOf(answer.reasons)
+          : [answer === null ? 'the reviewer ended without an answer' : 'the reviewer answered without an approved verdict']
+      if (dropped.error || dropped.ok === false) {
+        const reason = dropped.error || listOf(dropped.errors).join(' ') || 'the discard failed'
+        log(`skills: the discard of ${name} failed: ${reason}; the design goes on`)
+        reasons.push(reason)
+      }
+      rejected.push({ name, reasons })
+      log(`skills: ${name} rejected: ${reasons.join(' ')}`)
+    }
+  }
+  const pending = (Array.isArray(found.pending) ? found.pending : []).filter(isObject).map((entry) => ({ source: entry.source, author: entry.author }))
+  skills = { installed, rejected, pending }
+}
+
 // The check after a Writer's step: when it fails, the same step runs once more with the errors (`retry(step, text)`),
 // and a second failure ends the design. Resolves to { printed, retried } or { end }.
 async function checkedAfter(step, text, retry) {
@@ -1126,7 +1233,10 @@ async function full() {
   const specReviewed = await reviews({ doc: 'spec', path: SPEC, phase: 'Spec', author: spec.model, check: null, correct: corrector('spec', SPEC, 'Spec') })
   if (specReviewed.end) return specReviewed.end
 
-  // 3. The plan and the tasks, which aether-plan check must pass; a failed check gets one more Writer round with the errors.
+  // 3. The skills the design may reuse, reviewed and installed before the plan map (R22 to R25).
+  await skillsStep()
+
+  // 4. The plan and the tasks, which aether-plan check must pass; a failed check gets one more Writer round with the errors.
   // Before the Writer, the code map when the approved spec reaches the map threshold (planMap logs its own failure
   // and hands back null, and the plan is then written without a map). The native Writer writes the plan in two
   // calls: plan.md first (an external seat still answers the whole round at once), then tasks.md reading it. When the
@@ -1178,11 +1288,11 @@ async function full() {
   }
   const complexity = typeof written.answer.complexity === 'string' ? written.answer.complexity : ''
 
-  // 4. The plan's reviews, with what check printed.
+  // 5. The plan's reviews, with what check printed.
   const planReviewed = await reviews({ doc: 'plan', path: PLAN, phase: 'Plan', author: written.model, check: checked.printed, correct: corrector('plan', PLAN, 'Plan') })
   if (planReviewed.end) return planReviewed.end
 
-  // 5. The exam.
+  // 6. The exam.
   const exam = await examine(planReviewed.author)
   if (exam.stop) return exam
   return { status: 'approved', spec: SPEC, plan: PLAN, tasks: TASKS, complexity, proposals, exam }
@@ -1252,4 +1362,4 @@ function timesOf(records) {
 const outcome = mode === 'full' ? await full() : await short()
 log(`${feature}: ${outcome.status}`)
 const { status, ...fields } = outcome
-return { status, mode, feature, skill: 'aether:designing', verdicts, rounds, times: timesOf(rounds), ...(writerQuestions.length > 0 ? { writerQuestions } : {}), ...fields }
+return { status, mode, feature, skill: 'aether:designing', verdicts, rounds, times: timesOf(rounds), ...(writerQuestions.length > 0 ? { writerQuestions } : {}), ...(skills === null ? {} : { skills }), ...fields }
