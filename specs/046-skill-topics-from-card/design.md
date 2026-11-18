@@ -57,7 +57,7 @@ Un agente nuevo y de solo lectura, `skill-scout`, lee la tarjeta y devuelve hast
 Estas pruebas describen el comportamiento que este diseño reemplaza; la construcción las reescribe para que una construcción correcta no se juzgue con ellas:
 
 - `tests/defect-045-skills-step.test.js` (línea 16 y líneas 71-72): `ROLES` agrega `skill-scout` (sin él el arnés `workflow-harness.js` lanza en la línea 281, `call` devuelve null y `find` no corre), y los handlers del archivo hacen que `skill-scout` devuelva temas para que `find` corra en todo el archivo; el flujo llama a `aether-plan skills find ${FEATURE} --topic ...` con los temas del agente, antes de `requirements`.
-- `tests/workflow-design.test.js` (línea 17 y líneas 599-611): `ROLES` agrega `skill-scout`, y el arnés del flujo responde `skill-scout` con un stub (`{ topics: [] }` por defecto). La prueba de las líneas 599-611 sobrescribe `skill-scout` con un tema válido, de modo que `skills find <feature> --topic <t>` pase por `parseOpsPrompt` (línea 605) y el verbo `skills` se conserve en la lista de la línea 603; con el stub por defecto no se llamaría a `find`.
+- `tests/workflow-design.test.js` (líneas 17, 95, 417, 426, 475 y 599-611): `ROLES` agrega `skill-scout`, y el arnés del flujo responde `skill-scout` con un stub (`{ topics: [] }` por defecto). Las listas exactas de roles nativos de las líneas 95, 417, 426 y 475 llevan `skill-scout` justo después del primer `judge` (en la línea 417, antes de `mapper`). La prueba de las líneas 599-611 sobrescribe `skill-scout` con un tema válido, de modo que `skills find <feature> --topic <t>` pase por `parseOpsPrompt` (línea 605) y el verbo `skills` se conserve en la lista de la línea 603; con el stub por defecto no se llamaría a `find`.
 - `tests/skill-design.test.js` (líneas 432, 467-470, 764-767 y 772, y las llamadas a `findForDesign` por palabras de la tarjeta): las llamadas a `skills find` por el bin pasan `--topic <t>` (sin `--topic` responden listas vacías, no un candidato), el texto de uso nuevo, y `findForDesign` recibe `topics`.
 - `tests/ops-command-design.test.js` (líneas 99-122): las formas de `skills find` con `--topic`, válidas e inválidas.
 - `plugins/aether/hooks/ops.test.ts` (línea 389): `skills find` con `--topic` corre en el mod.
@@ -67,7 +67,8 @@ Estas pruebas describen el comportamiento que este diseño reemplaza; la constru
 
 - La relevancia usa el `id` y el `label` del propio tema (`matchesKeys`); los sinónimos curados de la tabla ya no se aplican. Es más débil para variantes como `postgres` y `postgresql`, y es lo que el dueño aprobó con «la relevancia usa esos temas».
 - Los temas van en inglés porque las skills de los autores de confianza tienen nombres y descripciones en inglés. Si un tema no encuentra nada, el diseño sigue.
-- Las pruebas del examen oculto de la spec 045 que activan la búsqueda por las palabras de la tabla describen el comportamiento que este diseño reemplaza. Se reportan como obsoletas en el brief, sin borrar ese examen. Si el examen oculto de la spec 045 forma parte de la compuerta de la construcción, el Lead decide antes de lanzarla.
+- Las pruebas del examen oculto de la spec 045 que activan la búsqueda por las palabras de la tabla describen el comportamiento que este diseño reemplaza. Se reportan como obsoletas en el brief, sin borrar ese examen. Ese examen no es compuerta de esta construcción: el Lead lo corre al final y juzga cada falla contra este diseño.
+- Un tema queda cubierto si una skill instalada lo menciona en su nombre o descripción (`topicCovered`, sin cambios). Con temas de una palabra esto puede evitar una búsqueda, y es el lado prudente: no instala nada de más y se puede afinar después.
 
 ## Fuera de alcance
 
