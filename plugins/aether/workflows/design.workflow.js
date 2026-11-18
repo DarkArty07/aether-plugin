@@ -1030,10 +1030,21 @@ function skillScoutMessage() {
   return lines(`Read the owner's intent card ${INTENT} and return up to 3 skill search topics for it.`)
 }
 
-// What the skill-reviewer gets: the folder of the downloaded skill and the
-// topic it was searched for. The rules of the review live in its agent file.
+// What the skill-reviewer gets: the folder of the downloaded skill, the
+// topic it was searched for, and the list of its files. The rules of the
+// review live in its agent file. Only plain relative paths are listed: the
+// reviewer reads each with Read, because search tools may skip a folder git
+// ignores.
 function skillReviewMessage(candidate) {
-  return lines(`Review the skill downloaded for review in ${candidate.dir}, found for the topic "${candidate.topic}".`)
+  const files = (Array.isArray(candidate.files) ? candidate.files : []).filter(
+    (file) => typeof file === 'string' && file !== '' && !file.includes('..') && !file.startsWith('/'),
+  )
+  return lines(
+    `Review the skill downloaded for review in ${candidate.dir}, found for the topic "${candidate.topic}".`,
+    '',
+    'Read every file of this list with Read:',
+    ...files.map((file) => `- ${file}`),
+  )
 }
 
 // The skills step (R22 to R25): after the spec is approved and before the
@@ -1088,6 +1099,9 @@ async function skillsStep() {
   }
   if (listOf(found.errors).length > 0) {
     log(`skills: the search reported errors: ${listOf(found.errors).join(' ')}; the design goes on`)
+  }
+  if (listOf(found.skipped).length > 0) {
+    log(`skills: skipped: ${listOf(found.skipped).join(' ')}; the design goes on`)
   }
   const wanted = []
   const seenTopics = new Set()

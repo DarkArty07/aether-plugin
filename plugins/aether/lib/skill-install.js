@@ -1,7 +1,8 @@
 'use strict'
 
 // Downloads a skill for review and installs a reviewed skill byte for byte (spec 045, R23).
-// The download runs once, into an isolated folder under the data dir; the install
+// The download runs once, into an isolated review folder waiting inside the worktree
+// (.aether/tmp/skill-review/, out of git through .git/info/exclude); the install
 // copies that reviewed content into the project, verifies its hash, and commits nothing.
 // Family: skill.
 
@@ -15,6 +16,7 @@ const { authorOf } = require('./skill-rules.js')
 const FIND_TIMEOUT_MS = 15000
 const ADD_TIMEOUT_MS = 60000
 const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
+const MAX_SKILL_FILES = 200
 
 function skillsBin(env) {
   const raw = (env && env.AETHER_SKILLS_BIN) || process.env.AETHER_SKILLS_BIN || 'npx skills@1.9.0'
@@ -43,12 +45,22 @@ function runSkillBin(cmd, args, { cwd, timeoutMs, env } = {}) {
   }
 }
 
-function reviewRoot(dataDir) {
-  return path.join(dataDir, 'skills', 'review')
+function reviewRoot(root) {
+  return path.join(root, '.aether', 'tmp', 'skill-review')
 }
 
-function reviewDir(dataDir, id) {
-  return path.join(reviewRoot(dataDir), id)
+function reviewDir(root, id) {
+  return path.join(reviewRoot(root), id)
+}
+
+// Removes skill-review/ itself when the last candidate folder is gone, so
+// an installed, discarded or rejected design leaves no empty folder behind.
+function removeReviewRootIfEmpty(root) {
+  if (typeof root !== 'string' || root === '') return
+  try {
+    const dir = reviewRoot(root)
+    if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir)
+  } catch {}
 }
 
 // The review id of a downloaded skill: its name when it is a safe path
@@ -65,17 +77,35 @@ function removeDir(dir) {
   } catch {}
 }
 
-// `add <source> --skill <name>` once, into a fresh folder under the data dir
-// (never the project, never global): computes the SHA-256 of what arrived and
-// writes review.json. No second download ever runs after the review.
-function fetchForReview({ source, name, env, runner, dataDir } = {}) {
+// `add <source> --skill <name>` once, into a fresh folder waiting inside the
+// worktree (never the skills folders, never global): computes the SHA-256 of
+// what arrived and writes review.json. No second download ever runs after the
+// review. Without a review root it fails, and never falls back to the
+// process working directory.
+function fetchForReview({ source, name, env, runner, root } = {}) {
   const run = runner || runSkillBin
+  if (typeof root !== 'string' || root === '') {
+    return { ok: false, errors: [`no review root: fetchForReview needs the worktree root for ${source} --skill ${name}`] }
+  }
   const id = skillId(name)
-  const dir = reviewDir(dataDir, id)
+  const dir = reviewDir(root, id)
+  // The review waits inside the project, so the folder stays out of git
+  // through .git/info/exclude, never through .gitignore. Outside a git
+  // repository there is nothing to exclude.
+  try {
+    const { repoPaths } = require('./git.js')
+    const { ensureExcluded } = require('./run.js')
+    ensureExcluded(repoPaths(root).gitCommonDir)
+  } catch {}
   removeDir(dir)
-  fs.mkdirSync(dir, { recursive: true })
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+  } catch (err) {
+    return { ok: false, errors: [`the review folder cannot be created: ${String((err && err.message) || err)}`] }
+  }
   const fail = (message) => {
     removeDir(dir)
+    removeReviewRootIfEmpty(root)
     return { ok: false, errors: [message] }
   }
   const { cmd, prefix } = skillsBin(env)
@@ -90,10 +120,11 @@ function fetchForReview({ source, name, env, runner, dataDir } = {}) {
     const detail = String(result.stderr || result.error || `exit ${result.status}`).trim().split('\n')[0]
     return fail(`download of ${source} --skill ${name} failed: ${detail}`)
   }
+  if (!pruneReviewDir(dir, name)) return fail(`download of ${source} --skill ${name} planted a symlink in the review folder: not reviewed`)
   const skillDir = path.join(dir, '.agents', 'skills', name)
   let stat = null
   try {
-    stat = fs.statSync(skillDir)
+    stat = fs.lstatSync(skillDir)
   } catch {
     stat = null
   }
@@ -102,6 +133,77 @@ function fetchForReview({ source, name, env, runner, dataDir } = {}) {
   const review = { name, source, author: authorOf(source), hash }
   fs.writeFileSync(path.join(dir, 'review.json'), JSON.stringify(review, null, 2) + '\n')
   return { ok: true, id, dir, hash }
+}
+
+// After the download the review folder keeps only .agents/skills/<name>/,
+// skills-lock.json and review.json. Any other top-level entry, in particular
+// .claude, and any top-level symlink is removed, so the unreviewed copy never
+// sits as a skill or as instructions the session could load. Inside .agents
+// only skills/<name>/ stays: any other entry could be loaded as instructions
+// while the reviewer reads the skill. Answers true when the folder is safe to
+// read, false when a planted symlink was found: lstat runs on .agents, on
+// .agents/skills and on .agents/skills/<name> before any readdir or removal,
+// so a link at any of the three is unlinked, never followed, and the caller
+// fails the download closed.
+function pruneReviewDir(dir, name) {
+  const agentsDir = path.join(dir, '.agents')
+  const skillsDir = path.join(agentsDir, 'skills')
+  const skillDir = path.join(skillsDir, name)
+  for (const candidate of [agentsDir, skillsDir, skillDir]) {
+    let isLink = false
+    try {
+      isLink = fs.lstatSync(candidate).isSymbolicLink()
+    } catch {
+      isLink = false
+    }
+    if (isLink) {
+      try {
+        fs.unlinkSync(candidate)
+      } catch {}
+      return false
+    }
+  }
+  let entries = null
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return true
+  }
+  const keep = new Set(['.agents', 'skills-lock.json', 'review.json'])
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name)
+    let isLink = false
+    try {
+      isLink = fs.lstatSync(full).isSymbolicLink()
+    } catch {
+      continue
+    }
+    if (isLink || !keep.has(entry.name)) removeDir(full)
+  }
+  let agentEntries = null
+  try {
+    agentEntries = fs.readdirSync(agentsDir, { withFileTypes: true })
+  } catch {
+    agentEntries = null
+  }
+  if (agentEntries !== null) {
+    for (const entry of agentEntries) {
+      if (entry.name === 'skills') continue
+      removeDir(path.join(agentsDir, entry.name))
+    }
+  }
+  let skillEntries = null
+  try {
+    skillEntries = fs.readdirSync(skillsDir, { withFileTypes: true })
+  } catch {
+    skillEntries = null
+  }
+  if (skillEntries === null) return true
+  for (const entry of skillEntries) {
+    if (entry.name === name) continue
+    removeDir(path.join(skillsDir, entry.name))
+  }
+  return true
 }
 
 function listEntries(root) {
@@ -205,10 +307,12 @@ module.exports = {
   FIND_TIMEOUT_MS,
   ADD_TIMEOUT_MS,
   ID_PATTERN,
+  MAX_SKILL_FILES,
   skillsBin,
   runSkillBin,
   reviewRoot,
   reviewDir,
+  removeReviewRootIfEmpty,
   skillId,
   removeDir,
   fetchForReview,

@@ -75,6 +75,20 @@ test('the Designer is gone', () => {
   assert.equal(fs.existsSync(path.join(PLUGIN, 'agents', 'designer.md')), false)
 })
 
+test('the skill scout asks for broad topic names, never actions', () => {
+  const { body } = agentFile('skill-scout')
+  for (const needle of ['never an action', '`pdf`', 'pdf-merge', '{ "topics"', 'intent.md']) {
+    assert.ok(body.includes(needle), `skill-scout.md mentions ${needle}`)
+  }
+  assert.equal(body.includes('one line per practical topic'), false, 'no line-count sentence contradicts the single JSON object')
+})
+
+test('the skill reviewer reads every file of the list the message gives', () => {
+  const { body } = agentFile('skill-reviewer')
+  assert.ok(body.includes('Read with Read every file of the list'), 'it reads each file with Read')
+  assert.ok(body.includes('git ignores'), 'search tools may skip a folder git ignores')
+})
+
 test('the skill scout runs on Haiku at high effort, and can only read', () => {
   const { front } = agentFile('skill-scout')
   assert.equal(field(front, 'name'), 'skill-scout')

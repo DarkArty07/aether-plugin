@@ -42,15 +42,16 @@ ${behavior === 'missing' ? 'process.exit(1)' : `fs.cpSync(${JSON.stringify(src)}
   return { env: { AETHER_SKILLS_BIN: bin, HOME: home }, home, dir }
 }
 
-test('fetchForReview downloads once into an isolated folder under the data dir and writes review.json', (t) => {
+test('fetchForReview downloads once into an isolated folder under .aether/tmp/skill-review/ of the worktree and writes review.json', (t) => {
   const repo = makeRepo(t)
   const data = tempDir(t, 'aether-data-')
   putTrusted(data, ['acme'])
   const fake = fakeBin(t)
-  const r = installLib.fetchForReview({ source: 'acme/scene', name: 'godot-helper', env: fake.env, dataDir: data })
+  const r = installLib.fetchForReview({ source: 'acme/scene', name: 'godot-helper', env: fake.env, root: repo.dir })
   assert.equal(r.ok, true, JSON.stringify(r))
-  assert.ok(r.dir.startsWith(path.join(data, 'skills', 'review') + path.sep), r.dir)
-  assert.ok(!path.resolve(r.dir).startsWith(path.resolve(repo.dir) + path.sep), 'never the project')
+  assert.ok(r.dir.startsWith(path.join(repo.dir, '.aether', 'tmp', 'skill-review') + path.sep), r.dir)
+  assert.ok(!path.resolve(r.dir).startsWith(path.join(repo.dir, '.agents', 'skills') + path.sep), 'never in .agents/skills')
+  assert.ok(!path.resolve(r.dir).startsWith(path.join(repo.dir, '.claude', 'skills') + path.sep), 'never in .claude/skills')
   assert.equal(r.hash, computedHash(path.join(r.dir, '.agents', 'skills', 'godot-helper')))
   const review = JSON.parse(fs.readFileSync(path.join(r.dir, 'review.json'), 'utf8'))
   assert.equal(review.name, 'godot-helper')
@@ -60,13 +61,14 @@ test('fetchForReview downloads once into an isolated folder under the data dir a
 })
 
 test('fetchForReview fails when the download leaves no skill folder, and leaves no review folder', (t) => {
+  const repo = makeRepo(t)
   const data = tempDir(t, 'aether-data-')
   putTrusted(data, ['acme'])
   const fake = fakeBin(t, { behavior: 'missing' })
-  const r = installLib.fetchForReview({ source: 'acme/scene', name: 'godot-helper', env: fake.env, dataDir: data })
+  const r = installLib.fetchForReview({ source: 'acme/scene', name: 'godot-helper', env: fake.env, root: repo.dir })
   assert.equal(r.ok, false)
   assert.ok(r.errors.length > 0)
-  assert.equal(fs.existsSync(path.join(data, 'skills', 'review', 'godot-helper')), false)
+  assert.equal(fs.existsSync(path.join(repo.dir, '.aether', 'tmp', 'skill-review', 'godot-helper')), false)
 })
 
 test('copyReviewed copies byte for byte, links .claude/skills and verifies the hash', (t) => {

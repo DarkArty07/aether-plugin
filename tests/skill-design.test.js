@@ -84,12 +84,17 @@ const bump = (kind, entry) => {
 }
 const args = process.argv.slice(2)
 if (args[0] === 'find') {
-  const query = args.slice(1).join(' ')
-  bump('find', query)
+  const rest = args.slice(1)
+  const oi = rest.indexOf('--owner')
+  const owner = oi >= 0 ? rest[oi + 1] : null
+  const query = (oi >= 0 ? rest.slice(0, oi) : rest).join(' ')
+  const key = owner ? query + ' --owner ' + owner : query
+  bump('find', key)
   const cfg = readJson(findFile, { lines: '' })
   if (cfg.mode === 'fail') { process.stderr.write('network unreachable\\n'); process.exit(1) }
   if (cfg.mode === 'slow') { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 120000); process.exit(0) }
-  const lines = typeof cfg.lines === 'string' ? cfg.lines : (cfg.byQuery || {})[query] || ''
+  const table = cfg.byQuery || {}
+  const lines = typeof cfg.lines === 'string' && cfg.lines !== '' ? cfg.lines : (table[key] !== undefined ? table[key] : (table[query] || ''))
   if (lines !== '') process.stdout.write(lines.endsWith('\\n') ? lines : lines + '\\n')
 } else if (args[0] === 'add') {
   const at = args.indexOf('--skill')
@@ -200,7 +205,7 @@ test('R22: the query is the topic id with spaces', (t) => {
   })
   const r = callFind(w, fake, { topics: ['alpha-x', 'beta-y', 'cee-cee'] })
   assert.equal(r.ok, true, JSON.stringify(r))
-  assert.deepEqual(fake.counts().queries, ['alpha x', 'beta y', 'cee cee'])
+  assert.deepEqual(fake.counts().queries, ['alpha x --owner godot-author', 'beta y --owner godot-author', 'cee cee --owner godot-author'])
   assert.equal(r.candidates.length, 3)
 })
 
@@ -231,8 +236,9 @@ test('R23: a valid skill of a trusted author is downloaded once, hashed, reviewe
   const [candidate] = r.candidates
   assert.equal(candidate.id, 'godot-helper')
   assert.deepEqual(candidate.code, { ok: true })
-  assert.ok(candidate.dir.startsWith(path.join(w.data, 'skills', 'review') + path.sep), candidate.dir)
-  assert.ok(!path.resolve(candidate.dir).startsWith(path.resolve(w.repo.dir) + path.sep), candidate.dir)
+  assert.ok(candidate.dir.startsWith(path.join(w.repo.dir, '.aether', 'tmp', 'skill-review') + path.sep), candidate.dir)
+  assert.ok(!path.resolve(candidate.dir).startsWith(path.join(w.repo.dir, '.agents', 'skills') + path.sep), candidate.dir)
+  assert.ok(!path.resolve(candidate.dir).startsWith(path.join(w.repo.dir, '.claude', 'skills') + path.sep), candidate.dir)
   assert.equal(fake.counts().add, 1)
   assert.ok(fs.existsSync(path.join(candidate.dir, '.agents', 'skills', 'godot-helper', 'SKILL.md')))
   const review = JSON.parse(fs.readFileSync(path.join(candidate.dir, 'review.json'), 'utf8'))
@@ -294,7 +300,7 @@ for (const [defect, entry] of Object.entries(DEFECTS)) {
     assert.equal(r.rejected.length, 1)
     assert.equal(r.rejected[0].name, name)
     assert.ok(r.rejected[0].reasons.length > 0, 'reasons is non-empty')
-    assert.equal(fs.existsSync(path.join(w.data, 'skills', 'review', name)), false, 'the review folder is gone')
+    assert.equal(fs.existsSync(path.join(w.repo.dir, '.aether', 'tmp', 'skill-review', name)), false, 'the review folder is gone')
     assert.equal(fs.existsSync(path.join(w.repo.dir, '.agents', 'skills')), false, 'the project is untouched')
   })
 }
@@ -417,10 +423,10 @@ test('discard removes the review folder; an unknown id is an error line, not a c
   const r = callFind(w, fake, { topics: ['godot'] })
   assert.equal(r.candidates.length, 1)
   const [candidate] = r.candidates
-  const gone = design.discardForDesign({ id: candidate.id, dataDir: w.data })
+  const gone = design.discardForDesign({ id: candidate.id, cwd: w.repo.dir, dataDir: w.data })
   assert.equal(gone.ok, true, JSON.stringify(gone))
   assert.equal(fs.existsSync(candidate.dir), false)
-  const unknown = design.discardForDesign({ id: 'nope-missing', dataDir: w.data })
+  const unknown = design.discardForDesign({ id: 'nope-missing', cwd: w.repo.dir, dataDir: w.data })
   assert.equal(unknown.ok, false)
   assert.ok(unknown.errors.length > 0)
   const via = runBin(PLAN_BIN, ['skills', 'discard', 'nope-missing'], w.repo.dir, { ...fake.env, AETHER_DATA_DIR: w.data })
@@ -442,8 +448,8 @@ test('skills find resolves the data dir without AETHER_DATA_DIR, from CLAUDE_CON
   assert.equal(r.status, 0, r.stdout + r.stderr)
   assert.equal(r.json.ok, true, r.stdout)
   assert.equal(r.json.candidates.length, 1)
-  const reviewRoot = path.join(dataDir, 'skills', 'review')
-  assert.ok(fs.existsSync(path.join(reviewRoot, 'godot-helper', 'review.json')), 'the review lands under the CLAUDE_CONFIG_DIR data dir')
+  const reviewRoot = path.join(repo.dir, '.aether', 'tmp', 'skill-review')
+  assert.ok(fs.existsSync(path.join(reviewRoot, 'godot-helper', 'review.json')), 'the review waits under .aether/tmp/skill-review/ of the worktree')
   assert.ok(fs.existsSync(path.join(dataDir, 'skills', 'design-state', 'specs-001-quest.json')), 'the state file lands under the CLAUDE_CONFIG_DIR data dir')
   assert.deepEqual(fs.readdirSync(reviewRoot), ['godot-helper'], 'the review folder holds only the temporary download')
 })
@@ -456,8 +462,8 @@ test('R23: a registry name that is not a safe id is never downloaded and writes 
       const r = callFind(w, fake, { topics: ['godot'] })
       assert.deepEqual(r.candidates, [])
       assert.equal(fake.counts().add, 0, 'the CLI is never called')
-      assert.equal(fs.existsSync(path.join(w.repo.dir, '.agents')), false, 'nothing is written to the project')
-      const reviewRoot = path.join(w.data, 'skills', 'review')
+      assert.equal(fs.existsSync(path.join(w.repo.dir, '.agents')), false, 'nothing is written to the skills folders')
+      const reviewRoot = path.join(w.repo.dir, '.aether', 'tmp', 'skill-review')
       const leftovers = fs.existsSync(reviewRoot) ? fs.readdirSync(reviewRoot).filter((file) => !file.endsWith('.json')) : []
       assert.deepEqual(leftovers, [], 'no review folder is left behind')
     })
@@ -546,7 +552,7 @@ test('R23: a SKILL.md directory fails the code stage without a crash and the rev
   assert.equal(r.candidates.length, 0)
   assert.equal(r.rejected.length, 1)
   assert.ok(r.rejected[0].reasons.length > 0, 'reasons is non-empty')
-  assert.equal(fs.existsSync(path.join(w.data, 'skills', 'review', 'godot-helper')), false, 'the review folder is gone')
+  assert.equal(fs.existsSync(path.join(w.repo.dir, '.aether', 'tmp', 'skill-review', 'godot-helper')), false, 'the review folder is gone')
   assert.equal(fs.existsSync(path.join(w.repo.dir, '.agents')), false, 'the project is untouched')
 })
 
@@ -736,7 +742,7 @@ test('the skills verb prints one JSON line per call and exits 0; a bad skills ca
   assert.equal(install.json.committed, false)
   const empty = runBin(PLAN_BIN, ['skills', 'find', w.feature], w.repo.dir, env)
   assert.equal(empty.status, 0, empty.stdout + empty.stderr)
-  assert.deepEqual(empty.json, { ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] }, 'no --topic answers empty lists, not a candidate')
+  assert.deepEqual(empty.json, { ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [], skipped: [] }, 'no --topic answers empty lists, not a candidate')
   const usage = design.SKILLS_USAGE
   for (const argv of [['skills'], ['skills', 'fetch', 'x'], ['skills', 'find'], ['skills', 'find', w.feature, '--topic'], ['skills', 'find', w.feature, 'godot'], ['skills', 'install', w.feature], ['skills', 'install', w.feature, '../evil'], ['skills', 'discard'], ['skills', 'discard', '../evil']]) {
     const bad = runBin(PLAN_BIN, argv, w.repo.dir, env)

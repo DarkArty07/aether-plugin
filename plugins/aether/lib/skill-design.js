@@ -21,6 +21,15 @@ const installLib = require('./skill-install.js')
 
 const SKILLS_USAGE = 'usage: aether-plan skills find <feature> [--topic <t>]... | aether-plan skills install <feature> <id> | aether-plan skills discard <id>'
 const MAX_PER_DESIGN = 3
+// One topic first asks each trusted author, then the general search: at most
+// 5 authors per topic, in alphabetical order. The rest are not searched and
+// land in the result's skipped list, never in its errors.
+// One download attempt per topic and 3 per design, accepted or not: after
+// its attempt a topic ends, whatever the attempt's outcome.
+const OWNER_PATTERN = /^[a-z0-9][a-z0-9-]{0,38}$/
+const MAX_OWNERS_PER_TOPIC = 5
+const MAX_DOWNLOADS_PER_TOPIC = 1
+const MAX_DOWNLOADS_PER_DESIGN = 3
 const SKILL_ID = installLib.ID_PATTERN
 // One search topic: a lowercase hyphenated id of 1 to 3 words, so a scout
 // answer never becomes a command or a huge query. Checked in three places:
@@ -180,6 +189,18 @@ function codeReview(dir, { topic, installedNames = [], acceptedKeys = [] } = {})
   const problems = []
   const folderName = path.basename(dir)
   const entries = installLib.listEntries(dir)
+  // A skill that carries instruction files Claude Code could load, or more
+  // files than the reviewer reads one by one, is rejected: the copy waits
+  // inside the project, where such files must never sit, even unreviewed.
+  const forbidden = new Set(['claude.md', 'agents.md', '.claude'])
+  for (const entry of entries) {
+    const hit = entry.rel.split('/').find((segment) => forbidden.has(segment.toLowerCase()))
+    if (hit) problems.push(`${hit} in ${entry.rel}: the skill carries a file Claude Code could load as instructions`)
+  }
+  const fileCount = entries.filter((entry) => entry.kind === 'file').length
+  if (fileCount > installLib.MAX_SKILL_FILES) {
+    problems.push(`the skill holds ${fileCount} files: the reviewer reads every file with Read, and more than ${installLib.MAX_SKILL_FILES} files is not reviewed`)
+  }
   const hasSkillMd = entries.some((entry) => entry.rel === 'SKILL.md' && entry.kind === 'file')
   if (!hasSkillMd) problems.push('SKILL.md does not exist')
   problems.push(...checkSkillFile(dir))
@@ -316,8 +337,8 @@ function findForDesign({ cwd, feature, home, dataDir, env, runner, topics, now, 
   const projectRoot = worktreeOf(cwd || '.')
   const pendingRoot = pendingRootOf(cwd || '.')
   const findTimeoutMs = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : installLib.FIND_TIMEOUT_MS
-  const empty = (errors) => ({ ok: false, topics: [], candidates: [], rejected: [], pending: [], errors })
-  const emptyOk = () => ({ ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] })
+  const empty = (errors) => ({ ok: false, topics: [], candidates: [], rejected: [], pending: [], errors, skipped: [] })
+  const emptyOk = () => ({ ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [], skipped: [] })
   // The scout's topics, valid and distinct, at most 3: without one the search
   // answers ok:true with empty lists and never calls the registry.
   const seen = new Set()
@@ -340,84 +361,158 @@ function findForDesign({ cwd, feature, home, dataDir, env, runner, topics, now, 
     if (!coveredIds.has(topic.id)) continue
     for (const key of topicKeys(topic)) acceptedKeys.add(String(key).toLowerCase().normalize('NFD').replace(/\p{M}/gu, ''))
   }
-  const result = { ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [] }
+  const result = { ok: true, topics: [], candidates: [], rejected: [], pending: [], errors: [], skipped: [] }
   const { cmd, prefix } = installLib.skillsBin(env)
   const run = runner || installLib.runSkillBin
+  // trusted.json is read once per call, not once per candidate: its authors
+  // drive every owner search below. Only a valid author is ever searched, in
+  // alphabetical order; any other entry is skipped, never an error.
+  const trusted = readTrusted(dataDir)
+  const trustedSet = new Set(trusted)
+  const validOwners = []
+  for (const author of [...new Set(trusted)].sort()) {
+    if (!OWNER_PATTERN.test(author)) {
+      result.skipped.push(`trusted author ${author}: invalid pattern, not searched`)
+      continue
+    }
+    validOwners.push(author)
+  }
+  let downloads = 0
   for (const topic of wanted) {
     if (result.candidates.length >= MAX_PER_DESIGN) break
     result.topics.push(topic.id)
     const query = topicQuery(topic)
-    let response = null
-    try {
-      response = run(cmd, [...prefix, 'find', query], { cwd: projectRoot, timeoutMs: findTimeoutMs, env })
-    } catch (err) {
-      result.errors.push(`topic ${topic.id}: search failed: ${String((err && err.message) || err)}`)
-      continue
+    for (const extra of validOwners.slice(MAX_OWNERS_PER_TOPIC)) {
+      result.skipped.push(`trusted author ${extra} not searched: limit ${MAX_OWNERS_PER_TOPIC}`)
     }
-    if (!response || response.timedOut) {
-      result.errors.push(`topic ${topic.id}: search timed out`)
-      continue
-    }
-    if (response.error || response.status !== 0) {
-      const detail = String(response.stderr || response.error || `exit ${response.status}`).trim().split('\n')[0]
-      result.errors.push(`topic ${topic.id}: search failed: ${detail}`)
-      continue
-    }
-    const parsed = parseFindOutput(response.stdout)
-    if (!parsed.length) {
-      result.errors.push(`topic ${topic.id}: invalid response: no skill token`)
-      continue
-    }
+    // One search per trusted author first, then the general one. A search
+    // with no `owner/repo@skill` token counts as no results; the topic
+    // records an invalid response only when none of its searches brought one.
+    // A failed or timed-out search records its error and ends the topic.
+    const searches = [...validOwners.slice(0, MAX_OWNERS_PER_TOPIC).map((owner) => ({ owner })), { owner: null }]
     const keys = topicKeys(topic)
+    let hadToken = false
+    let searchFailed = false
+    let attempted = 0
     let accepted = 0
-    let queued = 0
-    for (const item of parsed) {
-      if (accepted >= 1 || result.candidates.length >= MAX_PER_DESIGN) break
-      if (!item.name || !item.source) continue
-      if (!SKILL_ID.test(item.name)) continue
-      if (!matchesKeys(item.name, item.description, keys)) continue
-      if (runNames.has(item.name) || runPairs.has(`${item.source}@${item.name}`)) continue
-      if (matchesKeys(item.name, item.description, [...acceptedKeys])) continue
-      const author = authorOf(item.source)
-      const trusted = new Set(readTrusted(dataDir))
-      if (!author || !trusted.has(author)) {
-        if (queued < 1) {
-          if (!/^[A-Za-z0-9._~:/-]+$/.test(item.source)) {
-            result.errors.push(`topic ${topic.id}: invalid source "${item.source}": not queued`)
-            continue
-          }
-          const command = `npx skills@1.9.0 add ${item.source} --skill ${item.name}`
-          const entry = { source: item.source, author, topic: topic.id, command, reason: 'author not in trusted.json' }
-          result.pending.push(entry)
-          const already = readPending(pendingRoot).some((line) => line && line.class === 'skill-install' && line.source === item.source && line.command === command)
-          if (!already) appendPending(pendingRoot, { class: 'skill-install', source: item.source, author, command, reason: 'author not in trusted.json' })
-          queued += 1
-        }
-        continue
-      }
-      const downloaded = installLib.fetchForReview({ source: item.source, name: item.name, env, runner, dataDir })
-      if (!downloaded.ok) {
-        result.errors.push(`topic ${topic.id}: download failed: ${downloaded.errors.join('; ')}`)
-        continue
-      }
-      const skillDir = path.join(downloaded.dir, '.agents', 'skills', item.name)
-      let review = null
+    // The single suggestion of another author of this topic, buffered while
+    // its searches run and queued only when the topic made no download attempt.
+    let suggestion = null
+    const seenPairs = new Set()
+    let done = false
+    for (const search of searches) {
+      if (done || accepted >= 1 || attempted >= MAX_DOWNLOADS_PER_TOPIC) break
+      const args = search.owner === null ? ['find', query] : ['find', query, '--owner', search.owner]
+      let response = null
       try {
-        review = codeReview(skillDir, { topic, installedNames: [...names], acceptedKeys: [...acceptedKeys] })
+        response = run(cmd, [...prefix, ...args], { cwd: projectRoot, timeoutMs: findTimeoutMs, env })
       } catch (err) {
-        review = { ok: false, problems: [`the code stage failed: ${String((err && err.message) || err)}`] }
+        result.errors.push(`topic ${topic.id}: search failed: ${String((err && err.message) || err)}`)
+        searchFailed = true
+        break
       }
-      if (!review.ok) {
-        installLib.removeDir(downloaded.dir)
-        result.rejected.push({ name: item.name, source: item.source, topic: topic.id, reasons: review.problems })
-        continue
+      if (!response || response.timedOut) {
+        result.errors.push(`topic ${topic.id}: search timed out`)
+        searchFailed = true
+        break
       }
-      fs.writeFileSync(path.join(downloaded.dir, 'review.json'), JSON.stringify({ feature, topic: topic.id, name: item.name, source: item.source, author, hash: downloaded.hash }, null, 2) + '\n')
-      result.candidates.push({ id: downloaded.id, topic: topic.id, name: item.name, source: item.source, author, hash: downloaded.hash, dir: downloaded.dir, code: { ok: true } })
-      runNames.add(item.name)
-      runPairs.add(`${item.source}@${item.name}`)
-      for (const key of keys) acceptedKeys.add(String(key).toLowerCase().normalize('NFD').replace(/\p{M}/gu, ''))
-      accepted += 1
+      if (response.error || response.status !== 0) {
+        const detail = String(response.stderr || response.error || `exit ${response.status}`).trim().split('\n')[0]
+        result.errors.push(`topic ${topic.id}: search failed: ${detail}`)
+        searchFailed = true
+        break
+      }
+      const parsed = parseFindOutput(response.stdout)
+      if (parsed.length === 0) continue
+      hadToken = true
+      for (const item of parsed) {
+        if (accepted >= 1 || result.candidates.length >= MAX_PER_DESIGN || attempted >= MAX_DOWNLOADS_PER_TOPIC) {
+          done = true
+          break
+        }
+        if (!item.name || !item.source) continue
+        if (!SKILL_ID.test(item.name)) continue
+        if (!matchesKeys(item.name, item.description, keys)) continue
+        if (runNames.has(item.name) || runPairs.has(`${item.source}@${item.name}`)) continue
+        if (matchesKeys(item.name, item.description, [...acceptedKeys])) continue
+        // A pair already buffered or errored in this topic is skipped. A pair an
+        // earlier search only looked at is not: an owner search counts just
+        // its own author, so the general search may still take it.
+        const pairKey = `${item.source}@${item.name}`
+        if (seenPairs.has(pairKey)) continue
+        const author = authorOf(item.source)
+        if (search.owner !== null && author !== search.owner) continue
+        if (!author || !trustedSet.has(author)) {
+          // Only the general search buffers the owner's list, and only one
+          // suggestion per topic: an owner search counts only the skills of
+          // its own author, and a result past a download attempt never
+          // counts. The buffered entry is queued after the searches of the
+          // topic end, and only when the topic made no download attempt, so
+          // a later trusted result that downloads queues nothing. A pair an
+          // owner search skipped is not marked seen, so the general search
+          // may still buffer it; only a buffered pair or an errored source is.
+          if (search.owner !== null || attempted > 0 || accepted > 0) continue
+          if (suggestion === null && !seenPairs.has(pairKey)) {
+            if (!/^[A-Za-z0-9._~:/-]+$/.test(item.source)) {
+              result.errors.push(`topic ${topic.id}: invalid source "${item.source}": not queued`)
+              seenPairs.add(pairKey)
+              continue
+            }
+            const command = `npx skills@1.9.0 add ${item.source} --skill ${item.name}`
+            suggestion = { source: item.source, author, topic: topic.id, command, reason: 'author not in trusted.json' }
+            seenPairs.add(pairKey)
+          }
+          continue
+        }
+        // One download attempt per topic and 3 per design, accepted or not.
+        // After its attempt the topic ends: no more results, no more
+        // searches, no pending suggestion.
+        if (downloads >= MAX_DOWNLOADS_PER_DESIGN) {
+          done = true
+          break
+        }
+        attempted += 1
+        downloads += 1
+        const downloaded = installLib.fetchForReview({ source: item.source, name: item.name, env, runner, root: projectRoot })
+        if (!downloaded.ok) {
+          result.errors.push(`topic ${topic.id}: download failed: ${downloaded.errors.join('; ')}`)
+          done = true
+          break
+        }
+        const skillDir = path.join(downloaded.dir, '.agents', 'skills', item.name)
+        let review = null
+        try {
+          review = codeReview(skillDir, { topic, installedNames: [...names], acceptedKeys: [...acceptedKeys] })
+        } catch (err) {
+          review = { ok: false, problems: [`the code stage failed: ${String((err && err.message) || err)}`] }
+        }
+        if (!review.ok) {
+          installLib.removeDir(downloaded.dir)
+          installLib.removeReviewRootIfEmpty(projectRoot)
+          result.rejected.push({ name: item.name, source: item.source, topic: topic.id, reasons: review.problems })
+          done = true
+          break
+        }
+        fs.writeFileSync(path.join(downloaded.dir, 'review.json'), JSON.stringify({ feature, topic: topic.id, name: item.name, source: item.source, author, hash: downloaded.hash }, null, 2) + '\n')
+        const files = installLib.listEntries(skillDir).filter((entry) => entry.kind === 'file').map((entry) => entry.rel).sort()
+        result.candidates.push({ id: downloaded.id, topic: topic.id, name: item.name, source: item.source, author, hash: downloaded.hash, dir: downloaded.dir, files, code: { ok: true } })
+        runNames.add(item.name)
+        runPairs.add(`${item.source}@${item.name}`)
+        for (const key of keys) acceptedKeys.add(String(key).toLowerCase().normalize('NFD').replace(/\p{M}/gu, ''))
+        accepted += 1
+        done = true
+      }
+    }
+    // A suggestion of another author is queued only in a topic that made no
+    // download attempt: the single buffered entry is emitted here, once the
+    // searches of the topic have ended.
+    if (suggestion !== null && attempted === 0) {
+      result.pending.push(suggestion)
+      const already = readPending(pendingRoot).some((line) => line && line.class === 'skill-install' && line.source === suggestion.source && line.command === suggestion.command)
+      if (!already) appendPending(pendingRoot, { class: 'skill-install', source: suggestion.source, author: suggestion.author, command: suggestion.command, reason: 'author not in trusted.json' })
+    }
+    if (!hadToken && !searchFailed) {
+      result.errors.push(`topic ${topic.id}: invalid response: no skill token`)
     }
   }
   result.ok = result.errors.length === 0
@@ -437,7 +532,7 @@ function installForDesign({ cwd, feature, id, home, dataDir, env, now } = {}) {
   if (state.installed.length >= MAX_PER_DESIGN) {
     return { ok: false, errors: [`at most ${MAX_PER_DESIGN} skills per design: "${id}" is not installed`] }
   }
-  const dir = installLib.reviewDir(dataDir, id)
+  const dir = installLib.reviewDir(worktreeOf(cwd || '.'), id)
   let review = null
   try {
     review = JSON.parse(fs.readFileSync(path.join(dir, 'review.json'), 'utf8'))
@@ -476,15 +571,17 @@ function installForDesign({ cwd, feature, id, home, dataDir, env, now } = {}) {
     }
   }
   installLib.removeDir(dir)
+  installLib.removeReviewRootIfEmpty(worktreeOf(cwd || '.'))
   state.installed.push(id)
   writeState(dataDir, feature, state)
   return { ok: true, name: review.name, hash: copied.hash, path: target, committed: false, warnings }
 }
 
-function discardForDesign({ id, dataDir } = {}) {
+function discardForDesign({ id, cwd, dataDir } = {}) {
   if (!dataDir) return { ok: false, errors: ['no data directory: set AETHER_DATA_DIR'] }
   if (typeof id !== 'string' || !SKILL_ID.test(id)) return { ok: false, errors: [`unknown skill id "${id}"`] }
-  const dir = installLib.reviewDir(dataDir, id)
+  const root = worktreeOf(cwd || '.')
+  const dir = installLib.reviewDir(root, id)
   let exists = false
   try {
     exists = fs.statSync(dir).isDirectory()
@@ -493,6 +590,7 @@ function discardForDesign({ id, dataDir } = {}) {
   }
   if (!exists) return { ok: false, errors: [`unknown skill id "${id}"`] }
   installLib.removeDir(dir)
+  installLib.removeReviewRootIfEmpty(root)
   try {
     for (const file of fs.readdirSync(stateRoot(dataDir))) {
       if (!file.endsWith('.json')) continue
@@ -548,7 +646,7 @@ function main(argv, { cwd = process.cwd(), stdout = process.stdout, env = proces
   if (sub === 'install') {
     result = installForDesign({ cwd, feature: first, id: second, home, dataDir, env })
   } else {
-    result = discardForDesign({ id: first, dataDir })
+    result = discardForDesign({ id: first, cwd, dataDir })
   }
   stdout.write(JSON.stringify(result) + '\n')
   return 0
@@ -557,6 +655,10 @@ function main(argv, { cwd = process.cwd(), stdout = process.stdout, env = proces
 module.exports = {
   SKILLS_USAGE,
   MAX_PER_DESIGN,
+  OWNER_PATTERN,
+  MAX_OWNERS_PER_TOPIC,
+  MAX_DOWNLOADS_PER_TOPIC,
+  MAX_DOWNLOADS_PER_DESIGN,
   TOPIC_PATTERN,
   wordHit,
   topicKeys,
