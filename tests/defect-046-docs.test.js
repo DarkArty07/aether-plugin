@@ -45,3 +45,22 @@ test('the designing skill, the skills skill and both guides name skill-scout', (
 test('ops.md names --topic for skills find', () => {
   assert.ok(read('docs/guide/ops.md').includes('--topic'), 'docs/guide/ops.md names --topic')
 })
+
+test('A137 records the 2026-11-18 amendment: si adelante, --owner and .aether/tmp/skill-review/', () => {
+  const a = row('A137')
+  for (const t of ['si adelante', '--owner', '.aether/tmp/skill-review/']) assert.ok(a.includes(t), t)
+})
+
+test('the two English guides and the Spanish guide name .aether/tmp/skill-review/', () => {
+  for (const f of [
+    'docs/guide/design-seats.md',
+    'docs/guide/project-files-and-skills.md',
+    'docs/es/guias/archivos-skills-y-continuidad.md',
+  ]) assert.ok(read(f).includes('.aether/tmp/skill-review/'), `${f} names .aether/tmp/skill-review/`)
+})
+
+test('the maintenance per-project cleaning bullet names .aether/tmp/skill-review/', () => {
+  const bullet = read('docs/guide/maintenance.md').split('\n').find((line) => line.startsWith('- **Per-project cleaning:**'))
+  assert.ok(bullet, 'the bullet exists')
+  assert.ok(bullet.includes('.aether/tmp/skill-review/'), 'the bullet names .aether/tmp/skill-review/')
+})
