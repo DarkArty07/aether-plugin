@@ -398,13 +398,16 @@ test('project skills with real descriptions do not match unrelated briefs and do
     }),
     ['pxl'],
   )
+  // The Lead's stop-word decision (spec 045): codex, models, quota, harness,
+  // muse and grok name the plugin's own vocabulary, so a brief that shares
+  // only those words with new-harness (here just tiers remains) does not match.
   assert.deepEqual(
     sb.matchDelegateSkills(dir, {
       prompt: 'Map the Codex CLI models, tiers and quota.',
       description: 'codex models',
       owns: ['src/codex.js'],
     }),
-    ['new-harness'],
+    [],
   )
 })
 

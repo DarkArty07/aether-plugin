@@ -115,6 +115,18 @@ test('R20: the order is exact name, dot pattern, compound name, domain words, th
 })
 test('R20: stopWords adds exactly the closed list and not test or tests', () => {
   const stop = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'config', 'skills.json'), 'utf8')).stopWords
-  for (const w of ['readme', 'landing', 'docs', 'documentation', 'documentacion', 'guide', 'guia', 'spec', 'plan', 'config', 'json', 'new']) assert.ok(stop.includes(w), w)
+  for (const w of ['readme', 'landing', 'docs', 'documentation', 'documentacion', 'guide', 'guia', 'spec', 'plan', 'config', 'json', 'new', 'harness', 'codex', 'muse', 'grok', 'quota', 'models']) assert.ok(stop.includes(w), w)
   assert.equal(stop.includes('test') || stop.includes('tests'), false)
+})
+
+test('R20: a task that only fixes an existing harness adapter does not get new-harness', (t) => {
+  const dir = project(t)
+  assert.deepEqual(match(dir, { description: 'Fix the quota parse of the codex harness adapter', owns: ['plugins/aether/lib/harness/codex.js'] }), [])
+  assert.deepEqual(match(dir, { description: 'Fix the quota parse of the grok harness adapter, as the codex and muse adapters do', owns: ['plugins/aether/lib/harness/grok.js'] }), [])
+})
+
+test('R20: new-harness still matches a task that names it or describes adding one in its own terms', (t) => {
+  const dir = project(t)
+  assert.deepEqual(match(dir, { description: 'Follow new-harness to add a harness' }), ['new-harness'])
+  assert.deepEqual(match(dir, { description: 'Add an external coding harness with native tiers, cost and isolation', owns: ['plugins/aether/lib/harness/grok.js'] }), ['new-harness'])
 })
