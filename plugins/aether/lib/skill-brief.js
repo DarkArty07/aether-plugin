@@ -351,7 +351,7 @@ function extractDotPatterns(description) {
   const folded = foldToken(description || '')
   const patterns = []
   const seen = new Set()
-  const re = /(^|[\s'"`(\]])(\.[a-z0-9]{1,5}(?:\.[a-z0-9]{1,5})*)(?=[\s'"`,;)\]]|$)/g
+  const re = /(^|[\s'"`(`])(\.[a-z0-9]{1,5}(?:\.[a-z0-9]{1,5})*)(?=[\s'"`,;)]|$)/g
   let found
   while ((found = re.exec(folded)) !== null) {
     if (!seen.has(found[2])) {
