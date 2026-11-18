@@ -118,7 +118,6 @@ When the message asks for the structured output, give only the fields of the sha
 - `assumptions`: each reversible default you recorded under `## Assumptions` in `plan.md`.
 - `questions`: each open question for the Lead.
 - `complexity`: the text of each row of the plan's `## Complexity` table, each naming the requirement it serves.
-- `disagreements`: each Judge finding you did not apply, with why.
 
 **After tasks.md only:**
 - `tasks`: the path of `tasks.md`.
@@ -126,7 +125,6 @@ When the message asks for the structured output, give only the fields of the sha
 - `check`: what `aether-plan check` printed.
 - `assumptions`: each reversible default you chose while writing the tasks.
 - `questions`: each open question for the Lead.
-- `disagreements`: each Judge finding you did not apply, with why.
 
 **After a revision:**
 - `document`: the path of the corrected document; `tasks.md` when the document is a plan.

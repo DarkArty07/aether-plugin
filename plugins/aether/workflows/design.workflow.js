@@ -110,7 +110,7 @@ const WRITER_SCHEMA = {
   properties: {
     plan: { type: 'string', description: 'the path of plan.md' },
     tasks: { type: 'string', description: 'the path of tasks.md' },
-    commit: { type: 'string', description: 'your commit of plan.md and tasks.md' },
+    commit: { type: 'string', description: 'your commit holding plan.md and tasks.md' },
     check: { type: 'string', description: 'what aether-plan check printed' },
     assumptions: { type: 'array', items: { type: 'string' } },
     questions: { type: 'array', items: { type: 'string' } },
@@ -768,11 +768,11 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
   }
   log(`${base}: ${record.note}`)
   const native = nativeOf(seat, value, author)
-  const message = nativeText === null || nativeText === undefined ? text : nativeText
-  let prompt = message
+  const nativeMessage = nativeText === null || nativeText === undefined ? text : nativeText
+  let prompt = nativeMessage
   let finalSchema = nativeSchema
   if (seat === 'writer' && partial !== null) {
-    prompt = `${message}\n\n${partialForNative(partial)}`
+    prompt = `${nativeMessage}\n\n${partialForNative(partial)}`
     record.continued = true
     if (oneCallOnPartial) {
       prompt = `${text}\n\n${partialForNative(partial)}`
@@ -780,7 +780,7 @@ async function seatRound({ seat, doc, step, text, schema, nativeSchema = schema,
     }
   }
   if (seat === 'examiner' && examPartial !== null) {
-    prompt = `${message}\n\n${examinerPartialForNative(examPartial)}`
+    prompt = `${nativeMessage}\n\n${examinerPartialForNative(examPartial)}`
     record.continued = true
   }
   // The native plan Writer and the plan or design Judge get the project's skills as an external seat does; a spec round and the Examiner do not.
@@ -980,13 +980,7 @@ async function planMap() {
     return null
   }
   if (counted.map !== true) return null
-  let answer = null
-  try {
-    answer = await call('mapper', MAP_PAIR.model, MAP_PAIR.effort, mapMessage(), { phase: 'Plan', label: 'plan: map', schema: MAP_SCHEMA })
-  } catch (err) {
-    log(`plan: map: the mapper call threw: ${message(err)}; the plan is written without a map`)
-    return null
-  }
+  const answer = await call('mapper', MAP_PAIR.model, MAP_PAIR.effort, mapMessage(), { phase: 'Plan', label: 'plan: map', schema: MAP_SCHEMA })
   if (answer === null) {
     log('plan: map: the mapper ended without an answer; the plan is written without a map')
     return null
@@ -1081,6 +1075,12 @@ function corrector(doc, path, phase) {
 // writing tests, is relaunched once with those tests; a relaunch that answers is stored like a native Examiner,
 // and one that does not finish lists what `recover` finds, in the shape of today. There is never a third launch.
 async function examine(author) {
+  async function storeExam() {
+    const out = await opsTwice(`aether-exam store ${feature}`, { phase: 'Exam', label: 'exam: store' })
+    if (out.error) return failedResult('exam-store', `aether-exam store failed: ${out.error}`)
+    const dir = typeof out.dir === 'string' ? out.dir : out.stored
+    return typeof dir === 'string' ? { status: 'stored', dir } : failedResult('exam-store', `aether-exam store named no directory: ${JSON.stringify(out).slice(0, 300)}`)
+  }
   const round = await seatRound({ seat: 'examiner', doc: 'exam', step: '', text: examinerMessage(), schema: EXAMINER_SCHEMA, phase: 'Exam', author })
   if (round.refused) return failure('examiner', round.failed, round).end
   if (round.failed) {
@@ -1098,10 +1098,7 @@ async function examine(author) {
       { phase: 'Exam', label: 'exam: examiner (relaunch)', schema: EXAMINER_SCHEMA },
     )
     if (relaunch !== null && fits(EXAMINER_SCHEMA, relaunch)) {
-      const out = await opsTwice(`aether-exam store ${feature}`, { phase: 'Exam', label: 'exam: store' })
-      if (out.error) return failedResult('exam-store', `aether-exam store failed: ${out.error}`)
-      const dir = typeof out.dir === 'string' ? out.dir : out.stored
-      return typeof dir === 'string' ? { status: 'stored', dir } : failedResult('exam-store', `aether-exam store named no directory: ${JSON.stringify(out).slice(0, 300)}`)
+      return storeExam()
     }
     log(`exam: examiner (relaunch): ${relaunch === null ? 'no answer' : 'an answer that does not fit its schema'}`)
     const again = await opsTwice(`aether-exam recover ${feature}`, { phase: 'Exam', label: 'exam: recover' })
@@ -1112,10 +1109,7 @@ async function examine(author) {
     // An external Examiner's round stores the exam itself.
     return typeof round.value.stored === 'string' ? { status: 'stored', dir: round.value.stored } : failedResult('exam-store', 'the external round stored no exam')
   }
-  const out = await opsTwice(`aether-exam store ${feature}`, { phase: 'Exam', label: 'exam: store' })
-  if (out.error) return failedResult('exam-store', `aether-exam store failed: ${out.error}`)
-  const dir = typeof out.dir === 'string' ? out.dir : out.stored
-  return typeof dir === 'string' ? { status: 'stored', dir } : failedResult('exam-store', `aether-exam store named no directory: ${JSON.stringify(out).slice(0, 300)}`)
+  return storeExam()
 }
 
 // --- flows -----------------------------------------------------------------------------------
@@ -1137,8 +1131,8 @@ async function full() {
   // and hands back null, and the plan is then written without a map). The native Writer writes the plan in two
   // calls: plan.md first (an external seat still answers the whole round at once), then tasks.md reading it. When the
   // native Writer continues an external partial, it stays one call with both documents (R7) and no tasks call follows.
-  const writePlan = (step, text, native = null) =>
-    seatRound({ seat: 'writer', doc: 'plan', step, text, schema: WRITER_SCHEMA, nativeSchema: PLAN_WRITER_SCHEMA, nativeText: native === null ? lines(text, '', 'Write only plan.md and commit it; the tasks come in another call.') : native, oneCallOnPartial: true, phase: 'Plan', writes: 'plan' })
+  const writePlan = (step, text, planOnlyText) =>
+    seatRound({ seat: 'writer', doc: 'plan', step, text, schema: WRITER_SCHEMA, nativeSchema: PLAN_WRITER_SCHEMA, nativeText: planOnlyText, oneCallOnPartial: true, phase: 'Plan', writes: 'plan' })
   const map = await planMap()
   const planText = planWriterMessage(map)
   const planOnlyText = lines(planWriterMessage(map, true), '', 'Write only plan.md and commit it; the tasks come in another call.')
@@ -1171,18 +1165,9 @@ async function full() {
       assumptions: [...listOf(first.assumptions), ...listOf(second.assumptions)],
       questions: [...listOf(first.questions), ...listOf(second.questions)],
     })
-    let finalTasks = tasks
-    checked = await planCheck()
-    if (checked.error) return failure('plan-check', `aether-plan check did not run: ${checked.error}`).end
-    if (!checked.ok) {
-      const again = await writeTasks('tasks write (retry)', lines(tasksMessage(), '', checkErrorsLines(checked.errors)))
-      if (again.failed) return failure('plan-writer', again.failed, again).end
-      finalTasks = again
-      checked = await planCheck()
-      if (checked.error) return failure('plan-check', `aether-plan check did not run: ${checked.error}`).end
-      if (!checked.ok) return failure('plan-check', `aether-plan check ${TASKS} failed after the Writer's second try: ${checked.errors.join(' ')}`).end
-    }
-    written = { answer: join(plan.answer, finalTasks.answer), model: plan.model }
+    checked = await checkedAfter('tasks write', tasksMessage(), writeTasks)
+    if (checked.end) return checked.end
+    written = { answer: join(plan.answer, (checked.retried || tasks).answer), model: plan.model }
   } else {
     // An external seat answered the round at once; its check retry does the same, with no native split-call
     // overrides, so a retry that falls back to the native Writer still writes both documents.

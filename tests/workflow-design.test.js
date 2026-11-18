@@ -282,6 +282,35 @@ const PLAN_ONLY = { plan: `${FEATURE}/plan.md`, commit: 'c2', complexity: PLAN_A
 const TASKS_ONLY = { tasks: `${FEATURE}/tasks.md`, commit: 'c3', check: '{"ok":true}', assumptions: [], questions: [] }
 const twoStep = (call) => (call.label.startsWith('spec:') ? SPEC_ANSWER : call.label === 'plan: writer write' ? PLAN_ONLY : TASKS_ONLY)
 
+test('the native two-call path fails at plan-writer when the tasks call ends without an answer', async () => {
+  const run = await go(ARGS, { writer: (call, fallback) => (call.label.startsWith('plan: writer tasks') ? null : fallback(call)) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'failed')
+  assert.equal(run.result.step, 'plan-writer')
+  assert.match(run.result.reason, /ended twice without an answer/)
+  assert.equal(opsCalls(run, 'check').length, 0, 'no check runs when the tasks call never answered')
+})
+
+test('the native two-call path fails at plan-check when aether-plan check does not run', async () => {
+  const run = await go(ARGS, { writer: twoStep, ops: (call, fallback) => (call.command.verb === 'check' ? { error: 'boom' } : fallback(call)) })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'failed')
+  assert.equal(run.result.step, 'plan-check')
+  assert.match(run.result.reason, /aether-plan check did not run/)
+})
+
+test('the native two-call path fails at plan-writer when the check fails and its retry ends without an answer', async () => {
+  let checks = 0
+  const run = await go(ARGS, {
+    writer: (call, fallback) => (call.label.startsWith('plan: writer tasks write (retry)') ? null : twoStep(call)),
+    ops: (call, fallback) => (call.command.verb === 'check' && ++checks === 1 ? { ok: false, errors: ['task 2 has no Owns'], warnings: [] } : fallback(call)),
+  })
+  assert.equal(run.error, null, run.error && run.error.stack)
+  assert.equal(run.result.status, 'failed')
+  assert.equal(run.result.step, 'plan-writer')
+  assert.match(run.result.reason, /ended twice without an answer/)
+})
+
 test('R7: the native Writer makes two calls for the plan, each with its own schema, and the second gets the path of plan.md', async () => {
   const run = await go(ARGS, { writer: twoStep })
   assert.equal(run.error, null, run.error && run.error.stack)

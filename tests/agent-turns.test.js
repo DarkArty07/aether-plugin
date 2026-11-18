@@ -21,13 +21,21 @@ test('R7: the Writer body says what to answer when the message asks for plan.md 
   assert.ok(body.includes('When the message asks only for tasks.md, load the skill `aether:tasks` with the Skill tool and follow it. Write tasks.md reading the plan.md already written (its path is in the message), run aether-plan check until it passes, commit it, and answer tasks, commit, check, assumptions and questions.'))
 })
 
+const sectionOf = (body, heading) => {
+  const start = body.indexOf(heading)
+  assert.ok(start >= 0, `writer.md has: ${heading}`)
+  const next = body.indexOf('**After', start + heading.length)
+  return next === -1 ? body.slice(start) : body.slice(start, next)
+}
+
 test('R7: the Writer body lists the answer shapes of the plan-only and the tasks-only calls', () => {
   const body = text('writer')
-  const answer = body.slice(body.indexOf('## Your answer'))
   for (const shape of ['**After plan.md only:**', '**After tasks.md only:**']) {
-    assert.ok(answer.includes(shape), `Your answer lists: ${shape}`)
+    assert.ok(sectionOf(body, shape).includes(shape), `Your answer lists: ${shape}`)
   }
-  for (const line of ['- `plan`: the path of `plan.md`.', '- `tasks`: the path of `tasks.md`.', '- `commit`: the commit that holds `plan.md` (and `art-direction.md` when written).', '- `commit`: the commit that holds `tasks.md`.', '- `check`: what `aether-plan check` printed.']) {
-    assert.ok(answer.includes(line), `Your answer names: ${line}`)
-  }
+  assert.ok(sectionOf(body, '**After plan.md only:**').includes('- `plan`: the path of `plan.md`.'))
+  assert.ok(sectionOf(body, '**After tasks.md only:**').includes('- `tasks`: the path of `tasks.md`.'))
+  assert.ok(sectionOf(body, '**After plan.md only:**').includes('- `commit`: the commit that holds `plan.md` (and `art-direction.md` when written).'))
+  assert.ok(sectionOf(body, '**After tasks.md only:**').includes('- `commit`: the commit that holds `tasks.md`.'))
+  assert.ok(sectionOf(body, '**After tasks.md only:**').includes('- `check`: what `aether-plan check` printed.'))
 })
