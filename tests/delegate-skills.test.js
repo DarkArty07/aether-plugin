@@ -90,17 +90,19 @@ test('a rise that repeats the AETHER-SKILLS line pastes the same skills again (R
   assert.ok(again.args.prompt.includes('rule 1 of erebus-ui') && again.args.prompt.includes('## Findings to fix'))
 })
 
-test('aether-delegate begin without AETHER-SKILLS suggests a matching project skill in notes without changing the brief (R15, R16, C7)', async (t) => {
+test('aether-delegate begin without AETHER-SKILLS hands a matching project skill to the delegate by itself (R18)', async (t) => {
   const w = world(t)
   skill(w.cwd, 'diseno-de-juego')
   const plan = await task.begin(call('AETHER-TASK: d-sug\nAjusta el diseno y balance del juego en src/game.js.'), w.deps)
   assert.equal(plan.kind, 'first')
-  assert.ok(plan.notes.some((n) => n.includes('project skill(s) diseno-de-juego') && n.includes('AETHER-SKILLS: diseno-de-juego')), plan.notes.join('\n'))
-  assert.equal(plan.args.prompt, undefined, 'the call is not changed')
-  assert.equal(entries(w.dataDir, 'd-sug').find((e) => e.kind === 'launch').skills, undefined)
-  assert.deepEqual(reg.readNotices(w.dataDir).map((n) => [n.kind, n.name]), [['delegate-skill', 'diseno-de-juego']])
+  assert.ok(plan.args.prompt.includes('## Skills for this task') && plan.args.prompt.includes('### diseno-de-juego'), plan.args.prompt)
+  assert.deepEqual(entries(w.dataDir, 'd-sug').find((e) => e.kind === 'launch').skills, ['diseno-de-juego'])
+  assert.deepEqual(uses(w.dataDir).map((u) => [u.session, u.kind, u.task, u.skills]), [['s1', 'delegate', 'd-sug', ['diseno-de-juego']]])
+  assert.deepEqual(reg.readNotices(w.dataDir), [], 'no delegate-skill notice for a skill that was delivered')
 
   const other = await task.begin(call('AETHER-TASK: d-none\nActualiza el parser de JSON en src/json.js.'), w.deps)
+  assert.equal(other.args.prompt, undefined, 'a task that matches nothing is unchanged')
+  assert.equal(entries(w.dataDir, 'd-none').find((e) => e.kind === 'launch').skills, undefined)
   assert.equal(other.notes.some((n) => n.includes('diseno-de-juego')), false)
 })
 
@@ -124,16 +126,18 @@ test('a brief that already names its skills gets no suggestion (R15)', async (t)
   assert.deepEqual(reg.readNotices(w.dataDir), [])
 })
 
-test('a suggestion from the AETHER-OWNS paths is stored with the canonical project and leaves the skills line out (R15, R16, C7)', async (t) => {
+test('a match from the AETHER-OWNS paths is delivered with the canonical project (R18)', async (t) => {
   const w = world(t)
   const repo = makeRepo(t)
   w.deps.cwd = repo.dir
   skill(repo.dir, 'juego-motor')
   const plan = await task.begin(call('AETHER-TASK: d-owns\nAETHER-OWNS: src/juego/motor.js\nRevisa el archivo.'), w.deps)
   assert.equal(plan.kind, 'first')
-  assert.ok(plan.notes.some((n) => n.includes('project skill(s) juego-motor') && n.includes('AETHER-SKILLS: juego-motor')), plan.notes.join('\n'))
-  assert.equal((plan.args.prompt ?? '').includes('AETHER-SKILLS'), false, 'the brief gets no skills line from the suggestion')
-  assert.deepEqual(reg.readNotices(w.dataDir).map((n) => [n.kind, n.name, n.session, n.repo]), [['delegate-skill', 'juego-motor', 's1', repo.dir]])
+  assert.ok(plan.args.prompt.includes('## Skills for this task') && plan.args.prompt.includes('### juego-motor'), plan.args.prompt)
+  assert.deepEqual(entries(w.dataDir, 'd-owns').find((e) => e.kind === 'launch').skills, ['juego-motor'])
+  const records = reg.readUses(w.dataDir)
+  assert.deepEqual(records, [{ time: records[0].time, session: 's1', kind: 'delegate', run: null, task: 'd-owns', skills: ['juego-motor'], repo: repo.dir }])
+  assert.deepEqual(reg.readNotices(w.dataDir), [], 'no delegate-skill notice for a skill that was delivered')
 })
 
 test('a failing recordUse is skipped and does not abort begin after the launch is logged (issue 280)', async (t) => {

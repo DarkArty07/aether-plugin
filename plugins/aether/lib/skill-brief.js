@@ -7,7 +7,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { git } = require('./git.js')
-const { loadSkillsConfig, recordUse, usesFile } = require('./skill-registry.js')
+const { loadSkillsConfig, recordUse, usesFile, readInstalls, canonicalRepo } = require('./skill-registry.js')
 
 const MAX_SKILLS = 3
 const MAX_SKILL_LINES = 500
@@ -56,7 +56,62 @@ function getProjectRoots(cwd) {
   return [cwd ? path.resolve(cwd) : process.cwd()]
 }
 
-function resolveSkill(name, { cwd, home = os.homedir(), pluginRoot = path.resolve(__dirname, '..') } = {}) {
+// The folders that hold project skills, in order: the integration tree and the
+// main checkout (as getProjectRoots returns them), then the project root of
+// every install record of this repository whose folder still exists. A skill
+// installed without a commit in a linked worktree therefore reaches a compile
+// in another worktree. For a recorded path `<root>/.agents/skills/<name>` or
+// `<root>/.claude/skills/<name>` the root is `<root>`.
+function projectSkillRoots(cwd, { dataDir = null, home = os.homedir() } = {}) {
+  const roots = []
+  const seen = new Set()
+  const push = (root) => {
+    if (!root || typeof root !== 'string') return
+    const normalized = path.resolve(root)
+    if (seen.has(normalized)) return
+    seen.add(normalized)
+    roots.push(normalized)
+  }
+  for (const root of getProjectRoots(cwd)) push(root)
+  let installs = []
+  try {
+    installs = dataDir ? readInstalls(dataDir) : []
+  } catch {
+    installs = []
+  }
+  if (installs.length > 0) {
+    let here = null
+    try {
+      const first = getProjectRoots(cwd)[0]
+      here = canonicalRepo({ repo: first, path: first })
+    } catch {
+      here = null
+    }
+    for (const record of installs) {
+      if (!record || typeof record.path !== 'string' || record.path === '') continue
+      let exists = false
+      try {
+        exists = fs.existsSync(record.path)
+      } catch {
+        continue
+      }
+      if (!exists) continue
+      let mine = false
+      try {
+        mine = here !== null && canonicalRepo(record) === here
+      } catch {
+        continue
+      }
+      if (!mine) continue
+      const match = record.path.replace(/\\/g, '/').match(/^(.*)\/\.(?:agents|claude)\/skills\/[^/]+(?:\/.*)?$/)
+      if (!match || !match[1]) continue
+      push(match[1])
+    }
+  }
+  return roots
+}
+
+function resolveSkill(name, { cwd, home = os.homedir(), pluginRoot = path.resolve(__dirname, '..'), dataDir = null } = {}) {
   if (!name || typeof name !== 'string') return null
   const trimmed = name.trim()
   if (!trimmed) return null
@@ -70,7 +125,7 @@ function resolveSkill(name, { cwd, home = os.homedir(), pluginRoot = path.resolv
   if (isAether) {
     candidates.push(path.join(pluginRoot, 'skills', n, 'SKILL.md'))
   } else {
-    const roots = getProjectRoots(cwd)
+    const roots = projectSkillRoots(cwd, { dataDir, home })
     for (const root of roots) {
       candidates.push(path.join(root, '.agents', 'skills', n, 'SKILL.md'))
       candidates.push(path.join(root, '.claude', 'skills', n, 'SKILL.md'))
@@ -264,6 +319,81 @@ function loadSkills(names, options) {
   return { ok: true, skills }
 }
 
+// The skills a delegate task or a plan unit carries: the manual names first
+// with the strict validation of loadSkills (a missing or invalid manual skill,
+// or more than 3 of them, is an error), then the automatic matches of
+// matchDelegateSkills, not already chosen, filling the free places up to 3
+// skills in all and 1,500 lines in all. An automatic skill that cannot be
+// read, has an invalid SKILL.md, exceeds 500 lines or would exceed the total
+// is skipped without aborting, so a launch never fails because of one.
+function selectSkills({ cwd, manual = [], text = {}, home = os.homedir(), pluginRoot = path.resolve(__dirname, '..'), dataDir = null } = {}) {
+  const names = Array.isArray(manual) ? manual : []
+  if (names.length > MAX_SKILLS) {
+    return { ok: false, error: `too many skills: ${names.length} (at most ${MAX_SKILLS})` }
+  }
+  const options = { cwd, home, pluginRoot, dataDir }
+  const skills = []
+  const chosen = new Set()
+  for (const name of names) {
+    const resolved = resolveSkill(name, options)
+    if (!resolved) {
+      return { ok: false, error: `skill "${name}" does not exist` }
+    }
+    const problems = checkSkillFile(resolved.dir)
+    if (problems.length > 0) {
+      return { ok: false, error: `skill "${name}" is invalid: ${problems[0]}` }
+    }
+    let content = null
+    try {
+      content = fs.readFileSync(resolved.file, 'utf8')
+    } catch {
+      return { ok: false, error: `skill "${name}" does not exist` }
+    }
+    skills.push({ name, file: resolved.file, text: content, lines: countLines(content) })
+    chosen.add(name)
+  }
+  if (countLines(skillsSection(skills)) > MAX_TOTAL_LINES) {
+    return { ok: false, error: `the skills total ${countLines(skillsSection(skills))} lines (at most ${MAX_TOTAL_LINES})` }
+  }
+  const { prompt = '', description = '', owns = [] } = text || {}
+  let matched = []
+  try {
+    matched = matchDelegateSkills(cwd, { prompt, description, owns }, { dataDir, home })
+  } catch {
+    matched = []
+  }
+  for (const name of matched) {
+    if (chosen.has(name)) continue
+    if (skills.length >= MAX_SKILLS) break
+    let resolved = null
+    try {
+      resolved = resolveSkill(name, options)
+    } catch {
+      continue
+    }
+    if (!resolved) continue
+    let problems = null
+    try {
+      problems = checkSkillFile(resolved.dir)
+    } catch {
+      continue
+    }
+    if (problems.length > 0) continue
+    let content = null
+    try {
+      content = fs.readFileSync(resolved.file, 'utf8')
+    } catch {
+      continue
+    }
+    if (countLines(content) > MAX_SKILL_LINES) continue
+    const next = [...skills, { name, file: resolved.file, text: content, lines: countLines(content) }]
+    if (countLines(skillsSection(next)) > MAX_TOTAL_LINES) continue
+    skills.push({ name, file: resolved.file, text: content, lines: countLines(content) })
+    chosen.add(name)
+  }
+  return { ok: true, skills }
+}
+
 function readSkillEntry(file, dirName) {
   let text = ''
   try {
@@ -277,8 +407,8 @@ function readSkillEntry(file, dirName) {
   return { name, description }
 }
 
-function listProjectSkills(cwd) {
-  const roots = getProjectRoots(cwd)
+function listProjectSkills(cwd, { dataDir = null, home = os.homedir() } = {}) {
+  const roots = projectSkillRoots(cwd, { dataDir, home })
   const byName = new Map()
   for (const root of roots) {
     for (const folder of ['.agents', '.claude']) {
@@ -410,14 +540,14 @@ function matchStrength(signals, words, foldedRaw, ownsFolded) {
   return null
 }
 
-function matchDelegateSkills(cwd, { prompt = '', description = '', owns = [] } = {}) {
+function matchDelegateSkills(cwd, { prompt = '', description = '', owns = [] } = {}, { dataDir = null, home = os.homedir() } = {}) {
   const owned = Array.isArray(owns) ? owns.join(' ') : ''
   const foldedRaw = foldToken(`${prompt}\n${description}\n${owned}`)
   const words = new Set(foldedWords(foldedRaw))
   const ownsFolded = (Array.isArray(owns) ? owns : []).map((entry) => foldToken(String(entry)))
   const stop = briefStopWords()
   const ranked = []
-  for (const skill of listProjectSkills(cwd)) {
+  for (const skill of listProjectSkills(cwd, { dataDir, home })) {
     const strength = matchStrength(skillSignals(skill, stop), words, foldedRaw, ownsFolded)
     if (strength) ranked.push({ name: skill.name, ...strength })
   }
@@ -435,9 +565,11 @@ module.exports = {
   MAX_NAME,
   MAX_DESCRIPTION,
   parseSkillNames,
+  projectSkillRoots,
   resolveSkill,
   checkSkillFile,
   loadSkills,
+  selectSkills,
   skillsSection,
   usesFile,
   recordUse,
