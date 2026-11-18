@@ -95,7 +95,7 @@ test('R21: the retired document folders are gone and the last handoff stays', ()
   // their issues and the triage of their minor findings; spec 037, whose card and spec cite evidence/issue-NNN.md;
   // spec 038, whose evidence records the model pages);
   // no other evidence folder under specs/ does.
-  const KEPT_EVIDENCE = /^specs\/(032-pareto-ladder\/evidence\/aa-pages-(claude|other-harnesses)-2026-11-10\.json|036-open-issues-8\/evidence\/(issue-\d+|triage-[\d-]+)\.md|037-skills-reinforcement\/evidence\/issue-\d+\.md|038-aa-pages-hydrogen\/evidence\/(README\.md|aa-extract-2026-11-13\.json))$/
+  const KEPT_EVIDENCE = /^specs\/(032-pareto-ladder\/evidence\/aa-pages-(claude|other-harnesses)-2026-11-10\.json|036-open-issues-8\/evidence\/(issue-\d+|triage-[\d-]+)\.md|037-skills-reinforcement\/evidence\/issue-\d+\.md|045-defect-issues\/evidence\/(issue-\d+|muse-model-list-2026-11-17)\.md|038-aa-pages-hydrogen\/evidence\/(README\.md|aa-extract-2026-11-13\.json))$/
   const evidence = tracked('specs').filter((f) => /\/evidence\//.test(f))
   assert.deepEqual(evidence.filter((f) => !KEPT_EVIDENCE.test(f)), [])
   assert.ok(evidence.includes('specs/032-pareto-ladder/evidence/aa-pages-claude-2026-11-10.json'))
