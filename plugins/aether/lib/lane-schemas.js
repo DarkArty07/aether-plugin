@@ -21,17 +21,11 @@ const FINDINGS = {
 }
 
 const REVIEW_FINDINGS = {
-  type: 'array',
+  ...FINDINGS,
   items: {
-    type: 'object',
-    required: ['severity', 'title', 'file', 'evidence', 'fix'],
-    properties: {
-      severity: { type: 'string', enum: ['critical', 'important', 'minor'] },
-      title: { type: 'string' },
-      file: { type: 'string', description: 'path:line' },
-      evidence: { type: 'string' },
-      fix: { type: 'string', description: 'the change that resolves the finding, in one line' },
-    },
+    ...FINDINGS.items,
+    required: [...FINDINGS.items.required, 'fix'],
+    properties: { ...FINDINGS.items.properties, fix: { type: 'string', description: 'the change that resolves the finding, in one line' } },
   },
 }
 
