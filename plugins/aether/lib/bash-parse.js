@@ -519,12 +519,25 @@ function commandSegments(command) {
 }
 
 // The redirection targets of a segment, in order: the word after each unquoted > operator, or the word after the
-// operator when it stands alone. A > read inside quotes is text, and is no target.
+// operator when it stands alone. A > read inside quotes is text, and is no target. A >& that stands alone takes
+// the next word, and a target attached to it (>&file) reads past the &: both redirect stdout and stderr to a file.
+// A file-descriptor duplication such as 2>&1 or >&2 names no file, so it is skipped and stays harmless.
 function redirectTargets(segment) {
   const targets = []
   for (let i = 0; i < segment.length; i++) {
     const after = unquotedRedirection(segment[i], segment.masks && segment.masks[i])
-    if (after !== null) targets.push((after || segment[i + 1] || '').trim())
+    if (after === null) continue
+    if (after === '&') {
+      targets.push((segment[i + 1] || '').trim())
+      continue
+    }
+    if (after.startsWith('&')) {
+      const rest = after.slice(1)
+      if (rest === '-' || /^\d+-?$/.test(rest)) continue
+      targets.push(rest.trim())
+      continue
+    }
+    targets.push((after || segment[i + 1] || '').trim())
   }
   return targets
 }
