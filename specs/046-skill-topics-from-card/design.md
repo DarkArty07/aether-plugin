@@ -91,6 +91,8 @@ Herramienta `skills@1.9.0`, el 2026-11-18. Fuente: su `--help` y llamadas reales
 - **E2.** `find <consulta> --owner <autor>` existe («Search only repositories from a GitHub owner») y devuelve primero `anthropics/skills@pdf` para las tres consultas. Su salida puede traer una sección `Partial matches` y resultados poco relacionados.
 - **E3.** `skill-reviewer`, lanzado desde el proyecto con permisos normales, no pudo leer `<data dir>/skills/review/pdf`: `Glob`, `Read` y `Grep` fueron denegados, y rechazó la skill. Con acceso de lectura a esa carpeta la leyó entera y la aprobó.
 - **E4.** `add <fuente> --skill <nombre>`, ejecutado en `<proyecto>/.aether/skill-review/pdf/`, escribió solo ahí: `.agents/skills/pdf/` y `skills-lock.json`. No creó enlaces ni una carpeta `.claude`, y no tocó la raíz del proyecto ni el `HOME`.
+- **E5.** `find zzqxjk --owner anthropics`, sin coincidencias, imprime `No skills found for "zzqxjk" from owner "anthropics"` y sale con 0. Una búsqueda por autor sin resultados no es un error de proceso.
+- **No medido.** Que `skill-reviewer` lea con permisos normales una carpeta ignorada por git dentro del proyecto (E3 solo midió la del directorio de datos; E4 solo midió escribir ahí) y que lo haga también desde un worktree enlazado. Lo mide la verificación real, pasos 3 y 5.
 
 ### Cambio A: temas amplios
 
@@ -100,27 +102,28 @@ Herramienta `skills@1.9.0`, el 2026-11-18. Fuente: su `--help` y llamadas reales
 
 En `findForDesign` (`plugins/aether/lib/skill-design.js`), para cada tema no cubierto:
 
-1. `trusted.json` se lee una vez por llamada, no una vez por candidato. Los autores van en orden alfabético. Solo se consulta un autor que cumpla `^[a-z0-9][a-z0-9-]{0,38}$`; cualquier otro se anota en `errors` y no se consulta.
+1. `trusted.json` se lee una vez por llamada, no una vez por candidato. Los autores van en orden alfabético. Solo se consulta un autor que cumpla `^[a-z0-9][a-z0-9-]{0,38}$`; cualquier otro se anota en `errors` y no se consulta. Por tema se consultan como mucho los 5 primeros autores válidos; cada uno de los demás se anota en `errors` como `trusted author <autor> not searched: limit 5`.
 2. Por cada autor de confianza corre `find <consulta> --owner <autor>`. De esa salida solo cuentan las skills cuya fuente es de ese autor.
 3. Después corre la búsqueda general de hoy, `find <consulta>`.
 4. Los resultados se procesan en ese orden con las reglas actuales, sin cambios: relevancia por `matchesKeys`, nombre y fuente seguros, 1 skill aceptada por tema, 1 pendiente por tema, 3 por diseño y duplicados. Un par `fuente@nombre` ya visto en el mismo tema se salta.
 5. Una búsqueda cuya salida no trae ningún `owner/repo@skill` cuenta como «sin resultados». El tema anota `topic <id>: invalid response: no skill token` solo cuando ninguna de sus búsquedas trajo uno.
-6. Una búsqueda que falla o que vence anota su error como hoy y termina las búsquedas de ese tema. Así, sin red, la espera larga sigue siendo como mucho una de `FIND_TIMEOUT_MS` (15 s) por tema, 45 s en total, dentro de los 600 s de `OPS_TIMEOUT_MS`.
-7. La búsqueda general corre aunque el tema ya tenga su skill aceptada, para dejar en la lista del dueño la sugerencia de otro autor, como hoy.
+6. Una búsqueda que falla o que vence anota su error como hoy y termina las búsquedas de ese tema. `find <consulta> --owner <autor>` sin coincidencias sale con 0 (E5), así que no termina nada: solo cuenta como «sin resultados» (punto 5).
+7. Cuando un tema ya tiene su skill aceptada, sus búsquedas restantes no corren: ni los demás autores ni la búsqueda general, y no se encola ninguna sugerencia de otro autor para ese tema. Hoy el bucle ya se detiene en `accepted >= 1`; esto lo extiende a las búsquedas que siguen. La sugerencia de otro autor (1 pendiente por tema) solo se encola cuando el tema no logró ninguna skill aceptada, y solo la puede traer la búsqueda general, porque las búsquedas por autor solo cuentan skills de autores de confianza.
+8. Cota de espera. Cada búsqueda vence a los `FIND_TIMEOUT_MS` (15 s). Con N autores consultados por tema (N ≤ 5), un tema hace como mucho N+1 búsquedas, 15·(N+1) s, y un diseño de 3 temas 45·(N+1) s: 270 s con N = 5, dentro de los 600 s de `OPS_TIMEOUT_MS`. Sin red, la primera búsqueda que vence termina el tema (punto 6), así que son 15 s por tema, 45 s en total. Las descargas (`ADD_TIMEOUT_MS`, 60 s) son aparte y llegan a 3 por diseño.
 
 ### Cambio C: la descarga espera su revisión dentro del proyecto
 
-1. La carpeta de revisión pasa de `<data dir>/skills/review/<id>/` a `<raíz del worktree>/.aether/tmp/skill-review/<id>/`. La raíz es `repoPaths(cwd).worktree`, el árbol donde corre la sesión, que es donde un agente puede leer con permisos normales. `reviewRoot` y `reviewDir` de `plugins/aether/lib/skill-install.js` reciben esa raíz, y la usan `fetchForReview`, `installForDesign` y `discardForDesign`.
+1. La carpeta de revisión pasa de `<data dir>/skills/review/<id>/` a `<raíz del worktree>/.aether/tmp/skill-review/<id>/`. La raíz es `repoPaths(cwd).worktree`, el árbol donde corre la sesión, que es donde un agente puede leer con permisos normales. `reviewRoot` y `reviewDir` de `plugins/aether/lib/skill-install.js` reciben esa raíz, y la usan `fetchForReview`, `installForDesign` y `discardForDesign`. `discardForDesign` pasa a recibir `cwd` (`discardForDesign({ id, cwd, dataDir })`) y calcula la raíz con `worktreeOf(cwd)` como `installForDesign`; la rama `discard` de `main` (línea 551) le pasa su `cwd`.
 2. Antes de crearla se llama `ensureExcluded(gitCommonDir)` de `plugins/aether/lib/run.js`, que deja `/.aether/` fuera de git por `.git/info/exclude` sin tocar `.gitignore`. Fuera de un repositorio git no hay nada que excluir.
-3. Tras la descarga, la carpeta de revisión conserva solo `.agents/skills/<nombre>/`, `skills-lock.json` y `review.json`. Cualquier otra entrada de primer nivel, en particular `.claude`, y cualquier enlace simbólico de primer nivel se borran. Así la copia sin revisar nunca queda como una skill que Claude Code pueda cargar.
-4. La carpeta se borra como hoy: tras instalar, tras descartar y tras un rechazo de la etapa de código. Cuando `skill-review/` queda vacía, también se borra. El resto de un diseño interrumpido queda en `.aether/tmp/`, que la limpieza por proyecto ya borra a las 24 horas (`docs/guide/maintenance.md`).
+3. Tras la descarga, la carpeta de revisión conserva solo `.agents/skills/<nombre>/`, `skills-lock.json` y `review.json`. Cualquier otra entrada de primer nivel, en particular `.claude`, y cualquier enlace simbólico de primer nivel se borran. Además, la etapa de código rechaza la skill si en cualquier profundidad de `.agents/skills/<nombre>/` hay un archivo o carpeta llamado `CLAUDE.md`, `AGENTS.md` o `.claude` (sin distinguir mayúsculas). Antes la copia estaba fuera del proyecto y esos archivos no podían cargarse como instrucciones; dentro de la sesión sí podrían, y limpiar solo el primer nivel no basta. Así la copia sin revisar nunca queda como una skill ni como instrucciones que Claude Code pueda cargar.
+4. La carpeta se borra como hoy: tras instalar, tras descartar y tras un rechazo de la etapa de código. Cuando `skill-review/` queda vacía, también se borra. Un diseño interrumpido deja su carpeta. La limpieza de `plugins/aether/lib/tree-clean.js` hoy solo barre `.aether/tmp/` de la raíz del checkout principal (`mainRoot`) y no actúa mientras hay una ejecución abierta, así que no alcanza el `.aether/tmp/` de un worktree enlazado. `cleanProject` pasa a barrer también `.aether/tmp/skill-review/` de cada worktree registrado (`git worktree list`), con el mismo plazo de 24 horas y bajo la misma condición de ejecución abierta. Borra solo entradas bajo esa ruta, con su propia comprobación de ruta segura, porque `isSafeToDelete` solo admite rutas bajo `mainRoot/.aether`. `tree-clean.js` y `tests/tree-clean.test.js` son parte de la construcción.
 5. El archivo de estado sigue en `<data dir>/skills/design-state/`.
-6. Cada candidato de `find` trae `files`: las rutas relativas de los archivos de `.agents/skills/<nombre>/`, ordenadas. Una skill con más de 200 archivos se rechaza en la etapa de código. `skillReviewMessage` lista esas rutas, y `skill-reviewer.md` pide leer con `Read` cada archivo de la lista, porque las herramientas de búsqueda pueden saltarse una carpeta que git ignora. El flujo solo lista rutas que sean cadenas, sin `..` y sin `/` inicial.
+6. Cada candidato de `find` trae `files`: las rutas relativas de los archivos de `.agents/skills/<nombre>/`, ordenadas. Una skill con más de 200 archivos se rechaza en la etapa de código: el revisor lee cada archivo de la lista uno por uno con `Read`, y sin tope una skill enorme haría una lista y una revisión sin límite. El 200 es un supuesto reversible (ver Supuestos de la enmienda). `skillReviewMessage` lista esas rutas, y `skill-reviewer.md` pide leer con `Read` cada archivo de la lista, porque las herramientas de búsqueda pueden saltarse una carpeta que git ignora. El flujo solo lista rutas que sean cadenas, sin `..` y sin `/` inicial.
 7. `aether-guard` no cambia: ninguna de sus reglas clasifica ni rechaza `.aether/tmp/skill-review/`.
 
 ### Seguridad de la enmienda
 
-- Una copia sin revisar, de un autor de confianza, queda unos minutos dentro del proyecto. No está en `.agents/skills/` ni en `.claude/skills/` del proyecto, está fuera de git y no trae `.claude` ni enlaces de primer nivel. Nada la ejecuta: la etapa de código y el revisor solo leen.
+- Una copia sin revisar, de un autor de confianza, queda unos minutos dentro del proyecto. No está en `.agents/skills/` ni en `.claude/skills/` del proyecto, está fuera de git y no trae `.claude` ni enlaces de primer nivel; la etapa de código rechaza `CLAUDE.md`, `AGENTS.md` y `.claude` a cualquier profundidad. Nada la ejecuta: la etapa de código y el revisor solo leen.
 - La instalación sigue copiando byte por byte la copia revisada y comprobando su hash.
 - `--owner` recibe solo autores de `trusted.json` que cumplen el patrón, y `runSkillBin` no usa shell.
 
@@ -132,16 +135,22 @@ En `findForDesign` (`plugins/aether/lib/skill-design.js`), para cada tema no cub
 - Un autor de `trusted.json` que no cumple el patrón no se consulta y queda en `errors`.
 - Un tema con búsquedas sin resultados y una con resultados no anota error; uno sin ningún resultado anota `invalid response: no skill token` una sola vez.
 - Una búsqueda que vence termina las búsquedas de su tema, y el tema siguiente sí se busca.
+- Un tema con su skill aceptada por la búsqueda de un autor no hace la búsqueda general ni otra búsqueda por autor (se cuentan las llamadas) y no encola ninguna sugerencia; un tema sin skill aceptada y con un resultado de autor desconocido en la búsqueda general encola exactamente 1 pendiente.
+- Una búsqueda por autor sin coincidencias, con salida `No skills found ...` y estado 0, no anota error y deja correr las búsquedas siguientes.
+- Con 7 autores válidos en `trusted.json` se hacen 5 búsquedas por autor más la general, y los otros 2 quedan en `errors` como `not searched: limit 5`.
 - La carpeta de revisión queda bajo `.aether/tmp/skill-review/` del worktree, `/.aether/` queda en `.git/info/exclude`, y `git status` del proyecto no la muestra.
 - Tras la descarga, una entrada `.claude` y un enlace de primer nivel que deje el registro falso ya no están.
+- La etapa de código rechaza una skill con `CLAUDE.md`, `AGENTS.md` o una carpeta `.claude` en una subcarpeta profunda de `.agents/skills/<nombre>/`.
+- Un diseño desde un worktree enlazado: la carpeta queda en `.aether/tmp/skill-review/` de ese worktree, `discardForDesign` con `cwd` la encuentra y la borra, e `installForDesign` instala desde ella.
+- `tests/tree-clean.test.js`: una carpeta de `skill-review/` de más de 24 horas en un worktree enlazado se borra, una de menos de 24 horas se queda, no se toca nada de ese worktree fuera de `.aether/tmp/skill-review/`, y con una ejecución abierta no se borra nada.
 - Tras instalar, descartar o rechazar, la carpeta del candidato no existe, y `skill-review/` tampoco cuando queda vacía.
-- El candidato trae `files`; una skill con 201 archivos se rechaza; el mensaje al revisor lista las rutas y deja fuera una ruta con `..`.
+- El candidato trae `files`; una skill con 201 archivos se rechaza y una con 200 no; el mensaje al revisor lista las rutas y deja fuera una ruta con `..`.
 - `skill-scout.md` dice que un tema nunca es una acción, con los ejemplos `pdf` y `pdf-merge`, y ya no dice «one line per practical topic».
 - `skill-reviewer.md` pide leer cada archivo de la lista.
 
 ### Pruebas visibles que reescribe la enmienda
 
-- **Ubicación de la carpeta:** `tests/skill-install.test.js` (líneas 52-53 y 69) y `tests/skill-design.test.js` (líneas 234-235, 297, 445-448, 460-462 y 549). Las aserciones «fuera del proyecto» de las líneas 53 y 235 pasan a «dentro de `.aether/tmp/skill-review/` del worktree y fuera de `.agents/skills/` y `.claude/skills/`».
+- **Ubicación de la carpeta:** `tests/skill-install.test.js` (líneas 52-53 y 69) y `tests/skill-design.test.js` (líneas 234-235, 297, 420-423, 445-448, 460-462 y 549). Las llamadas a `discardForDesign` de las líneas 420 y 423 pasan `cwd: w.repo.dir`. Las aserciones «fuera del proyecto» de las líneas 53 y 235 pasan a «dentro de `.aether/tmp/skill-review/` del worktree y fuera de `.agents/skills/` y `.claude/skills/`».
 - **Candidatos de las pruebas del flujo:** `tests/defect-045-skills-step.test.js` (líneas 31-32 y 173) y `tests/defect-046-skill-topics.test.js` (línea 365) dan a cada candidato su `dir` nuevo y su `files`.
 - **Registro falso:** el de `tests/skill-design.test.js` (líneas 60-110) y el de `tests/defect-046-skill-topics.test.js` (líneas 92-154) separan `--owner` de la consulta y registran los dos.
 - **Conteos y consultas:** `tests/skill-design.test.js` (línea 203) y `tests/defect-046-skill-topics.test.js` (líneas 192, 223, 258 y 282) cuentan una búsqueda por autor de confianza más la general. Las aserciones de cero búsquedas no cambian.
@@ -157,6 +166,7 @@ En `findForDesign` (`plugins/aether/lib/skill-design.js`), para cada tema no cub
 ### Supuestos de la enmienda
 
 - La limpieza por proyecto de `.aether/tmp/` borra también carpetas con más de 24 horas. La construcción lo comprueba en `plugins/aether/lib/tree-clean.js` y lo reporta si no es así.
+- El tope de 200 archivos por skill y el de 5 autores por tema son valores reversibles que elegí donde la intención calla; ambos viven como constantes de `skill-install.js` y `skill-design.js`.
 - El examen oculto de la spec 045 cuenta una búsqueda por diseño y mira la carpeta de revisión en el directorio de datos. Esas comprobaciones quedan obsoletas con esta enmienda; el Lead las juzga contra este diseño, sin borrar ese examen.
 
 ### Verificación real
@@ -167,3 +177,4 @@ La corre el Lead después de la construcción, en un proyecto desechable con un 
 2. `aether-plan skills find` con esos temas deja `anthropics/skills@pdf` como candidata.
 3. `skill-reviewer`, con permisos normales y sin acceso extra, lee la carpeta y da su veredicto.
 4. `aether-plan skills install` deja la skill solo en el proyecto, sin commit, sin carpeta de revisión y sin nada en el `HOME`.
+5. Los pasos 2 a 4 se repiten desde un worktree enlazado del proyecto desechable. Si `skill-reviewer` no puede leer allí `.aether/tmp/skill-review/`, la prueba no pasa y el Lead lo reporta en lugar de mover la carpeta por su cuenta.
