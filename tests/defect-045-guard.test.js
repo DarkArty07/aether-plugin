@@ -68,3 +68,18 @@ test('R4: a write, redirection or deletion on those targets is still refused', (
   const w = world(t)
   for (const command of WRITES) assert.notEqual(w.bash(command), null, command)
 })
+test('R4: a read-only find piped to a writer still refuses (!writes clause)', (t) => {
+  const w = world(t)
+  const PIPED_WRITES = [
+    'find .claude/settings.json | xargs rm',
+    'sudo find .claude/settings.json | xargs rm',
+    'find .claude/hooks | while read f; do rm "$f"; done',
+    'find .claude/settings.json -print0 | xargs -0 sed -i s/a/b/',
+    'find ~/.claude/plugins/data/skills/trusted.json | xargs rm',
+    `find ${w.data}/skills/trusted.json | xargs rm`,
+  ]
+  for (const command of PIPED_WRITES) assert.notEqual(w.bash(command), null, command)
+  for (const command of ['find .claude/settings.json', 'find ~/.claude/plugins/data/skills/trusted.json']) {
+    assert.equal(w.bash(command), null, command)
+  }
+})
